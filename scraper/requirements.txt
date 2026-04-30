@@ -1,4 +1,7 @@
 playwright
+playwright-stealth
 beautifulsoup4
 requests
+aiohttp
 pandas
+tldextract
