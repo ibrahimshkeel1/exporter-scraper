@@ -11,6 +11,10 @@ Thumbs.db
 venv/
 env/
 .env
+node_modules/
+.next/
+*.tsbuildinfo
+logs/
 
 # Playwright
 test-results/
@@ -25,3 +29,8 @@ playwright/.cache/
 *.html
 !README.md
 !PROJECT_PLAN.md
+!n8n_*.json
+!scraper/job_config.example.json
+!frontend/*.json
+!frontend/**/*.json
+exports/

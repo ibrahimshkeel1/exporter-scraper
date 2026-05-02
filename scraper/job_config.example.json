@@ -1,0 +1,27 @@
+{
+  "job_id": "demo-job-001",
+  "targeting": {
+    "region": "USA",
+    "industry": "apparel importers wholesalers private label clothing buyers",
+    "refined_industry": "apparel importers wholesalers private label clothing buyers",
+    "search_terms": [
+      "apparel importer wholesaler distributor USA contact",
+      "private label clothing brand sourcing USA",
+      "retailer supplier application apparel USA"
+    ]
+  },
+  "lead_pack": {
+    "limit": 10,
+    "min_score": 75,
+    "mode": "verified"
+  },
+  "quality": {
+    "allow_no_email": false,
+    "allow_weak_buyer_evidence": false,
+    "a_plus_score": 85
+  },
+  "delivery": {
+    "format": "all",
+    "output_dir": "exports"
+  }
+}

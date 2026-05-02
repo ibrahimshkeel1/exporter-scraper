@@ -1,7 +1,4 @@
-playwright
-playwright-stealth
-beautifulsoup4
-requests
-aiohttp
-pandas
-tldextract
+aiohttp==3.13.1
+beautifulsoup4==4.14.2
+openpyxl==3.1.5
+playwright==1.59.0

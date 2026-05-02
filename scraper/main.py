@@ -1,61 +1,566 @@
 import asyncio
 import argparse
-from playwright.async_api import async_playwright
-from playwright_stealth import Stealth
+import json
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
 
-from modules.discovery import LeadDiscovery
-from modules.enrichment import LeadEnrichment
-from modules.scoring import LeadScoring
-from modules.export import LeadExport
 
-async def run_scraper(region, limit, output, test_mode):
-    print(f"Starting Scraper - Region: {region} | Limit: {limit} | Test Mode: {test_mode}")
+def emit_progress(status, message, status_output=None, job_id=None, **metadata):
+    event = {
+        "status": status,
+        "message": message,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if job_id:
+        event["job_id"] = job_id
+    event.update(metadata)
+    encoded = json.dumps(event, ensure_ascii=True)
+    print(f"SCRAPER_EVENT {encoded}", flush=True)
+    if status_output:
+        status_path = Path(status_output)
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+        with status_path.open("a", encoding="utf-8") as file_handle:
+            file_handle.write(f"{encoded}\n")
+
+
+def load_job_config(config_path):
+    with open(config_path, encoding="utf-8") as file_handle:
+        return json.load(file_handle)
+
+
+def apply_job_config(args, config):
+    """Map SaaS job JSON into the existing CLI argument shape."""
+    targeting = config.get("targeting", {})
+    lead_pack = config.get("lead_pack", {})
+    delivery = config.get("delivery", {})
+    quality = config.get("quality", {})
+
+    flat_mappings = {
+        "region": "region",
+        "industry": "industry",
+        "limit": "limit",
+        "min_score": "min_score",
+        "output": "output",
+        "audit_output": "audit_output",
+        "format": "format",
+        "test_mode": "test_mode",
+        "hunt_first_a_plus": "hunt_first_a_plus",
+        "hunt_max_analyzed": "hunt_max_analyzed",
+        "a_plus_score": "a_plus_score",
+        "allow_no_email": "allow_no_email",
+        "allow_weak_buyer_evidence": "allow_weak_buyer_evidence",
+        "status_output": "status_output",
+        "job_id": "job_id",
+    }
+    for key, attribute in flat_mappings.items():
+        if key in config and config[key] is not None:
+            setattr(args, attribute, config[key])
+
+    if targeting.get("region"):
+        args.region = targeting["region"]
+    if targeting.get("refined_industry"):
+        args.industry = targeting["refined_industry"]
+    elif targeting.get("industry"):
+        args.industry = targeting["industry"]
+    elif targeting.get("search_terms"):
+        args.industry = " ".join(targeting["search_terms"])
+
+    if lead_pack.get("limit") is not None:
+        args.limit = int(lead_pack["limit"])
+    if lead_pack.get("min_score") is not None:
+        args.min_score = int(lead_pack["min_score"])
+    if lead_pack.get("mode") == "a_plus":
+        args.hunt_first_a_plus = True
+        args.a_plus_score = max(args.a_plus_score, 85)
+
+    if delivery.get("format"):
+        args.format = delivery["format"]
+    if delivery.get("output"):
+        args.output = delivery["output"]
+    elif delivery.get("output_dir") and args.job_id:
+        args.output = str(Path(delivery["output_dir"]) / f"{args.job_id}_leads.csv")
+    if delivery.get("audit_output"):
+        args.audit_output = delivery["audit_output"]
+    elif delivery.get("output_dir") and args.job_id:
+        args.audit_output = str(Path(delivery["output_dir"]) / f"{args.job_id}_audit.csv")
+
+    if quality.get("allow_no_email") is not None:
+        args.allow_no_email = bool(quality["allow_no_email"])
+    if quality.get("allow_weak_buyer_evidence") is not None:
+        args.allow_weak_buyer_evidence = bool(quality["allow_weak_buyer_evidence"])
+    if quality.get("a_plus_score") is not None:
+        args.a_plus_score = int(quality["a_plus_score"])
+
+    return args
+
+
+async def run_scraper(
+    region,
+    industry,
+    limit,
+    output,
+    output_format,
+    test_mode,
+    min_score,
+    audit_output=None,
+    allow_no_email=False,
+    allow_weak_buyer_evidence=False,
+    status_output=None,
+    job_id=None,
+):
+    print(
+        f"Starting scraper | Region: {region} | Industry: {industry} | Limit: {limit} | Test mode: {test_mode}"
+    )
+    emit_progress(
+        "starting",
+        "Scraper job started.",
+        status_output=status_output,
+        job_id=job_id,
+        region=region,
+        industry=industry,
+        limit=limit,
+        output_format=output_format,
+    )
+
+    try:
+        from playwright.async_api import async_playwright
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Missing Playwright dependency. Run `pip install -r scraper/requirements.txt` "
+            "and `python -m playwright install chromium`."
+        ) from exc
+
+    from modules.discovery import LeadDiscovery
+    from modules.enrichment import LeadEnrichment
+    from modules.export import LeadExport
+    from modules.scoring import LeadScoring
     
-    # Phase 1: Discovery (Fetch initial candidates)
-    # We fetch more candidates initially because many will be filtered out.
-    discovery_limit = min(30, limit * 3) if test_mode else limit * 3
+    discovery_limit = min(120, limit * 12) if test_mode else max(limit * 20, 80)
     discovery = LeadDiscovery(limit=discovery_limit)
+    run_id = f"run-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
     
     candidates = []
+    enriched_candidates = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
-        await Stealth().apply_stealth_async(page)
-        
-        candidates = await discovery.run_discovery(page, region)
+
+        emit_progress(
+            "discovering",
+            "Discovering candidate buyer websites.",
+            status_output=status_output,
+            job_id=job_id,
+            discovery_limit=discovery_limit,
+        )
+        candidates = await discovery.run_discovery(page, region=region, industry=industry)
+        emit_progress(
+            "discovered",
+            "Discovery completed.",
+            status_output=status_output,
+            job_id=job_id,
+            candidate_count=len(candidates),
+        )
+
+        if candidates:
+            emit_progress(
+                "enriching",
+                "Enriching candidates with contact and buyer evidence.",
+                status_output=status_output,
+                job_id=job_id,
+                candidate_count=len(candidates),
+            )
+            enrichment = LeadEnrichment(
+                concurrency=4,
+                max_extra_pages=12,
+                browser_context=context,
+            )
+            enriched_candidates = await enrichment.run_enrichment(candidates)
+            emit_progress(
+                "enriched",
+                "Candidate enrichment completed.",
+                status_output=status_output,
+                job_id=job_id,
+                enriched_count=len(enriched_candidates),
+            )
+
         await browser.close()
 
     if not candidates:
         print("No candidates found during discovery phase.")
+        emit_progress(
+            "failed",
+            "No candidates found during discovery.",
+            status_output=status_output,
+            job_id=job_id,
+        )
         return
 
-    # Phase 2: Enrichment (Fetch content, extract emails/socials concurrently)
-    enrichment = LeadEnrichment(concurrency=10)
-    enriched_candidates = await enrichment.run_enrichment(candidates)
+    emit_progress(
+        "scoring",
+        "Scoring and filtering qualified leads.",
+        status_output=status_output,
+        job_id=job_id,
+        enriched_count=len(enriched_candidates),
+        min_score=min_score,
+    )
+    scoring = LeadScoring(
+        require_email=not allow_no_email,
+        require_buyer_evidence=not allow_weak_buyer_evidence,
+    )
+    scored_candidates = [scoring.evaluate_candidate(candidate) for candidate in enriched_candidates]
+    top_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
+    print(
+        f"Quality filter: {len(top_leads)} qualified leads from {len(scored_candidates)} enriched candidates"
+    )
 
-    # Phase 3: Scoring & Filtering
-    scoring = LeadScoring()
-    top_leads = scoring.rank_and_filter(enriched_candidates, limit=limit)
-
-    # Phase 4: Export
+    emit_progress(
+        "exporting",
+        "Writing customer exports.",
+        status_output=status_output,
+        job_id=job_id,
+        qualified_count=len(top_leads),
+        analyzed_count=len(scored_candidates),
+        output=output,
+        output_format=output_format,
+    )
     exporter = LeadExport(output_file=output)
-    exporter.save_to_csv(top_leads, region)
+    exporter.save(
+        top_leads,
+        region=region,
+        industry=industry,
+        run_id=run_id,
+        output_format=output_format,
+    )
+    if audit_output:
+        audit_exporter = LeadExport(output_file=audit_output)
+        audit_exporter.save(
+            scored_candidates,
+            region=region,
+            industry=industry,
+            run_id=run_id,
+            output_format=output_format,
+        )
+    emit_progress(
+        "delivered",
+        "Scraper job completed.",
+        status_output=status_output,
+        job_id=job_id,
+        qualified_count=len(top_leads),
+        analyzed_count=len(scored_candidates),
+        output=output,
+        output_format=output_format,
+        audit_output=audit_output or "",
+    )
+
+async def run_hunt_first_a_plus(
+    region,
+    industry,
+    output,
+    output_format,
+    audit_output,
+    max_analyzed,
+    a_plus_score,
+    status_output=None,
+    job_id=None,
+):
+    print(
+        f"Starting A+ hunt | Region: {region} | Industry: {industry} | Hard stop: {max_analyzed} analyzed candidates"
+    )
+    emit_progress(
+        "starting",
+        "A+ hunt job started.",
+        status_output=status_output,
+        job_id=job_id,
+        region=region,
+        industry=industry,
+        max_analyzed=max_analyzed,
+        a_plus_score=a_plus_score,
+        output_format=output_format,
+    )
+
+    try:
+        from playwright.async_api import async_playwright
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Missing Playwright dependency. Run `pip install -r scraper/requirements.txt` "
+            "and `python -m playwright install chromium`."
+        ) from exc
+
+    from modules.discovery import LeadDiscovery
+    from modules.enrichment import LeadEnrichment
+    from modules.export import LeadExport
+    from modules.scoring import LeadScoring
+
+    run_id = f"hunt-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
+    start_time = time.perf_counter()
+    discovery = LeadDiscovery(limit=max_analyzed)
+    scoring = LeadScoring(require_email=True, require_buyer_evidence=True)
+    analyzed_candidates = []
+    analyzed_domains = set()
+    found_lead = None
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
+        enrichment = LeadEnrichment(
+            concurrency=1,
+            max_extra_pages=12,
+            browser_context=context,
+        )
+
+        async def analyze_candidate(candidate):
+            nonlocal found_lead
+            initial_domain = candidate.get("domain")
+            if initial_domain in analyzed_domains:
+                return False
+
+            index = len(analyzed_candidates) + 1
+            elapsed = round(time.perf_counter() - start_time, 2)
+            print(f"Hunt analyzing {index}/{max_analyzed}: {candidate.get('domain')} | elapsed={elapsed}s")
+            enriched = await enrichment.run_enrichment([candidate])
+            resolved_domain = enriched[0].get("domain")
+            if resolved_domain in analyzed_domains:
+                print(f"Hunt skipping duplicate resolved domain: {resolved_domain}")
+                return False
+            if resolved_domain:
+                analyzed_domains.add(resolved_domain)
+            if initial_domain:
+                analyzed_domains.add(initial_domain)
+
+            scored = scoring.evaluate_candidate(enriched[0])
+            scoring.rank_and_filter([scored], limit=1, min_score=a_plus_score)
+            scored["analyzed_index"] = index
+            scored["elapsed_seconds"] = round(time.perf_counter() - start_time, 2)
+            scored["is_a_plus"] = scoring.is_a_plus(scored, min_score=a_plus_score)
+            analyzed_candidates.append(scored)
+            emit_progress(
+                "analyzing",
+                "A+ hunt candidate analyzed.",
+                status_output=status_output,
+                job_id=job_id,
+                analyzed_count=len(analyzed_candidates),
+                max_analyzed=max_analyzed,
+                domain=scored.get("domain", ""),
+                score=scored.get("score", 0),
+                is_a_plus=scored["is_a_plus"],
+            )
+
+            if audit_output:
+                LeadExport(output_file=audit_output).save(
+                    analyzed_candidates,
+                    region=region,
+                    industry=industry,
+                    run_id=run_id,
+                    output_format=output_format,
+                )
+
+            if scored["is_a_plus"]:
+                found_lead = scored
+                print(
+                    f"A+ lead found after {index} analyzed candidates and {scored['elapsed_seconds']} seconds: {scored.get('domain')}"
+                )
+                emit_progress(
+                    "exporting",
+                    "A+ lead found; writing export.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    analyzed_count=len(analyzed_candidates),
+                    domain=scored.get("domain", ""),
+                )
+                return True
+            return False
+
+        sources = discovery.generate_sources(region, industry)
+        for source in sources:
+            if found_lead or len(analyzed_candidates) >= max_analyzed:
+                break
+
+            if source.candidate_kind == "seed_list":
+                print(f"Hunt source: {source.name}")
+                for seed_url in discovery.seed_urls(region, source.name):
+                    candidate = discovery._candidate_from_url(seed_url, source, region, industry)
+                    if not candidate:
+                        continue
+                    if await analyze_candidate(candidate):
+                        break
+                    if len(analyzed_candidates) >= max_analyzed:
+                        break
+                continue
+
+            print(f"Hunt source: {source.url}")
+            try:
+                await page.goto(source.url, timeout=30000, wait_until="domcontentloaded")
+                await page.wait_for_timeout(1000)
+                links = await discovery._extract_links_from_source(page, source)
+            except Exception as exc:
+                print(f"Hunt source failed: {source.url} | {exc}")
+                continue
+
+            found_in_source = 0
+            for raw_href in links:
+                clean_url = discovery._clean_candidate_url(raw_href, source.url)
+                if not clean_url:
+                    continue
+                candidate = discovery._candidate_from_url(clean_url, source, region, industry)
+                if not candidate:
+                    continue
+                found_in_source += 1
+                if await analyze_candidate(candidate):
+                    break
+                if len(analyzed_candidates) >= max_analyzed:
+                    break
+            print(
+                f"Hunt source complete: {found_in_source} analyzed candidates from {source.name}; total analyzed={len(analyzed_candidates)}"
+            )
+
+        await browser.close()
+
+    total_elapsed = round(time.perf_counter() - start_time, 2)
+    if found_lead:
+        LeadExport(output_file=output).save(
+            [found_lead],
+            region=region,
+            industry=industry,
+            run_id=run_id,
+            output_format=output_format,
+        )
+    else:
+        print(
+            f"No A+ lead found after analyzing {len(analyzed_candidates)} candidates in {total_elapsed} seconds."
+        )
+
+    average_seconds = round(total_elapsed / len(analyzed_candidates), 2) if analyzed_candidates else 0
+    print(
+        "Hunt summary | "
+        f"a_plus_found={bool(found_lead)} | "
+        f"analyzed={len(analyzed_candidates)} | "
+        f"elapsed_seconds={total_elapsed} | "
+        f"avg_seconds_per_analyzed={average_seconds}"
+    )
+    emit_progress(
+        "delivered" if found_lead else "failed",
+        "A+ hunt completed." if found_lead else "No A+ lead found before the hard stop.",
+        status_output=status_output,
+        job_id=job_id,
+        a_plus_found=bool(found_lead),
+        analyzed_count=len(analyzed_candidates),
+        elapsed_seconds=total_elapsed,
+        output=output,
+        audit_output=audit_output or "",
+    )
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Clothing Buyer Lead Scraper")
+    parser = argparse.ArgumentParser(description="Buyer lead scraper for apparel/clothing markets")
+    parser.add_argument(
+        "--job-config",
+        default=None,
+        help="Optional SaaS job config JSON. Values in this file override CLI defaults.",
+    )
+    parser.add_argument(
+        "--status-output",
+        default=None,
+        help="Optional JSONL file where machine-readable progress events are appended.",
+    )
+    parser.add_argument(
+        "--job-id",
+        default=None,
+        help="Optional external job id included in progress events.",
+    )
     parser.add_argument("--region", choices=["USA", "UK", "Europe"], default="USA", help="Target market region")
+    parser.add_argument(
+        "--industry",
+        default="clothing brands",
+        help="Industry or query seed used in discovery (e.g., 'private label clothing')",
+    )
     parser.add_argument("--limit", type=int, default=10, help="Final number of leads to export")
-    parser.add_argument("--output", default="buyer_leads.csv", help="Output CSV file name")
+    parser.add_argument("--min-score", type=int, default=75, help="Minimum qualification score (0-100)")
+    parser.add_argument("--output", default="buyer_leads.csv", help="Output base file name")
+    parser.add_argument(
+        "--audit-output",
+        default=None,
+        help="Optional output base file for all scored candidates, including rejected leads",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["csv", "json", "xlsx", "both", "all"],
+        default="csv",
+        help="Export format",
+    )
     parser.add_argument("--test-mode", action="store_true", help="Run with lower internal limits for quick testing")
+    parser.add_argument(
+        "--hunt-first-a-plus",
+        action="store_true",
+        help="Analyze candidates one by one until the first A+ lead is found or the hard stop is reached",
+    )
+    parser.add_argument(
+        "--hunt-max-analyzed",
+        type=int,
+        default=150,
+        help="Hard stop for --hunt-first-a-plus candidate analysis",
+    )
+    parser.add_argument(
+        "--a-plus-score",
+        type=int,
+        default=85,
+        help="Minimum score for A+ hunt success",
+    )
+    parser.add_argument(
+        "--allow-no-email",
+        action="store_true",
+        help="Allow otherwise qualified leads without candidate-owned emails",
+    )
+    parser.add_argument(
+        "--allow-weak-buyer-evidence",
+        action="store_true",
+        help="Allow leads that have product fit but weak buyer/importer/procurement evidence",
+    )
     
     args = parser.parse_args()
+    if args.job_config:
+        args = apply_job_config(args, load_job_config(args.job_config))
 
-    asyncio.run(run_scraper(
-        region=args.region,
-        limit=args.limit,
-        output=args.output,
-        test_mode=args.test_mode
-    ))
+    try:
+        if args.hunt_first_a_plus:
+            asyncio.run(run_hunt_first_a_plus(
+                region=args.region,
+                industry=args.industry,
+                output=args.output,
+                output_format=args.format,
+                audit_output=args.audit_output,
+                max_analyzed=args.hunt_max_analyzed,
+                a_plus_score=args.a_plus_score,
+                status_output=args.status_output,
+                job_id=args.job_id,
+            ))
+        else:
+            asyncio.run(run_scraper(
+                region=args.region,
+                industry=args.industry,
+                limit=args.limit,
+                output=args.output,
+                output_format=args.format,
+                test_mode=args.test_mode,
+                min_score=args.min_score,
+                audit_output=args.audit_output,
+                allow_no_email=args.allow_no_email,
+                allow_weak_buyer_evidence=args.allow_weak_buyer_evidence,
+                status_output=args.status_output,
+                job_id=args.job_id,
+            ))
+    except Exception as exc:
+        emit_progress(
+            "failed",
+            "Scraper job failed.",
+            status_output=args.status_output,
+            job_id=args.job_id,
+            error=str(exc),
+        )
+        raise

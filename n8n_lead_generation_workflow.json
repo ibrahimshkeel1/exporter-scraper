@@ -1,0 +1,224 @@
+{
+  "name": "ExportFlow - Lead Generation",
+  "description": "Lead generation workflow: webhook -> admin approval -> python scraper -> google sheets -> email",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "lead-generation",
+        "responseMode": "onReceived",
+        "responseData": "{\n  \"status\": \"received\",\n  \"message\": \"Lead request received. Awaiting admin approval.\"\n}"
+      },
+      "id": "96f34783-0b7f-42ef-a01f-e8c9a8b1c2d3",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $json.telegramChatId }}",
+        "text": "📋 **New Lead Generation Request**\n\n**Industry**: {{ $json.industry }}\n**Region**: {{ $json.region }}\n**Limit**: {{ $json.limit }}\n**Client Email**: {{ $json.clientEmail }}\n\n✅ Click \"Approve\" to start scraping\n❌ Click \"Reject\" to cancel",
+        "parseMode": "Markdown"
+      },
+      "id": "a7c5d8e9-1f2a-4b3c-9d4e-5f6a7b8c9d0e",
+      "name": "Telegram - Send Approval Request",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "telegramApi": "telegram_api"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "{{ $json.approved }}",
+              "operation": "equals",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "b8c6d9e0-2g3a-5c4d-0e5f-6g7a8b9c0d1f",
+      "name": "If - Approved",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "python scraper/main.py --region {{ $json.region }} --limit {{ $json.limit }} --output /tmp/leads.csv",
+        "workingDirectory": "/home/ubuntu/exportflow"
+      },
+      "id": "c9d7e0f1-3h4b-6d5e-1f6g-7h8a9b0c1d2e",
+      "name": "Execute - Python Scraper",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "spreadsheetId": "{{ $json.googleSheetId }}",
+        "range": "Sheet1!A1",
+        "values": "={{ $json.scraperOutput }}"
+      },
+      "id": "d0e8f1g2-4i5c-7e6f-2g7h-8i9a0b1c2d3e",
+      "name": "Google Sheets - Append Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "googleSheetsAccess": "google_sheets_service_account"
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@exportflow.io",
+        "toEmail": "{{ $json.clientEmail }}",
+        "subject": "✅ Your Leads Are Ready - ExportFlow",
+        "emailType": "html",
+        "htmlBody": "<h2>Your Lead Generation Complete!</h2>\n<p>Hi {{ $json.clientName }},</p>\n<p>Your {{ $json.limit }} leads for <strong>{{ $json.industry }}</strong> in <strong>{{ $json.region }}</strong> are ready.</p>\n<p><strong>Download Here:</strong> {{ $json.sheetLink }}</p>\n<p>Next Step: Configure your outreach automation in the dashboard.</p>\n<p>—<br>ExportFlow Team</p>"
+      },
+      "id": "e1f9g2h3-5j6d-8f7g-3h8i-9j0a1b2c3d4e",
+      "name": "Send Email - Leads Ready",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ],
+      "credentials": {
+        "smtp": "smtp_credentials"
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $json.telegramChatId }}",
+        "text": "✅ Lead scraping completed!\n\n**Leads Generated**: {{ $json.leadCount }}\n**Quality Score**: Avg {{ $json.avgScore }}/100\n\nClient notified via email."
+      },
+      "id": "f2g0h3i4-6k7e-9g8h-4i9j-0k1a2b3c4d5e",
+      "name": "Telegram - Notify Admin (Complete)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ],
+      "credentials": {
+        "telegramApi": "telegram_api"
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $json.telegramChatId }}",
+        "text": "❌ Lead generation request was rejected."
+      },
+      "id": "g3h1i4j5-7l8f-0h9i-5j0k-1l2a3b4c5d6e",
+      "name": "Telegram - Notify Admin (Rejected)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        850,
+        500
+      ],
+      "credentials": {
+        "telegramApi": "telegram_api"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Send Approval Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Send Approval Request": {
+      "main": [
+        [
+          {
+            "node": "If - Approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Approved": {
+      "main": [
+        [
+          {
+            "node": "Execute - Python Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram - Notify Admin (Rejected)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute - Python Scraper": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Append Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Append Data": {
+      "main": [
+        [
+          {
+            "node": "Send Email - Leads Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email - Leads Ready": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Notify Admin (Complete)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

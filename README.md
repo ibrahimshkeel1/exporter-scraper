@@ -1,50 +1,86 @@
-# Exporter Scraper (ExportFlow AI)
+# ExportFlow Buyer Lead Scraper
 
-A Python-based lead generation scraper designed to find exporters and extract verified contact emails using Playwright and multi-engine search strategies.
+Python scraper for discovering and qualifying clothing/apparel buyer leads in `USA`, `UK`, and `Europe`.
 
-## Features
+## What It Does
 
-- **Multi-Engine Search**: Utilizes Bing, Google, and DuckDuckGo to find LinkedIn company pages.
-- **Lead Qualification**: Automatically scores leads based on export intent, operational scale, and digital presence.
-- **Stealth Mode**: Integrates `playwright-stealth` and human-like browsing patterns to minimize bot detection.
-- **Email Extraction**: Surgical regex-based email extraction from official websites and contact pages.
-- **CSV Export**: Clean output ready for outreach or CRM integration.
+1. Discovers candidate company websites from buyer-intent seeds, search results, and regional directories.
+2. Enriches each candidate by crawling homepage plus contact, wholesale, vendor, supplier, sourcing, procurement, purchasing, and about pages.
+3. Extracts and classifies candidate-owned emails, rejecting placeholder, third-party, careers, and system emails.
+4. Detects contact forms and supplier/vendor intake paths, but reserves A+ status for leads with usable candidate-owned email.
+5. Scores leads on product fit, buyer/importer/procurement evidence, reachability, commercial activity, and evidence depth.
+6. Exports only qualified leads to CSV, JSON, or both.
 
 ## Installation
 
-1. **Clone the repository**:
-   ```bash
-   git clone https://github.com/ibrahimshkeel1/exporter-scraper.git
-   cd exporter-scraper
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r scraper/requirements.txt
-   python -m playwright install chromium
-   ```
+```bash
+pip install -r scraper/requirements.txt
+python -m playwright install chromium
+```
 
 ## Usage
 
-Run the scraper by specifying the industry and country:
-
 ```bash
-python scraper/main.py --industry "Textile" --country "Pakistan" --limit 10 --output leads.csv
+python scraper/main.py --region USA --industry "private label clothing importers wholesalers" --limit 20 --output buyer_leads.csv --format both
 ```
 
-### Arguments:
-- `--industry`: Target industry (e.g., "Textile", "Surgical Instruments").
-- `--country`: Target country (e.g., "Pakistan").
-- `--limit`: Number of leads to generate (default: 10).
-- `--output`: Output CSV filename (default: test_leads.csv).
+SaaS job config mode:
 
-## Qualification Scoring (1-10)
+```bash
+python "final scrapper.py" --job-config scraper/job_config.example.json --status-output exports/demo/events.jsonl
+```
 
-- **Email Density (+3-4 pts)**: Variety of contact emails found.
-- **Export Intent (+3 pts)**: Presence of keywords like "export", "international", "global".
-- **Operational Scale (+2 pts)**: Certifications like "ISO", "quality", "certified".
-- **Digital Presence (+1 pt)**: Verification of LinkedIn profile.
+## CLI Arguments
 
-## Security & Ethics
+- `--region`: `USA`, `UK`, or `Europe` (default: `USA`)
+- `--industry`: discovery query seed (default: `clothing brands`)
+- `--limit`: final number of leads to export (default: `10`)
+- `--min-score`: minimum score threshold from `0` to `100` (default: `75`)
+- `--output`: output base file name (default: `buyer_leads.csv`)
+- `--audit-output`: optional output base file for all scored candidates, including rejected leads
+- `--format`: `csv`, `json`, `xlsx`, `both`, or `all` (default: `csv`)
+- `--job-config`: optional JSON config used by the SaaS/n8n worker flow
+- `--status-output`: optional JSONL file for machine-readable progress events
+- `--job-id`: optional external job id included in progress events
+- `--test-mode`: lower internal discovery limits for quicker runs
+- `--hunt-first-a-plus`: analyze candidates one by one until the first A+ lead is found
+- `--hunt-max-analyzed`: hard stop for A+ hunt mode (default: `150`)
+- `--a-plus-score`: minimum score for A+ hunt success (default: `85`)
+- `--allow-no-email`: allow otherwise qualified leads without candidate-owned emails
+- `--allow-weak-buyer-evidence`: allow product-fit leads with weak buyer/importer/procurement evidence
 
-This tool is intended for professional B2B lead generation. Please ensure compliance with local anti-spam laws (e.g., GDPR, CAN-SPAM) and the robots.txt policies of target websites.
+## Output Fields
+
+Exports include:
+
+- run metadata: `run_id`, `scraped_at`, `region`, `industry`
+- company metadata: `company_name`, `domain`, `website`
+- provenance: `discovery_url`, `source_name`, `source_url`, `discovery_method`
+- quality evidence: `qualified`, `passes_hard_checks`, `export_eligible`, `buyer_type`, `lead_pack_status`, `manual_review_required`, `product_fit`, `product_evidence`, `buyer_evidence`, `buyer_side_evidence`, `sales_side_evidence`, `contact_evidence`, `contact_route`, `outreach_contact`, `evidence_url`, `negative_evidence`, `disqualification_reasons`, `recommended_pitch_angle`, `lead_summary`, `closeability_notes`
+- reachability: `emails`, `high_quality_emails`, `email_quality`, `linkedin_url`, `social_urls`, `contact_form_urls`
+- crawl telemetry: `fetch_ok`, `fetch_status_codes`, `fetch_errors`, `crawled_pages`
+- scoring: `score`, `tier`, `qualification_reasons`, `score_breakdown`
+
+## Tests
+
+```bash
+python -m unittest discover -s scraper/tests -v
+```
+
+## SaaS Frontend
+
+The Next.js frontend lives in `frontend/`.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Copy `frontend/.env.example` to `frontend/.env.local`, fill Supabase, Gemini, n8n, and admin values, then run the Supabase schema in `supabase/schema.sql`.
+
+See `docs/saas-implementation.md` for the n8n/VPS handoff.
+
+## Ethics and Compliance
+
+Use this tool only where your workflow complies with local anti-spam, privacy, and website usage policies.
