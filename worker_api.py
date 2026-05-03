@@ -124,7 +124,9 @@ def _lead_export_files(job_config, job_id):
         return []
 
     export_dir = _resolve_run_path(output_dir)
-    candidates = sorted(export_dir.glob(f"{job_id}_leads.*"))
+    leads_files = list(export_dir.glob(f"{job_id}_leads.*"))
+    audit_files = list(export_dir.glob(f"{job_id}_audit.*"))
+    candidates = sorted(leads_files + audit_files)
     return [path for path in candidates if path.is_file()]
 
 
@@ -138,6 +140,7 @@ def _job_status_from_event(status):
         "enriched": "running",
         "scoring": "running",
         "exporting": "running",
+        "terminal": "running",
         "delivered": "delivered",
         "failed": "failed",
     }.get(status, "running")
@@ -163,7 +166,50 @@ async def _publish_status_event(job_id, event, status_callback=None):
     message = str(normalized.get("message") or "Worker event received.")
     mapped_status = _job_status_from_event(status)
     await _add_job_event(job_id, status, message, normalized)
-    await _update_job_status(job_id, mapped_status, message if mapped_status == "failed" else None)
+    
+    # Don't update the overall job status for every single terminal log line
+    if status != "terminal":
+        await _update_job_status(job_id, mapped_status, message if mapped_status == "failed" else None)
+
+
+async def _forward_terminal_logs(stdout_path, job_id, payload, process):
+    status_callback = payload.get("status_callback")
+    position = 0
+
+    while True:
+        if stdout_path.exists():
+            with stdout_path.open("r", encoding="utf-8", errors="replace") as file_handle:
+                file_handle.seek(position)
+                lines = file_handle.readlines()
+                position = file_handle.tell()
+
+            batch_events = []
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Skip the structured JSON events that get printed to stdout by emit_progress
+                if stripped.startswith("SCRAPER_EVENT"):
+                    continue
+                
+                event = {
+                    "status": "terminal",
+                    "type": "terminal",
+                    "message": stripped
+                }
+                batch_events.append(event)
+                
+            for event in batch_events:
+                try:
+                    await _publish_status_event(job_id, event, status_callback)
+                except Exception as exc:
+                    print(f"[worker] terminal log publish failed for job {job_id}: {exc}", flush=True)
+
+        if process.poll() is not None:
+            if not stdout_path.exists() or position >= stdout_path.stat().st_size:
+                return
+
+        await asyncio.sleep(1)
 
 
 async def _forward_status_events(status_output_path, job_id, payload, process):
