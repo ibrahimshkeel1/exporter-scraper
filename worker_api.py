@@ -356,9 +356,10 @@ async def _deliver_exports(job_id, job_config, payload):
     await _register_exports(job_id, exports)
 
 
-async def _monitor_process(process, job_id, job_config, payload, status_output_path, stdout_handle, stderr_handle):
+async def _monitor_process(process, job_id, job_config, payload, status_output_path, stdout_handle, stderr_handle, stdout_path):
     status_callback = payload.get("status_callback")
     status_forwarder = asyncio.create_task(_forward_status_events(status_output_path, job_id, payload, process))
+    terminal_forwarder = asyncio.create_task(_forward_terminal_logs(stdout_path, job_id, payload, process))
     try:
         return_code = await asyncio.to_thread(process.wait)
     finally:
@@ -366,6 +367,7 @@ async def _monitor_process(process, job_id, job_config, payload, status_output_p
         stderr_handle.close()
         try:
             await asyncio.wait_for(status_forwarder, timeout=10)
+            await asyncio.wait_for(terminal_forwarder, timeout=10)
         except Exception as exc:
             print(f"[worker] status forwarder did not finish cleanly for job {job_id}: {exc}", flush=True)
 
