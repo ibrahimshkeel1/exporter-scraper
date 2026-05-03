@@ -5,9 +5,9 @@ services:
     image: postgres:16
     restart: always
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=n8n_user
+      - POSTGRES_PASSWORD=n8n_password_change_me 
+      - POSTGRES_DB=n8n_database
     volumes:
       - db_storage:/var/lib/postgresql/data
     networks:
@@ -20,9 +20,9 @@ services:
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=db
       - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
-      - DB_POSTGRESDB_USER=${POSTGRES_USER}
-      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_POSTGRESDB_DATABASE=n8n_database
+      - DB_POSTGRESDB_USER=n8n_user
+      - DB_POSTGRESDB_PASSWORD=n8n_password_change_me
       - N8N_TIMEZONE=Asia/Karachi
       - N8N_PORT=5678
       - N8N_EDITOR_BASE_URL=https://n8n.cristalinawater.com/
