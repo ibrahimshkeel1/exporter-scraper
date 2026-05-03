@@ -441,6 +441,7 @@ async def run_job(request):
 
     command = [
         sys.executable,
+        "-u",
         str(PROJECT_ROOT / "final scrapper.py"),
         "--job-config",
         str(job_config_path),
