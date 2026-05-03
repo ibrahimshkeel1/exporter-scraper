@@ -35,6 +35,7 @@ playwright/.cache/
 !README.md
 !PROJECT_PLAN.md
 !n8n_*.json
+!vercel.json
 !scraper/job_config.example.json
 !frontend/*.json
 !frontend/**/*.json
