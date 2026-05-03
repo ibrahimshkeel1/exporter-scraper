@@ -34,13 +34,19 @@ function parseGeminiJson(text: string): TargetingPreflight | null {
   try {
     const cleaned = text.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
     const parsed = JSON.parse(cleaned);
+    
+    let minScore = Number(parsed.recommendedMinScore ?? 75);
+    if (!isNaN(minScore) && minScore > 0 && minScore <= 1) {
+      minScore = minScore * 100;
+    }
+
     return {
       refinedIndustry: String(parsed.refinedIndustry ?? ""),
       searchTerms: Array.isArray(parsed.searchTerms) ? parsed.searchTerms.map(String).slice(0, 8) : [],
       buyerTypes: Array.isArray(parsed.buyerTypes) ? parsed.buyerTypes.map(String).slice(0, 6) : [],
       riskLevel: ["low", "medium", "high"].includes(parsed.riskLevel) ? parsed.riskLevel : "medium",
       qualityNotes: String(parsed.qualityNotes ?? ""),
-      recommendedMinScore: Number(parsed.recommendedMinScore ?? 75),
+      recommendedMinScore: Math.round(minScore || 75),
       warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map(String).slice(0, 6) : []
     };
   } catch {
@@ -58,7 +64,7 @@ export async function runTargetingPreflight(input: PreflightInput): Promise<Targ
 
   const prompt = [
     "You are refining a paid B2B buyer-lead generation job for Pakistan-based apparel/textile exporters.",
-    "Return JSON only with keys: refinedIndustry, searchTerms, buyerTypes, riskLevel, qualityNotes, recommendedMinScore, warnings.",
+    "Return JSON only with keys: refinedIndustry, searchTerms, buyerTypes, riskLevel, qualityNotes, recommendedMinScore (integer 0-100), warnings.",
     "The scraper works best when search terms include buyer-side intent: importer, wholesaler, distributor, retailer, procurement, sourcing, vendor application, supplier portal.",
     "Reject or warn about vague consumer niches, supplier/manufacturer targets, and anything outside apparel/textile for v1.",
     "",

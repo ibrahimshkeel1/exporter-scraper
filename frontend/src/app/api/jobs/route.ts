@@ -56,6 +56,9 @@ export async function POST(request: NextRequest) {
   const priceUsd = bypassed ? 0 : pack.priceUsd;
   const supabase = createAdminSupabase();
 
+  const minScoreRaw = body.advanced?.minScore ?? preflight.recommendedMinScore ?? 75;
+  const minScore = Math.round(Number(minScoreRaw));
+
   const { data: inserted, error: insertError } = await supabase
     .from("lead_jobs")
     .insert({
@@ -72,7 +75,7 @@ export async function POST(request: NextRequest) {
       refined_industry: preflight.refinedIndustry,
       buyer_types: preflight.buyerTypes,
       export_format: body.exportFormat || "all",
-      min_score: body.advanced?.minScore ?? (preflight.recommendedMinScore || 75),
+      min_score: minScore,
       preflight,
       admin_note: bypassed ? "Created with admin bypass code." : null
     })

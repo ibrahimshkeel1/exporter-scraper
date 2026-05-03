@@ -35,7 +35,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       format: String(item.format ?? "file"),
       storage_path: item.storage_path ?? null,
       public_url: item.public_url ?? null,
-      row_count: item.row_count == null ? null : Number(item.row_count)
+      row_count: item.row_count == null ? null : Math.round(Number(item.row_count))
     }));
 
   if (rows.length === 0) {

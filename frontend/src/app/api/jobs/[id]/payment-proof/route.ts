@@ -30,7 +30,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const { error: proofError } = await supabase.from("payment_proofs").insert({
     job_id: id,
     user_id: user.id,
-    amount_usd: body.amountUsd ? Number(body.amountUsd) : null,
+    amount_usd: body.amountUsd ? Math.round(Number(body.amountUsd)) : null,
     transaction_id: body.transactionId || null,
     storage_path: body.storagePath || null,
     note: body.note || null,
