@@ -81,44 +81,44 @@ export function PaymentProofUpload({ jobId, amountUsd, onUploaded }: PaymentProo
   }
 
   return (
-    <form className="stack" onSubmit={submitProof}>
-      <div className="grid-2">
-        <div className="field">
-          <label htmlFor={`transaction-${jobId}`}>Transaction ID</label>
+    <form className="flex flex-col gap-4 mt-2" onSubmit={submitProof}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor={`transaction-${jobId}`} className="text-xs font-medium text-vercel-text">Transaction ID</label>
           <input
             id={`transaction-${jobId}`}
-            className="input"
+            className="bg-transparent border border-vercel-border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-vercel-accent focus:border-transparent text-vercel-text"
             value={transactionId}
             onChange={(event) => setTransactionId(event.target.value)}
             placeholder="Easypaisa/JazzCash/reference"
           />
         </div>
-        <div className="field">
-          <label htmlFor={`proof-${jobId}`}>Screenshot</label>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor={`proof-${jobId}`} className="text-xs font-medium text-vercel-text">Screenshot</label>
           <input
             id={`proof-${jobId}`}
-            className="input"
+            className="bg-transparent border border-vercel-border rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-vercel-accent focus:border-transparent text-vercel-text file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-[#111] file:text-vercel-text hover:file:bg-gray-100"
             type="file"
             accept="image/*,.pdf"
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           />
         </div>
       </div>
-      <div className="field">
-        <label htmlFor={`note-${jobId}`}>Note</label>
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={`note-${jobId}`} className="text-xs font-medium text-vercel-text">Note</label>
         <input
           id={`note-${jobId}`}
-          className="input"
+          className="bg-transparent border border-vercel-border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-vercel-accent focus:border-transparent text-vercel-text"
           value={note}
           onChange={(event) => setNote(event.target.value)}
           placeholder="Optional"
         />
       </div>
-      <button className="btn btn-secondary" type="submit" disabled={loading}>
-        <Upload size={16} aria-hidden="true" />
+      <button className="inline-flex w-fit items-center justify-center gap-2 bg-transparent border border-vercel-border text-vercel-text hover:bg-[#222] rounded-md px-3 py-1.5 text-sm font-medium transition-colors" type="submit" disabled={loading}>
+        <Upload size={14} aria-hidden="true" />
         {loading ? "Uploading" : `Submit proof for $${amountUsd}`}
       </button>
-      {message && <p className="muted">{message}</p>}
+      {message && <p className="text-xs text-vercel-muted">{message}</p>}
     </form>
   );
 }

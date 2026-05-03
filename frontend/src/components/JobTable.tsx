@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, TerminalSquare } from "lucide-react";
 import { PaymentProofUpload } from "@/components/PaymentProofUpload";
 import { StatusPill } from "@/components/StatusPill";
+import { JobLogViewer, JobEvent } from "@/components/JobLogViewer";
 import { createBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase-client";
 import { LeadJob } from "@/lib/types";
 
@@ -18,6 +19,7 @@ export function JobTable({ refreshSignal }: JobTableProps) {
   const [jobs, setJobs] = useState<LeadJob[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [activeLogs, setActiveLogs] = useState<JobEvent[] | null>(null);
 
   async function loadJobs() {
     setLoading(true);
@@ -74,77 +76,91 @@ export function JobTable({ refreshSignal }: JobTableProps) {
   }, [refreshSignal]);
 
   return (
-    <div className="panel panel-inner stack">
-      <div className="row">
-        <div className="tight-stack">
-          <h2>Lead jobs</h2>
-          <p>Payment review, worker progress, and export delivery live here.</p>
+    <div className="bg-gradient-to-b from-[#18181B] to-[#09090B] backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-2xl flex flex-col gap-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-2xl font-semibold text-vercel-text tracking-tight">Lead jobs</h2>
+          <p className="text-sm text-vercel-muted">Payment review, worker progress, and export delivery live here.</p>
         </div>
-        <button className="btn btn-secondary" type="button" onClick={loadJobs} disabled={loading}>
-          <RefreshCw size={16} aria-hidden="true" />
+        <button className="inline-flex items-center gap-2 bg-black/50 backdrop-blur-md border border-white/10 text-vercel-text hover:bg-white/5 rounded-lg px-4 py-2 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98]" type="button" onClick={loadJobs} disabled={loading}>
+          <RefreshCw size={16} className={loading ? "animate-spin" : ""} aria-hidden="true" />
           Refresh
         </button>
       </div>
 
-      {message && <div className="notice warning">{message}</div>}
+      {message && <div className="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 px-4 py-3 rounded-lg shadow-sm">{message}</div>}
 
-      <div className="table-wrap">
-        <table>
+      <div className="overflow-x-auto rounded-lg border border-white/10 bg-black/20">
+        <table className="w-full text-left border-collapse text-sm">
           <thead>
-            <tr>
-              <th>Status</th>
-              <th>Pack</th>
-              <th>Target</th>
-              <th>Payment</th>
-              <th>Exports</th>
+            <tr className="border-b border-white/10 bg-black/40">
+              <th className="py-4 px-4 font-medium text-vercel-muted">Status</th>
+              <th className="py-4 px-4 font-medium text-vercel-muted">Pack</th>
+              <th className="py-4 px-4 font-medium text-vercel-muted">Target</th>
+              <th className="py-4 px-4 font-medium text-vercel-muted min-w-[280px]">Payment</th>
+              <th className="py-4 px-4 font-medium text-vercel-muted">Exports & Logs</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-white/5">
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">
+                <td colSpan={5} className="py-8 px-4 text-center text-vercel-muted">
                   No jobs yet.
                 </td>
               </tr>
             )}
             {jobs.map((job) => (
-              <tr key={job.id}>
-                <td>
-                  <div className="tight-stack">
+              <tr key={job.id} className="hover:bg-white/5 transition-colors group">
+                <td className="py-4 px-4 align-top">
+                  <div className="flex flex-col gap-1.5 items-start">
                     <StatusPill status={job.status} />
-                    <span className="muted">{new Date(job.created_at).toLocaleString()}</span>
+                    <span className="text-xs text-vercel-muted opacity-70 group-hover:opacity-100 transition-opacity">{new Date(job.created_at).toLocaleString()}</span>
                   </div>
                 </td>
-                <td>
-                  <strong>{job.plan_name}</strong>
-                  <p>
-                    {job.lead_limit} leads - ${job.price_usd}
-                  </p>
+                <td className="py-4 px-4 align-top">
+                  <div className="flex flex-col gap-1">
+                    <strong className="font-medium text-vercel-text">{job.plan_name}</strong>
+                    <span className="text-vercel-muted">{job.lead_limit} leads - ${job.price_usd}</span>
+                  </div>
                 </td>
-                <td>
-                  <strong>{job.target_region}</strong>
-                  <p>{job.refined_industry || job.original_industry}</p>
+                <td className="py-4 px-4 align-top">
+                  <div className="flex flex-col gap-1">
+                    <strong className="font-medium text-vercel-text">{job.target_region}</strong>
+                    <span className="text-vercel-muted">{job.refined_industry || job.original_industry}</span>
+                  </div>
                 </td>
-                <td style={{ minWidth: 280 }}>
-                  <div className="tight-stack">
+                <td className="py-4 px-4 align-top min-w-[280px]">
+                  <div className="flex flex-col gap-2 items-start">
                     <StatusPill status={job.payment_status} />
                     {job.payment_status === "pending" && (
                       <PaymentProofUpload jobId={job.id} amountUsd={job.price_usd} onUploaded={loadJobs} />
                     )}
-                    {job.payment_status !== "pending" && job.admin_note && <p>{job.admin_note}</p>}
+                    {job.payment_status !== "pending" && job.admin_note && <p className="text-xs text-vercel-muted mt-1 bg-black/40 p-2 rounded-md border border-white/5">{job.admin_note}</p>}
                   </div>
                 </td>
-                <td>
-                  <div className="tight-stack">
+                <td className="py-4 px-4 align-top">
+                  <div className="flex flex-col gap-2 items-start">
                     {job.lead_exports && job.lead_exports.length > 0 ? (
-                      job.lead_exports.map((file) => (
-                        <button className="btn btn-secondary" key={file.id} type="button" onClick={() => downloadExport(file)}>
-                          {file.format.toUpperCase()}
-                        </button>
-                      ))
+                      <div className="flex flex-wrap gap-2">
+                        {job.lead_exports.map((file) => {
+                          const isAudit = file.storage_path?.includes("audit");
+                          return (
+                            <button className={`inline-flex items-center gap-1.5 ${isAudit ? "bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20" : "bg-black/50 border border-white/10 text-vercel-text hover:bg-white/10"} rounded-md px-3 py-1.5 text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98] shadow-sm`} key={file.id} type="button" onClick={() => downloadExport(file)}>
+                              {isAudit ? "AUDIT CSV" : file.format.toUpperCase()}
+                            </button>
+                          );
+                        })}
+                      </div>
                     ) : (
-                      <span className="muted">Waiting for delivery</span>
+                      <span className="text-xs text-vercel-muted italic">Waiting for delivery</span>
                     )}
+                    
+                    <button 
+                      onClick={() => setActiveLogs((job as any).job_events || [])}
+                      className="inline-flex items-center gap-1.5 bg-vercel-accent text-black hover:bg-white rounded-md px-3 py-1.5 text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_10px_rgba(255,255,255,0.1)] mt-2"
+                    >
+                      <TerminalSquare size={14} /> View Logs
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -152,6 +168,7 @@ export function JobTable({ refreshSignal }: JobTableProps) {
           </tbody>
         </table>
       </div>
+      {activeLogs && <JobLogViewer events={activeLogs} onClose={() => setActiveLogs(null)} />}
     </div>
   );
 }

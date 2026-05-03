@@ -78,4 +78,9 @@ export type LeadRequestInput = {
   exportFormat: string;
   adminBypassCode?: string;
   preflight: TargetingPreflight;
+  advanced?: {
+    allowNoEmail: boolean;
+    allowWeakBuyerEvidence: boolean;
+    minScore: number;
+  };
 };

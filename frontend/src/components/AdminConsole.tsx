@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Check, KeyRound, RefreshCw, RotateCcw, X } from "lucide-react";
+import { Check, KeyRound, RefreshCw, RotateCcw, X, TerminalSquare } from "lucide-react";
 import { StatusPill } from "@/components/StatusPill";
+import { JobLogViewer, JobEvent } from "@/components/JobLogViewer";
 import { LeadJob } from "@/lib/types";
 
 export function AdminConsole() {
@@ -12,6 +13,7 @@ export function AdminConsole() {
   const [jobs, setJobs] = useState<LeadJob[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [activeLogs, setActiveLogs] = useState<JobEvent[] | null>(null);
 
   async function loadJobs() {
     setLoading(true);
@@ -76,46 +78,46 @@ export function AdminConsole() {
   }
 
   return (
-    <div className="stack">
-      <div className="panel panel-inner stack">
-        <div className="row">
-          <div className="tight-stack">
-            <h2>Admin queue</h2>
-            <p>Approve manual proofs, demo-bypass jobs, retry failures, and mark manual deliveries.</p>
+    <div className="flex flex-col gap-8">
+      <div className="bg-gradient-to-b from-[#18181B] to-[#09090B] backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-2xl flex flex-col gap-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-2xl font-semibold text-vercel-text tracking-tight">Admin queue</h2>
+            <p className="text-sm text-vercel-muted">Approve manual proofs, demo-bypass jobs, retry failures, and mark manual deliveries.</p>
           </div>
-          <button className="btn btn-secondary" type="button" onClick={loadJobs} disabled={loading || !password}>
-            <RefreshCw size={16} aria-hidden="true" />
+          <button className="inline-flex items-center gap-2 bg-black/50 backdrop-blur-md border border-white/10 text-vercel-text hover:bg-white/5 rounded-lg px-4 py-2 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98]" type="button" onClick={loadJobs} disabled={loading || !password}>
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} aria-hidden="true" />
             Refresh
           </button>
         </div>
-        <div className="field">
-          <label htmlFor="admin-password">Admin password</label>
+        <div className="flex flex-col gap-2">
+          <label htmlFor="admin-password" className="text-sm font-medium text-vercel-text">Admin password</label>
           <input
             id="admin-password"
-            className="input"
+            className="bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-transparent text-vercel-text transition-all hover:border-white/20 placeholder:text-gray-600"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="ADMIN_PASSWORD"
           />
         </div>
-        <div className="row">
-          <div className="field" style={{ flex: 1 }}>
-            <label htmlFor="login-email">User email</label>
+        <div className="flex flex-wrap items-end gap-5 pt-6 border-t border-white/10">
+          <div className="flex flex-col gap-2 flex-1 min-w-[200px]">
+            <label htmlFor="login-email" className="text-sm font-medium text-vercel-text">User email</label>
             <input
               id="login-email"
-              className="input"
+              className="bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-transparent text-vercel-text transition-all hover:border-white/20 placeholder:text-gray-600"
               type="email"
               value={userEmail}
               onChange={(event) => setUserEmail(event.target.value)}
               placeholder="customer@example.com"
             />
           </div>
-          <div className="field" style={{ flex: 1 }}>
-            <label htmlFor="login-password">Set password</label>
+          <div className="flex flex-col gap-2 flex-1 min-w-[200px]">
+            <label htmlFor="login-password" className="text-sm font-medium text-vercel-text">Set password</label>
             <input
               id="login-password"
-              className="input"
+              className="bg-black/50 border border-white/10 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-transparent text-vercel-text transition-all hover:border-white/20 placeholder:text-gray-600"
               type="password"
               value={userPassword}
               onChange={(event) => setUserPassword(event.target.value)}
@@ -123,7 +125,7 @@ export function AdminConsole() {
             />
           </div>
           <button
-            className="btn btn-secondary"
+            className="inline-flex items-center justify-center gap-2 bg-black/50 backdrop-blur-md border border-white/10 text-vercel-text hover:bg-white/5 rounded-lg px-6 py-3 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
             type="button"
             onClick={setLoginPassword}
             disabled={!password || !userEmail || userPassword.length < 8}
@@ -132,80 +134,94 @@ export function AdminConsole() {
             Set login
           </button>
         </div>
-        {message && <div className="notice">{message}</div>}
+        {message && <div className="text-sm text-vercel-text bg-black/50 border border-white/10 px-4 py-3 rounded-lg shadow-sm">{message}</div>}
       </div>
 
-      <div className="panel panel-inner table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Customer</th>
-              <th>Target</th>
-              <th>Payment</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.length === 0 && (
-              <tr>
-                <td colSpan={5} className="muted">
-                  Enter the password and refresh.
-                </td>
+      <div className="bg-gradient-to-b from-[#18181B] to-[#09090B] backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-2xl">
+        <div className="overflow-x-auto rounded-lg border border-white/10 bg-black/20">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-black/40">
+                <th className="py-4 px-4 font-medium text-vercel-muted">Status</th>
+                <th className="py-4 px-4 font-medium text-vercel-muted">Customer</th>
+                <th className="py-4 px-4 font-medium text-vercel-muted">Target</th>
+                <th className="py-4 px-4 font-medium text-vercel-muted">Payment</th>
+                <th className="py-4 px-4 font-medium text-vercel-muted">Actions & Logs</th>
               </tr>
-            )}
-            {jobs.map((job) => (
-              <tr key={job.id}>
-                <td>
-                  <div className="tight-stack">
-                    <StatusPill status={job.status} />
-                    <span className="muted">{job.id.slice(0, 8)}</span>
-                  </div>
-                </td>
-                <td>
-                  <strong>{job.customer_email}</strong>
-                  <p>
-                    {job.plan_name} - ${job.price_usd}
-                  </p>
-                </td>
-                <td>
-                  <strong>{job.target_region}</strong>
-                  <p>{job.refined_industry || job.original_industry}</p>
-                </td>
-                <td>
-                  <div className="tight-stack">
-                    <StatusPill status={job.payment_status} />
-                    {job.payment_proofs?.map((proof) => (
-                      <span className="muted" key={proof.id}>
-                        {proof.transaction_id || "proof"} {proof.storage_path ? `- ${proof.storage_path}` : ""}
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {jobs.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-8 px-4 text-center text-vercel-muted">
+                    Enter the password and refresh.
+                  </td>
+                </tr>
+              )}
+              {jobs.map((job) => (
+                <tr key={job.id} className="hover:bg-white/5 transition-colors group">
+                  <td className="py-4 px-4 align-top">
+                    <div className="flex flex-col gap-1.5 items-start">
+                      <StatusPill status={job.status} />
+                      <span className="text-xs text-vercel-muted font-mono opacity-70 group-hover:opacity-100 transition-opacity">{job.id.slice(0, 8)}</span>
+                    </div>
+                  </td>
+                  <td className="py-4 px-4 align-top">
+                    <div className="flex flex-col gap-1">
+                      <strong className="font-medium text-vercel-text">{job.customer_email}</strong>
+                      <span className="text-vercel-muted">
+                        {job.plan_name} - ${job.price_usd}
                       </span>
-                    ))}
-                  </div>
-                </td>
-                <td>
-                  <div className="tight-stack">
-                    <button className="btn btn-primary" type="button" onClick={() => runAction(job.id, "approve")}>
-                      <Check size={16} aria-hidden="true" />
-                      Approve
-                    </button>
-                    <button className="btn btn-secondary" type="button" onClick={() => runAction(job.id, "retry")}>
-                      <RotateCcw size={16} aria-hidden="true" />
-                      Retry
-                    </button>
-                    <button className="btn btn-secondary" type="button" onClick={() => runAction(job.id, "mark_delivered")}>
-                      Delivered
-                    </button>
-                    <button className="btn btn-danger" type="button" onClick={() => runAction(job.id, "reject")}>
-                      <X size={16} aria-hidden="true" />
-                      Reject
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    </div>
+                  </td>
+                  <td className="py-4 px-4 align-top">
+                    <div className="flex flex-col gap-1">
+                      <strong className="font-medium text-vercel-text">{job.target_region}</strong>
+                      <span className="text-vercel-muted">{job.refined_industry || job.original_industry}</span>
+                    </div>
+                  </td>
+                  <td className="py-4 px-4 align-top">
+                    <div className="flex flex-col gap-1.5 items-start">
+                      <StatusPill status={job.payment_status} />
+                      {job.payment_proofs?.map((proof) => (
+                        <span className="text-xs text-vercel-muted truncate max-w-[150px] bg-black/40 px-2 py-1 rounded border border-white/5" key={proof.id} title={proof.transaction_id || proof.storage_path || "proof"}>
+                          {proof.transaction_id || "proof"} {proof.storage_path ? `- ${proof.storage_path}` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="py-4 px-4 align-top">
+                    <div className="flex flex-wrap gap-2">
+                      <button className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-md px-3 py-1.5 text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98]" type="button" onClick={() => runAction(job.id, "approve")}>
+                        <Check size={14} aria-hidden="true" />
+                        Approve
+                      </button>
+                      <button className="inline-flex items-center gap-1.5 bg-black/50 border border-white/10 text-vercel-text hover:bg-white/10 rounded-md px-3 py-1.5 text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98]" type="button" onClick={() => runAction(job.id, "retry")}>
+                        <RotateCcw size={14} aria-hidden="true" />
+                        Retry
+                      </button>
+                      <button className="inline-flex items-center gap-1.5 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 rounded-md px-3 py-1.5 text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98]" type="button" onClick={() => runAction(job.id, "mark_delivered")}>
+                        Delivered
+                      </button>
+                      <button className="inline-flex items-center gap-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 rounded-md px-3 py-1.5 text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98]" type="button" onClick={() => runAction(job.id, "reject")}>
+                        <X size={14} aria-hidden="true" />
+                        Reject
+                      </button>
+                      
+                      <button 
+                        onClick={() => setActiveLogs((job as any).job_events || [])}
+                        className="inline-flex items-center gap-1.5 bg-vercel-accent text-black hover:bg-white rounded-md px-3 py-1.5 text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_10px_rgba(255,255,255,0.1)]"
+                      >
+                        <TerminalSquare size={14} /> Logs
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+      {activeLogs && <JobLogViewer events={activeLogs} onClose={() => setActiveLogs(null)} />}
     </div>
   );
 }

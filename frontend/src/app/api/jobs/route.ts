@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminSupabase();
   const { data, error: queryError } = await supabase
     .from("lead_jobs")
-    .select("*, lead_exports(*), payment_proofs(*)")
+    .select("*, lead_exports(*), payment_proofs(*), job_events(*)")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       refined_industry: preflight.refinedIndustry,
       buyer_types: preflight.buyerTypes,
       export_format: body.exportFormat || "all",
-      min_score: preflight.recommendedMinScore || 75,
+      min_score: body.advanced?.minScore ?? (preflight.recommendedMinScore || 75),
       preflight,
       admin_note: bypassed ? "Created with admin bypass code." : null
     })
