@@ -4,14 +4,17 @@
 
 - **Frontend**: `frontend/` Next.js app deployed on Vercel.
 - **Database and files**: Supabase Auth, Postgres, and Storage.
-- **Automation**: n8n receives approved jobs, runs the VPS scraper, sends status callbacks, uploads exports, and emails customers.
-- **Worker**: `python "final scrapper.py" --job-config <path> --status-output <path>`.
+- **Automation**: n8n receives approved jobs, calls the VPS worker API, and can send customer emails after delivery.
+- **Worker**: `worker_api.py` runs `python "final scrapper.py" --job-config <path> --status-output <path>`, forwards scraper progress, uploads exports, and registers delivery.
+
+For VPS upload and service restart commands, see `docs/vps-worker-deploy.md`.
 
 ## Required Environment
 
 Set these in Vercel:
 
 ```env
+APP_URL=https://your-vercel-domain.vercel.app
 NEXT_PUBLIC_APP_URL=https://your-vercel-domain.vercel.app
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
@@ -22,24 +25,26 @@ N8N_LEAD_JOB_WEBHOOK_URL=https://your-n8n-domain/webhook/exportflow-lead-job
 N8N_WEBHOOK_SECRET=
 ADMIN_PASSWORD=
 ADMIN_BYPASS_CODE=
+WORKER_OUTPUT_BASE_DIR=exports/worker-runs
 ```
 
 Set these on the VPS/n8n host:
 
 ```env
-EXPORTFLOW_APP_URL=https://your-vercel-domain.vercel.app
+WORKER_API_SECRET=
 N8N_WEBHOOK_SECRET=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_EXPORT_BUCKET=lead-exports
 ```
 
 ## Supabase Setup
 
 1. Create a Supabase project.
 2. Run `supabase/schema.sql` in the SQL editor.
-3. Enable email OTP in Supabase Auth.
+3. Enable email/password auth in Supabase Auth. Email OTP can stay enabled as a fallback.
 4. Keep `payment-proofs` and `lead-exports` private.
-5. Use the service role key only in Vercel server-side API routes and n8n.
+5. Use the service role key only in Vercel server-side API routes and the private worker/n8n host.
 
 ## n8n Lead Job Workflow
 
@@ -61,7 +66,9 @@ Webhook input from the frontend:
     },
     "lead_pack": {
       "limit": 10,
+      "max_analyzed": 3000,
       "min_score": 75,
+      "fill_until_complete": true,
       "mode": "verified"
     },
     "quality": {
@@ -71,7 +78,7 @@ Webhook input from the frontend:
     },
     "delivery": {
       "format": "all",
-      "output_dir": "/srv/exportflow/runs/uuid"
+      "output_dir": "exports/worker-runs/uuid/exports"
     }
   }
 }
@@ -81,7 +88,7 @@ Recommended n8n nodes:
 
 1. Webhook: `POST /webhook/exportflow-lead-job`, validate `x-exportflow-secret`.
 2. HTTP Request: call the VPS worker API.
-3. Later: add status polling, Supabase upload, and customer email delivery.
+3. Optional email node: notify the customer when the app marks the job `delivered`.
 
 If your n8n has no **Execute Command** node, run the worker API on the VPS:
 
@@ -105,19 +112,19 @@ Body Content Type: JSON
 Body:
 {
   "job_id": "{{ $json.body.job_id }}",
+  "status_callback": "{{ $json.body.status_callback }}",
+  "export_callback": "{{ $json.body.export_callback }}",
   "job_config": {{ JSON.stringify($json.body.job_config) }}
 }
 ```
 
-The worker writes run files under:
+The worker writes logs, events, and default export files under:
 
 ```text
 exports/worker-runs/<job_id>/
 ```
 
-It returns immediately with `202`, then the scraper keeps running in the background.
-
-When you are ready for delivery automation, add nodes to upload generated `.xlsx`, `.csv`, and `.json` files to Supabase Storage bucket `lead-exports`, then POST registered files to `export_callback`:
+It returns immediately with `202`, then the scraper keeps running in the background. While the job runs, the worker reads `events.jsonl` and posts progress events to `status_callback`. After the scraper finishes, the worker uploads generated `.xlsx`, `.csv`, and `.json` files to Supabase Storage bucket `lead-exports`, then POSTs registered files to `export_callback`:
 
    ```json
    {
@@ -132,6 +139,8 @@ When you are ready for delivery automation, add nodes to upload generated `.xlsx
    }
    ```
 Finally, send the customer email when exports are registered.
+
+If `export_callback` is not supplied, the worker registers exports directly through Supabase REST using `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## Worker Contract
 

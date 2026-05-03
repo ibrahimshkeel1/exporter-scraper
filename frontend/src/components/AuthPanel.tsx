@@ -12,6 +12,7 @@ type AuthPanelProps = {
 export function AuthPanel({ compact = false, onSessionChange }: AuthPanelProps) {
   const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [currentEmail, setCurrentEmail] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -30,8 +31,25 @@ export function AuthPanel({ compact = false, onSessionChange }: AuthPanelProps) 
     return () => listener.subscription.unsubscribe();
   }, [onSessionChange, supabase]);
 
-  async function signIn(event: FormEvent<HTMLFormElement>) {
+  async function signInWithPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!supabase) {
+      setMessage("Supabase public env vars are not configured.");
+      return;
+    }
+    setLoading(true);
+    setMessage("");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    setLoading(false);
+    setMessage(error ? error.message : "Signed in.");
+  }
+
+  async function sendEmailLink() {
     if (!supabase) {
       setMessage("Supabase public env vars are not configured.");
       return;
@@ -81,11 +99,11 @@ export function AuthPanel({ compact = false, onSessionChange }: AuthPanelProps) 
   }
 
   return (
-    <form className={compact ? "row" : "panel panel-inner stack"} onSubmit={signIn}>
+    <form className={compact ? "row" : "panel panel-inner stack"} onSubmit={signInWithPassword}>
       {!compact && (
         <div className="tight-stack">
           <h3>Sign in</h3>
-          <p>Use email login for the first-circle launch. Supabase handles the session.</p>
+          <p>Password login avoids local testing email limits. Email links remain available as a fallback.</p>
         </div>
       )}
       <div className="field" style={{ flex: 1 }}>
@@ -100,9 +118,25 @@ export function AuthPanel({ compact = false, onSessionChange }: AuthPanelProps) 
           required
         />
       </div>
+      <div className="field" style={{ flex: 1 }}>
+        <label htmlFor="password">Password</label>
+        <input
+          id="password"
+          className="input"
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+        />
+      </div>
       <button className="btn btn-primary" type="submit" disabled={loading}>
-        {loading ? <Mail size={16} aria-hidden="true" /> : <LogIn size={16} aria-hidden="true" />}
-        {loading ? "Sending" : "Email link"}
+        <LogIn size={16} aria-hidden="true" />
+        {loading ? "Signing in" : "Password login"}
+      </button>
+      <button className="btn btn-secondary" type="button" onClick={sendEmailLink} disabled={loading || !email}>
+        <Mail size={16} aria-hidden="true" />
+        Email link
       </button>
       {message && <p className="muted">{message}</p>}
     </form>

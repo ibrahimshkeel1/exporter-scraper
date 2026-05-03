@@ -11,6 +11,9 @@ Thumbs.db
 venv/
 env/
 .env
+.env.local
+.env.*
+!.env.example
 node_modules/
 .next/
 *.tsbuildinfo
@@ -27,10 +30,12 @@ playwright/.cache/
 *.json
 *.png
 *.html
+/tmp*/
+/scraper/tests/tmp*/
 !README.md
 !PROJECT_PLAN.md
 !n8n_*.json
 !scraper/job_config.example.json
 !frontend/*.json
 !frontend/**/*.json
-exports/
+/exports/

@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Check, RefreshCw, RotateCcw, X } from "lucide-react";
+import { Check, KeyRound, RefreshCw, RotateCcw, X } from "lucide-react";
 import { StatusPill } from "@/components/StatusPill";
 import { LeadJob } from "@/lib/types";
 
 export function AdminConsole() {
   const [password, setPassword] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [userPassword, setUserPassword] = useState("");
   const [jobs, setJobs] = useState<LeadJob[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -49,6 +51,30 @@ export function AdminConsole() {
     await loadJobs();
   }
 
+  async function setLoginPassword() {
+    setMessage("");
+    const response = await fetch("/api/admin/users/password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-password": password
+      },
+      body: JSON.stringify({
+        email: userEmail,
+        password: userPassword
+      })
+    });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setMessage(payload.error ?? "Could not set login password.");
+      return;
+    }
+
+    setMessage(`Password ${payload.mode === "created" ? "created" : "updated"} for ${userEmail}.`);
+    setUserPassword("");
+  }
+
   return (
     <div className="stack">
       <div className="panel panel-inner stack">
@@ -72,6 +98,39 @@ export function AdminConsole() {
             onChange={(event) => setPassword(event.target.value)}
             placeholder="ADMIN_PASSWORD"
           />
+        </div>
+        <div className="row">
+          <div className="field" style={{ flex: 1 }}>
+            <label htmlFor="login-email">User email</label>
+            <input
+              id="login-email"
+              className="input"
+              type="email"
+              value={userEmail}
+              onChange={(event) => setUserEmail(event.target.value)}
+              placeholder="customer@example.com"
+            />
+          </div>
+          <div className="field" style={{ flex: 1 }}>
+            <label htmlFor="login-password">Set password</label>
+            <input
+              id="login-password"
+              className="input"
+              type="password"
+              value={userPassword}
+              onChange={(event) => setUserPassword(event.target.value)}
+              placeholder="At least 8 characters"
+            />
+          </div>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            onClick={setLoginPassword}
+            disabled={!password || !userEmail || userPassword.length < 8}
+          >
+            <KeyRound size={16} aria-hidden="true" />
+            Set login
+          </button>
         </div>
         {message && <div className="notice">{message}</div>}
       </div>
@@ -106,7 +165,7 @@ export function AdminConsole() {
                 <td>
                   <strong>{job.customer_email}</strong>
                   <p>
-                    {job.plan_name} · ${job.price_usd}
+                    {job.plan_name} - ${job.price_usd}
                   </p>
                 </td>
                 <td>
@@ -118,7 +177,7 @@ export function AdminConsole() {
                     <StatusPill status={job.payment_status} />
                     {job.payment_proofs?.map((proof) => (
                       <span className="muted" key={proof.id}>
-                        {proof.transaction_id || "proof"} {proof.storage_path ? `· ${proof.storage_path}` : ""}
+                        {proof.transaction_id || "proof"} {proof.storage_path ? `- ${proof.storage_path}` : ""}
                       </span>
                     ))}
                   </div>

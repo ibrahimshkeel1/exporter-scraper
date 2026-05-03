@@ -22,17 +22,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const message = String(body.message ?? "Worker event received.");
   const supabase = createAdminSupabase();
 
-  await supabase.from("job_events").insert({
+  const { error: eventError } = await supabase.from("job_events").insert({
     job_id: id,
     status,
     message,
     metadata: body
   });
+  if (eventError) {
+    return NextResponse.json({ error: eventError.message }, { status: 500 });
+  }
 
   const statusMap: Record<string, string> = {
     starting: "running",
     discovering: "running",
     discovered: "running",
+    analyzing: "running",
     enriching: "running",
     enriched: "running",
     scoring: "running",
@@ -42,13 +46,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
   };
 
   const mappedStatus = statusMap[status] ?? "running";
-  await supabase
+  const { error: updateError } = await supabase
     .from("lead_jobs")
     .update({
       status: mappedStatus,
       error_message: mappedStatus === "failed" ? message : null
     })
     .eq("id", id);
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }

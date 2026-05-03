@@ -130,7 +130,7 @@ export function LeadRequestWizard({ onJobCreated }: WizardProps) {
               >
                 <strong>{leadPack.name}</strong>
                 <span className="muted">
-                  ${leadPack.priceUsd} · {leadPack.leads} verified leads
+                  ${leadPack.priceUsd} - {leadPack.leads} verified leads
                 </span>
               </button>
             ))}
@@ -239,7 +239,7 @@ export function LeadRequestWizard({ onJobCreated }: WizardProps) {
             {preflight.searchTerms.length > 0 && (
               <div className="tight-stack">
                 <strong>Search terms</strong>
-                <p>{preflight.searchTerms.join(" · ")}</p>
+                <p>{preflight.searchTerms.join(" | ")}</p>
               </div>
             )}
             {preflight.warnings.length > 0 && <p>{preflight.warnings.join(" ")}</p>}

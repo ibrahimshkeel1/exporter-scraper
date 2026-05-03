@@ -7,7 +7,7 @@ export default function HomePage() {
     <main className="shell">
       <section className="hero-grid">
         <div className="hero-copy">
-          <span className="eyebrow">Pakistan exporters · Apparel/Textile v1</span>
+          <span className="eyebrow">Pakistan exporters - Apparel/Textile v1</span>
           <h1>Verified buyer leads with evidence, contact routes, and export-ready files.</h1>
           <p>
             ExportFlow turns a niche and target market into scored buyer leads for USA, UK, and Europe. Gemini reviews the brief, n8n queues the worker, and the VPS scraper delivers XLSX, CSV, or JSON.

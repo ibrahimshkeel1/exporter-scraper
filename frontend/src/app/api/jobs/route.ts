@@ -52,6 +52,8 @@ export async function POST(request: NextRequest) {
 
   const adminBypassCode = process.env.ADMIN_BYPASS_CODE;
   const bypassed = Boolean(body.adminBypassCode && adminBypassCode && body.adminBypassCode === adminBypassCode);
+  const leadLimit = bypassed ? 1 : pack.leads;
+  const priceUsd = bypassed ? 0 : pack.priceUsd;
   const supabase = createAdminSupabase();
 
   const { data: inserted, error: insertError } = await supabase
@@ -62,9 +64,9 @@ export async function POST(request: NextRequest) {
       status: bypassed ? "approved" : "payment_pending",
       payment_status: bypassed ? "not_required" : "pending",
       plan_id: pack.id,
-      plan_name: pack.name,
-      price_usd: pack.priceUsd,
-      lead_limit: pack.leads,
+      plan_name: bypassed ? `${pack.name} demo` : pack.name,
+      price_usd: priceUsd,
+      lead_limit: leadLimit,
       target_region: body.region,
       original_industry: body.productCategory,
       refined_industry: preflight.refinedIndustry,

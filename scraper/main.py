@@ -46,6 +46,8 @@ def apply_job_config(args, config):
         "audit_output": "audit_output",
         "format": "format",
         "test_mode": "test_mode",
+        "max_analyzed": "max_analyzed",
+        "search_terms": "search_terms",
         "hunt_first_a_plus": "hunt_first_a_plus",
         "hunt_max_analyzed": "hunt_max_analyzed",
         "a_plus_score": "a_plus_score",
@@ -66,11 +68,15 @@ def apply_job_config(args, config):
         args.industry = targeting["industry"]
     elif targeting.get("search_terms"):
         args.industry = " ".join(targeting["search_terms"])
+    if targeting.get("search_terms"):
+        args.search_terms = list(targeting["search_terms"])
 
     if lead_pack.get("limit") is not None:
         args.limit = int(lead_pack["limit"])
     if lead_pack.get("min_score") is not None:
         args.min_score = int(lead_pack["min_score"])
+    if lead_pack.get("max_analyzed") is not None:
+        args.max_analyzed = int(lead_pack["max_analyzed"])
     if lead_pack.get("mode") == "a_plus":
         args.hunt_first_a_plus = True
         args.a_plus_score = max(args.a_plus_score, 85)
@@ -96,6 +102,19 @@ def apply_job_config(args, config):
     return args
 
 
+def compute_discovery_limit(limit, test_mode=False, max_analyzed=None):
+    if max_analyzed is not None:
+        hard_cap = max(limit, int(max_analyzed))
+        if test_mode:
+            default_test_limit = min(120, max(limit * 20, 80))
+            return max(limit, min(hard_cap, default_test_limit))
+        return hard_cap
+
+    if test_mode:
+        return min(120, max(limit * 20, 80))
+    return max(limit * 300, 1000)
+
+
 async def run_scraper(
     region,
     industry,
@@ -109,6 +128,8 @@ async def run_scraper(
     allow_weak_buyer_evidence=False,
     status_output=None,
     job_id=None,
+    max_analyzed=None,
+    search_terms=None,
 ):
     print(
         f"Starting scraper | Region: {region} | Industry: {industry} | Limit: {limit} | Test mode: {test_mode}"
@@ -137,12 +158,18 @@ async def run_scraper(
     from modules.export import LeadExport
     from modules.scoring import LeadScoring
     
-    discovery_limit = min(120, limit * 12) if test_mode else max(limit * 20, 80)
-    discovery = LeadDiscovery(limit=discovery_limit)
+    discovery_limit = compute_discovery_limit(
+        limit=limit,
+        test_mode=test_mode,
+        max_analyzed=max_analyzed,
+    )
+    discovery = LeadDiscovery(limit=discovery_limit, search_terms=search_terms)
     run_id = f"run-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
     
     candidates = []
     enriched_candidates = []
+    scored_candidates = []
+    top_leads = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
@@ -167,25 +194,59 @@ async def run_scraper(
         )
 
         if candidates:
-            emit_progress(
-                "enriching",
-                "Enriching candidates with contact and buyer evidence.",
-                status_output=status_output,
-                job_id=job_id,
-                candidate_count=len(candidates),
+            scoring = LeadScoring(
+                require_email=not allow_no_email,
+                require_buyer_evidence=not allow_weak_buyer_evidence,
             )
             enrichment = LeadEnrichment(
                 concurrency=4,
                 max_extra_pages=12,
                 browser_context=context,
             )
-            enriched_candidates = await enrichment.run_enrichment(candidates)
+            batch_size = 60 if test_mode else max(80, min(160, limit * 12))
+            total_batches = (len(candidates) + batch_size - 1) // batch_size
+
+            for batch_index, start in enumerate(range(0, len(candidates), batch_size), start=1):
+                batch = candidates[start : start + batch_size]
+                emit_progress(
+                    "enriching",
+                    "Enriching candidate batch to fill paid lead pack.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    batch_index=batch_index,
+                    total_batches=total_batches,
+                    batch_size=len(batch),
+                    analyzed_count=len(scored_candidates),
+                    qualified_count=len(top_leads),
+                    target_count=limit,
+                )
+                enriched_batch = await enrichment.run_enrichment(batch)
+                enriched_candidates.extend(enriched_batch)
+                scored_candidates.extend(scoring.evaluate_candidate(candidate) for candidate in enriched_batch)
+                top_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
+                emit_progress(
+                    "scoring",
+                    "Lead pack fill progress.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    analyzed_count=len(scored_candidates),
+                    qualified_count=len(top_leads),
+                    target_count=limit,
+                    remaining_candidates=max(len(candidates) - len(scored_candidates), 0),
+                    min_score=min_score,
+                )
+                if len(top_leads) >= limit:
+                    break
+
             emit_progress(
                 "enriched",
                 "Candidate enrichment completed.",
                 status_output=status_output,
                 job_id=job_id,
                 enriched_count=len(enriched_candidates),
+                qualified_count=len(top_leads),
+                target_count=limit,
+                candidate_count=len(candidates),
             )
 
         await browser.close()
@@ -200,22 +261,8 @@ async def run_scraper(
         )
         return
 
-    emit_progress(
-        "scoring",
-        "Scoring and filtering qualified leads.",
-        status_output=status_output,
-        job_id=job_id,
-        enriched_count=len(enriched_candidates),
-        min_score=min_score,
-    )
-    scoring = LeadScoring(
-        require_email=not allow_no_email,
-        require_buyer_evidence=not allow_weak_buyer_evidence,
-    )
-    scored_candidates = [scoring.evaluate_candidate(candidate) for candidate in enriched_candidates]
-    top_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
     print(
-        f"Quality filter: {len(top_leads)} qualified leads from {len(scored_candidates)} enriched candidates"
+        f"Quality filter: {len(top_leads)}/{limit} qualified leads from {len(scored_candidates)} enriched candidates"
     )
 
     emit_progress(
@@ -224,6 +271,7 @@ async def run_scraper(
         status_output=status_output,
         job_id=job_id,
         qualified_count=len(top_leads),
+        target_count=limit,
         analyzed_count=len(scored_candidates),
         output=output,
         output_format=output_format,
@@ -245,16 +293,38 @@ async def run_scraper(
             run_id=run_id,
             output_format=output_format,
         )
+    filled_pack = len(top_leads) >= limit
+    if not filled_pack:
+        message = "Could not fill the paid lead pack before the candidate hard cap."
+        emit_progress(
+            "failed",
+            message,
+            status_output=status_output,
+            job_id=job_id,
+            qualified_count=len(top_leads),
+            target_count=limit,
+            analyzed_count=len(scored_candidates),
+            output=output,
+            output_format=output_format,
+            audit_output=audit_output or "",
+            filled_pack=False,
+        )
+        raise RuntimeError(
+            f"{message} Qualified {len(top_leads)}/{limit} after analyzing {len(scored_candidates)} candidates."
+        )
+
     emit_progress(
         "delivered",
         "Scraper job completed.",
         status_output=status_output,
         job_id=job_id,
         qualified_count=len(top_leads),
+        target_count=limit,
         analyzed_count=len(scored_candidates),
         output=output,
         output_format=output_format,
         audit_output=audit_output or "",
+        filled_pack=True,
     )
 
 async def run_hunt_first_a_plus(
@@ -482,6 +552,19 @@ if __name__ == "__main__":
     )
     parser.add_argument("--limit", type=int, default=10, help="Final number of leads to export")
     parser.add_argument("--min-score", type=int, default=75, help="Minimum qualification score (0-100)")
+    parser.add_argument(
+        "--max-analyzed",
+        type=int,
+        default=None,
+        help="Maximum candidates to analyze while filling the requested lead pack.",
+    )
+    parser.add_argument(
+        "--search-term",
+        action="append",
+        dest="search_terms",
+        default=[],
+        help="Additional search query from the SaaS targeting preflight. Can be provided multiple times.",
+    )
     parser.add_argument("--output", default="buyer_leads.csv", help="Output base file name")
     parser.add_argument(
         "--audit-output",
@@ -554,6 +637,8 @@ if __name__ == "__main__":
                 allow_weak_buyer_evidence=args.allow_weak_buyer_evidence,
                 status_output=args.status_output,
                 job_id=args.job_id,
+                max_analyzed=args.max_analyzed,
+                search_terms=args.search_terms,
             ))
     except Exception as exc:
         emit_progress(

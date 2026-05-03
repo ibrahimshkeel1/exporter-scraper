@@ -90,6 +90,9 @@ class LeadDiscovery:
         "thryv.com",
         "baidu.com",
         "zhihu.com",
+        "cookie-script.com",
+        "merriam-webster.com",
+        "visable.com",
     }
     EXCLUDED_PATH_PARTS = (
         "/cart",
@@ -119,8 +122,9 @@ class LeadDiscovery:
         ".vn",
     )
 
-    def __init__(self, limit=30):
+    def __init__(self, limit=30, search_terms=None):
         self.limit = limit
+        self.search_terms = [term for term in (search_terms or []) if term]
         self.seen_domains = set()
 
     @staticmethod
@@ -337,7 +341,18 @@ class LeadDiscovery:
             "UK": "United Kingdom",
             "Europe": "Europe",
         }.get(region, region)
-        return [
+        supplied_queries = []
+        for term in self.search_terms:
+            normalized = term.strip()
+            if not normalized:
+                continue
+            if region.lower() not in normalized.lower() and market.lower() not in normalized.lower():
+                normalized = f"{normalized} {market}"
+            supplied_queries.append(
+                f"{normalized} -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter"
+            )
+
+        default_queries = [
             f'{base} importer wholesaler distributor "{market}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
             f'{base} wholesale buyer retailer "{market}" contact email -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
             f'{base} private label clothing brand sourcing "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
@@ -349,13 +364,26 @@ class LeadDiscovery:
             f'"{base} retailer" "vendor application" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
             f'"{base} brand" "wholesale" "contact" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
         ]
+        if region == "Europe":
+            for country in ("Germany", "France", "Netherlands", "Italy", "Spain", "Poland", "Sweden"):
+                default_queries.extend(
+                    [
+                        f'{base} importer wholesaler distributor "{country}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                        f'{base} retailer "supplier portal" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                        f'{base} brand "vendor application" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                    ]
+                )
+
+        return list(dict.fromkeys(supplied_queries + default_queries))
 
     def _search_sources(self, region, industry):
         sources = []
         for query in self._buyer_search_queries(region, industry):
             slug = self._slug(query)
             encoded = quote_plus(query)
-            for page_number, first in enumerate((1, 11, 21, 31, 41), start=1):
+            bing_pages = (1, 11, 21, 31, 41) if region != "Europe" else (1, 11, 21)
+            duckduckgo_pages = (0, 30, 60) if region != "Europe" else ()
+            for page_number, first in enumerate(bing_pages, start=1):
                 sources.append(
                     DiscoverySource(
                         name=f"bing-p{page_number}-{slug}",
@@ -368,7 +396,7 @@ class LeadDiscovery:
                         discovery_method="search",
                     )
                 )
-            for page_number, offset in enumerate((0, 30, 60), start=1):
+            for page_number, offset in enumerate(duckduckgo_pages, start=1):
                 sources.append(
                     DiscoverySource(
                         name=f"duckduckgo-p{page_number}-{slug}",
@@ -464,6 +492,15 @@ class LeadDiscovery:
                 ),
             ]
             return sources + self._search_sources(region, industry)
+        buyer_intent_sources = [
+            DiscoverySource(
+                name="seed-europe-buyer-intent-pages",
+                url="seed://europe-buyer-intent-pages",
+                selectors=(),
+                discovery_method="curated_seed",
+                candidate_kind="seed_list",
+            ),
+        ]
         sources = [
             DiscoverySource(
                 name="europages-buyer-search",
@@ -474,7 +511,7 @@ class LeadDiscovery:
                 ),
             ),
         ]
-        return sources + self._search_sources(region, industry)
+        return buyer_intent_sources + sources + self._search_sources(region, industry)
 
     async def run_discovery(self, page, region, industry="clothing brands"):
         print(
@@ -529,6 +566,29 @@ class LeadDiscovery:
 
     @staticmethod
     def seed_urls(region, source_name="seed-usa-apparel-buyers"):
+        if region == "Europe" and source_name == "seed-europe-buyer-intent-pages":
+            return [
+                "https://partnerportal.zalando.com/",
+                "https://www.zalando.com/supplier/",
+                "https://www.aboutyou.com/",
+                "https://www.asos.com/",
+                "https://www.decathlon.com/",
+                "https://www.intersport.com/",
+                "https://www.inditex.com/",
+                "https://www.bestseller.com/",
+                "https://www2.hm.com/",
+                "https://www.c-and-a.com/",
+                "https://www.primark.com/",
+                "https://www.next.co.uk/",
+                "https://www.sportsdirect.com/",
+                "https://www.jdsports.co.uk/",
+                "https://www.otto.de/",
+                "https://www.galeria.de/",
+                "https://www.elcorteingles.es/",
+                "https://www.laredoute.com/",
+                "https://www.bonprix.com/",
+                "https://www.spartoo.com/",
+            ]
         if region != "USA":
             return []
         buyer_intent_urls = [

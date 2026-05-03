@@ -11,6 +11,8 @@ type JobTableProps = {
   refreshSignal: number;
 };
 
+type LeadExportFile = NonNullable<LeadJob["lead_exports"]>[number];
+
 export function JobTable({ refreshSignal }: JobTableProps) {
   const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
   const [jobs, setJobs] = useState<LeadJob[]>([]);
@@ -47,6 +49,24 @@ export function JobTable({ refreshSignal }: JobTableProps) {
     }
 
     setJobs(payload.jobs ?? []);
+  }
+
+  async function downloadExport(file: LeadExportFile) {
+    if (file.public_url) {
+      window.open(file.public_url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (!supabase || !file.storage_path) {
+      setMessage("No download URL is available for this export yet.");
+      return;
+    }
+
+    const { data, error } = await supabase.storage.from("lead-exports").createSignedUrl(file.storage_path, 60 * 60);
+    if (error || !data?.signedUrl) {
+      setMessage(error?.message ?? "Could not create a download link.");
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
   useEffect(() => {
@@ -98,7 +118,7 @@ export function JobTable({ refreshSignal }: JobTableProps) {
                 <td>
                   <strong>{job.plan_name}</strong>
                   <p>
-                    {job.lead_limit} leads · ${job.price_usd}
+                    {job.lead_limit} leads - ${job.price_usd}
                   </p>
                 </td>
                 <td>
@@ -117,17 +137,11 @@ export function JobTable({ refreshSignal }: JobTableProps) {
                 <td>
                   <div className="tight-stack">
                     {job.lead_exports && job.lead_exports.length > 0 ? (
-                      job.lead_exports.map((file) =>
-                        file.public_url ? (
-                          <a className="btn btn-secondary" key={file.id} href={file.public_url}>
-                            {file.format.toUpperCase()}
-                          </a>
-                        ) : (
-                          <span className="muted" key={file.id}>
-                            {file.format}: {file.storage_path}
-                          </span>
-                        )
-                      )
+                      job.lead_exports.map((file) => (
+                        <button className="btn btn-secondary" key={file.id} type="button" onClick={() => downloadExport(file)}>
+                          {file.format.toUpperCase()}
+                        </button>
+                      ))
                     ) : (
                       <span className="muted">Waiting for delivery</span>
                     )}

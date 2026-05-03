@@ -12,7 +12,9 @@
   },
   "lead_pack": {
     "limit": 10,
+    "max_analyzed": 3000,
     "min_score": 75,
+    "fill_until_complete": true,
     "mode": "verified"
   },
   "quality": {

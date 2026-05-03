@@ -63,6 +63,18 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertIn("https://www.bedheadpjs.com/", generic_urls)
         self.assertNotIn("https://www.bedheadpjs.com/", buyer_intent_urls)
 
+    def test_search_terms_are_prioritized(self):
+        discovery = LeadDiscovery(limit=10, search_terms=["socks importer USA"])
+        queries = discovery._buyer_search_queries("USA", "apparel")
+
+        self.assertTrue(queries[0].startswith("socks importer USA"))
+
+    def test_europe_sources_include_buyer_intent_seeds(self):
+        sources = self.discovery.generate_sources("Europe", "apparel")
+
+        self.assertEqual(sources[0].name, "seed-europe-buyer-intent-pages")
+        self.assertGreater(len(self.discovery.seed_urls("Europe", "seed-europe-buyer-intent-pages")), 10)
+
 
 if __name__ == "__main__":
     unittest.main()

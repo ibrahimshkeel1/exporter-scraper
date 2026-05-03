@@ -36,6 +36,8 @@ python "final scrapper.py" --job-config scraper/job_config.example.json --status
 - `--industry`: discovery query seed (default: `clothing brands`)
 - `--limit`: final number of leads to export (default: `10`)
 - `--min-score`: minimum score threshold from `0` to `100` (default: `75`)
+- `--max-analyzed`: candidate analysis hard cap for filling a requested lead pack
+- `--search-term`: prioritized discovery query from SaaS targeting preflight; can be repeated
 - `--output`: output base file name (default: `buyer_leads.csv`)
 - `--audit-output`: optional output base file for all scored candidates, including rejected leads
 - `--format`: `csv`, `json`, `xlsx`, `both`, or `all` (default: `csv`)
@@ -79,7 +81,9 @@ npm run dev
 
 Copy `frontend/.env.example` to `frontend/.env.local`, fill Supabase, Gemini, n8n, and admin values, then run the Supabase schema in `supabase/schema.sql`.
 
-See `docs/saas-implementation.md` for the n8n/VPS handoff.
+See `docs/saas-implementation.md` for the n8n/VPS handoff and `docs/vps-worker-deploy.md` for upload/restart commands.
+
+The optional VPS worker API lives at `worker_api.py`. It accepts approved jobs from n8n, forwards scraper progress to the app, uploads private exports to Supabase Storage, and registers delivery. Worker exports default to `exports/worker-runs/<job_id>/exports` unless `WORKER_OUTPUT_BASE_DIR` is set in the frontend environment.
 
 ## Ethics and Compliance
 
