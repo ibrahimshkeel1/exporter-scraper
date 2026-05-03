@@ -42,4 +42,8 @@ networks:
 
 volumes:
   db_storage:
+    external: true
+    name: n8n-automation_db_storage
   n8n_storage:
+    external: true
+    name: n8n-automation_n8n_storage
