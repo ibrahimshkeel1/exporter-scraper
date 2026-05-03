@@ -1,6 +1,6 @@
 import { ArrowRight, CheckCircle2, Database, Mail, ServerCog, Sparkles } from "lucide-react";
-import { AuthPanel } from "@/components/AuthPanel";
-import { leadPacks } from "@/lib/pricing";
+import { AuthPanel } from "../components/AuthPanel";
+import { leadPacks } from "../lib/pricing";
 
 export default function HomePage() {
   return (

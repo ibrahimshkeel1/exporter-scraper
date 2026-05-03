@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { Upload } from "lucide-react";
-import { createBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase-client";
+import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 
 type PaymentProofUploadProps = {
   jobId: string;

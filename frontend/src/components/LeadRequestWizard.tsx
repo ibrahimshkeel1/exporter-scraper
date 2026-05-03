@@ -2,9 +2,9 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Play, Sparkles } from "lucide-react";
-import { buyerTypes, exportFormats, getLeadPack, leadPacks, regions } from "@/lib/pricing";
-import { createBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase-client";
-import { TargetingPreflight } from "@/lib/types";
+import { buyerTypes, exportFormats, getLeadPack, leadPacks, regions } from "../lib/pricing";
+import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
+import { TargetingPreflight } from "../lib/types";
 
 type WizardProps = {
   onJobCreated?: () => void;

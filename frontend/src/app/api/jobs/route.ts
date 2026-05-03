@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromRequest } from "@/lib/api-auth";
-import { buildScraperJobConfig } from "@/lib/job-config";
-import { getLeadPack } from "@/lib/pricing";
-import { createAdminSupabase } from "@/lib/supabase-admin";
-import { LeadJob, LeadRequestInput, TargetingPreflight } from "@/lib/types";
-import { triggerLeadJob } from "@/lib/n8n";
+import { getUserFromRequest } from "../../../lib/api-auth";
+import { buildScraperJobConfig } from "../../../lib/job-config";
+import { getLeadPack } from "../../../lib/pricing";
+import { createAdminSupabase } from "../../../lib/supabase-admin";
+import { LeadJob, LeadRequestInput, TargetingPreflight } from "../../../lib/types";
+import { triggerLeadJob } from "../../../lib/n8n";
 
 async function addJobEvent(jobId: string, status: string, message: string, metadata = {}) {
   const supabase = createAdminSupabase();

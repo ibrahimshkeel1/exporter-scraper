@@ -1,4 +1,4 @@
-import { LeadJobStatus } from "@/lib/types";
+import { LeadJobStatus } from "../lib/types";
 
 export function StatusPill({ status }: { status: LeadJobStatus | string }) {
   let colorClass = "bg-gray-100 text-gray-800 border-gray-200";

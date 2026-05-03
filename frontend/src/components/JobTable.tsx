@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, TerminalSquare } from "lucide-react";
-import { PaymentProofUpload } from "@/components/PaymentProofUpload";
-import { StatusPill } from "@/components/StatusPill";
-import { JobLogViewer, JobEvent } from "@/components/JobLogViewer";
-import { createBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase-client";
-import { LeadJob } from "@/lib/types";
+import { PaymentProofUpload } from "./PaymentProofUpload";
+import { StatusPill } from "./StatusPill";
+import { JobLogViewer, JobEvent } from "./JobLogViewer";
+import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
+import { LeadJob } from "../lib/types";
 
 type JobTableProps = {
   refreshSignal: number;

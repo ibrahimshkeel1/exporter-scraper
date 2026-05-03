@@ -1,4 +1,4 @@
-import { LeadJob } from "@/lib/types";
+import { LeadJob } from "./types";
 
 function getAppUrl() {
   const rawUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL;

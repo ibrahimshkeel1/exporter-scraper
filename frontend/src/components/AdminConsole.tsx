@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { Check, KeyRound, RefreshCw, RotateCcw, X, TerminalSquare } from "lucide-react";
-import { StatusPill } from "@/components/StatusPill";
-import { JobLogViewer, JobEvent } from "@/components/JobLogViewer";
-import { LeadJob } from "@/lib/types";
+import { StatusPill } from "./StatusPill";
+import { JobLogViewer, JobEvent } from "./JobLogViewer";
+import { LeadJob } from "../lib/types";
 
 export function AdminConsole() {
   const [password, setPassword] = useState("");

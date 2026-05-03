@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runTargetingPreflight } from "@/lib/gemini";
+import { runTargetingPreflight } from "../../../lib/gemini";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();

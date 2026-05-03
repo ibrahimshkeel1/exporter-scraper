@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromRequest } from "@/lib/api-auth";
-import { createAdminSupabase } from "@/lib/supabase-admin";
+import { getUserFromRequest } from "../../../../../lib/api-auth";
+import { createAdminSupabase } from "../../../../../lib/supabase-admin";
 
 type RouteContext = {
   params: Promise<{ id: string }>;

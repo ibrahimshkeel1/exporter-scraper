@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertAdmin } from "@/lib/api-auth";
-import { triggerLeadJob } from "@/lib/n8n";
-import { createAdminSupabase } from "@/lib/supabase-admin";
-import { LeadJob } from "@/lib/types";
+import { assertAdmin } from "../../../../../lib/api-auth";
+import { triggerLeadJob } from "../../../../../lib/n8n";
+import { createAdminSupabase } from "../../../../../lib/supabase-admin";
+import { LeadJob } from "../../../../../lib/types";
 
 type RouteContext = {
   params: Promise<{ id: string }>;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertAdmin } from "@/lib/api-auth";
-import { createAdminSupabase } from "@/lib/supabase-admin";
+import { assertAdmin } from "../../../../../lib/api-auth";
+import { createAdminSupabase } from "../../../../../lib/supabase-admin";
 
 function normalizeEmail(value: unknown) {
   return String(value ?? "").trim().toLowerCase();

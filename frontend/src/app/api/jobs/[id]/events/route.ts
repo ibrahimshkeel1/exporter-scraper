@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminSupabase } from "@/lib/supabase-admin";
+import { createAdminSupabase } from "../../../../../lib/supabase-admin";
 
 type RouteContext = {
   params: Promise<{ id: string }>;

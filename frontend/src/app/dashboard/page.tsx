@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { AuthPanel } from "@/components/AuthPanel";
-import { JobTable } from "@/components/JobTable";
-import { LeadRequestWizard } from "@/components/LeadRequestWizard";
+import { AuthPanel } from "../../components/AuthPanel";
+import { JobTable } from "../../components/JobTable";
+import { LeadRequestWizard } from "../../components/LeadRequestWizard";
 
 export default function DashboardPage() {
   const [refreshSignal, setRefreshSignal] = useState(0);

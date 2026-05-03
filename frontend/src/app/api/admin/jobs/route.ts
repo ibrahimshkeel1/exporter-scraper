@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertAdmin } from "@/lib/api-auth";
-import { createAdminSupabase } from "@/lib/supabase-admin";
+import { assertAdmin } from "../../../../lib/api-auth";
+import { createAdminSupabase } from "../../../../lib/supabase-admin";
 
 export async function GET(request: NextRequest) {
   const admin = assertAdmin(request);

@@ -1,5 +1,5 @@
-import { getLeadPack } from "@/lib/pricing";
-import { LeadRequestInput, TargetingPreflight } from "@/lib/types";
+import { getLeadPack } from "./pricing";
+import { LeadRequestInput, TargetingPreflight } from "./types";
 
 function buildWorkerOutputDir(jobId: string) {
   const baseDir = (process.env.WORKER_OUTPUT_BASE_DIR || "exports/worker-runs").replace(/\/+$/, "");

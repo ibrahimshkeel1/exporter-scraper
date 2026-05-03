@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { LogIn, LogOut, Mail } from "lucide-react";
-import { createBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase-client";
+import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 
 type AuthPanelProps = {
   compact?: boolean;

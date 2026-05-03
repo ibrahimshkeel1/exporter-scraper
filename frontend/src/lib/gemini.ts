@@ -1,4 +1,4 @@
-import { TargetingPreflight } from "@/lib/types";
+import { TargetingPreflight } from "./types";
 
 type PreflightInput = {
   region: string;
