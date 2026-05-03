@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Terminal } from "lucide-react";
+import { X, Terminal, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { createBrowserSupabase } from "../lib/supabase-client";
 
@@ -21,10 +21,12 @@ type JobLogViewerProps = {
 
 export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProps) {
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
+  const [terminalLogs, setTerminalLogs] = useState<{message: string, time: string}[]>([]);
+  const [isLive, setIsLive] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const supabase = createBrowserSupabase();
 
-  // Sort events by time
+  // Combine and sort Supabase events
   const sortedEvents = [...events].sort(
     (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
   );
@@ -32,7 +34,7 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
   useEffect(() => {
     if (!jobId) return;
 
-    // Subscribe to new events for this job
+    // 1. Subscribe to Milestones via Supabase Realtime
     const channel = supabase
       .channel(`job-logs-${jobId}`)
       .on(
@@ -46,7 +48,6 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
         (payload) => {
           const newEvent = payload.new as JobEvent;
           setEvents((current) => {
-            // Avoid duplicates
             if (current.some(e => e.id === newEvent.id)) return current;
             return [...current, newEvent];
           });
@@ -54,26 +55,72 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
       )
       .subscribe();
 
+    // 2. Subscribe to Raw Terminal Noise via SSE
+    // Use worker.cristalinawater.com or similar if set, otherwise fallback to a default
+    // We assume the user has configured Nginx to proxy /api/logs to the worker
+    const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL || "https://worker.cristalinawater.com";
+    const sseUrl = `${workerUrl}/api/logs/${jobId}`;
+    
+    let eventSource: EventSource | null = null;
+    
+    const connectSSE = () => {
+      if (eventSource) eventSource.close();
+      
+      eventSource = new EventSource(sseUrl);
+      
+      eventSource.onopen = () => {
+        setIsLive(true);
+        console.log("SSE connected to worker logs");
+      };
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.message) {
+            setTerminalLogs((prev) => [
+              ...prev, 
+              { 
+                message: data.message, 
+                time: new Date().toLocaleTimeString([], { hour12: false }) 
+              }
+            ]);
+          }
+        } catch (e) {
+          console.error("Failed to parse SSE data", e);
+        }
+      };
+      
+      eventSource.onerror = (e) => {
+        setIsLive(false);
+        console.error("SSE error, reconnecting in 5s...", e);
+        eventSource?.close();
+        setTimeout(connectSSE, 5000);
+      };
+    };
+
+    connectSSE();
+
     return () => {
       supabase.removeChannel(channel);
+      if (eventSource) eventSource.close();
     };
   }, [jobId, supabase]);
 
-  // Auto-scroll to bottom when new events arrive
+  // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [events]);
+  }, [sortedEvents, terminalLogs]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
       <div 
-        className="bg-[#0a0a0a] border border-[#333] rounded-lg shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col h-[80vh]"
+        className="bg-[#0a0a0a] border border-[#333] rounded-lg shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center px-4 py-3 bg-[#1a1a1a] border-b border-[#333]">
-          <div className="flex space-x-2 w-16">
+          <div className="flex space-x-2 w-24">
             <button onClick={onClose} className="w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 focus:outline-none flex items-center justify-center group">
               <X size={8} className="text-black opacity-0 group-hover:opacity-100" />
             </button>
@@ -82,47 +129,66 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
           </div>
           <div className="flex-1 text-center text-[#888] text-xs font-mono font-medium select-none flex items-center justify-center gap-2">
             <Terminal size={12} />
-            JOB_ID: {jobId}
+            LIVE_LOGS: {jobId.slice(0, 8)}...
           </div>
-          <div className="w-16 flex justify-end">
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-500/10 border border-green-500/20">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-[10px] text-green-400 font-mono">LIVE</span>
+          <div className="w-24 flex justify-end">
+            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${isLive ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20"}`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
+              <span className={`text-[10px] font-mono ${isLive ? "text-green-400" : "text-red-400"}`}>
+                {isLive ? "LIVE" : "OFFLINE"}
+              </span>
             </div>
           </div>
         </div>
         
         <div 
           ref={scrollRef}
-          className="p-4 overflow-y-auto font-mono text-sm leading-relaxed flex-1 space-y-1 scrollbar-thin scrollbar-thumb-[#333] scrollbar-track-transparent"
+          className="p-4 overflow-y-auto font-mono text-sm leading-relaxed flex-1 space-y-1 bg-black scrollbar-thin scrollbar-thumb-[#333] scrollbar-track-transparent"
         >
-          {sortedEvents.length === 0 ? (
-            <div className="text-[#666]">Connecting to stream...</div>
-          ) : (
-            sortedEvents.map((evt, idx) => {
-              const isError = evt.status === "failed" || evt.type === "error" || evt.status === "error";
-              const isSuccess = evt.status === "completed" || evt.status === "delivered" || evt.type === "success";
-              const isTerminal = evt.type === "terminal" || evt.status === "terminal";
-              
-              let colorClass = "text-[#ccc]";
-              if (isError) colorClass = "text-red-400";
-              else if (isSuccess) colorClass = "text-green-400";
-              else if (isTerminal) colorClass = "text-blue-300";
+          {/* Historical / Milestone Events */}
+          {sortedEvents.map((evt, idx) => {
+            const isError = evt.status === "failed" || evt.type === "error";
+            const isSuccess = evt.status === "delivered" || evt.type === "success";
+            
+            let colorClass = "text-white";
+            if (isError) colorClass = "text-red-400";
+            else if (isSuccess) colorClass = "text-green-400";
+            else colorClass = "text-vercel-accent font-bold";
 
-              const time = evt.created_at ? new Date(evt.created_at).toLocaleTimeString([], { hour12: false }) : "";
+            const time = evt.created_at ? new Date(evt.created_at).toLocaleTimeString([], { hour12: false }) : "";
 
-              return (
-                <div key={evt.id || idx} className="flex gap-4 group">
-                  <span className="text-[#444] shrink-0 select-none">[{time}]</span>
-                  <span className={`${colorClass} whitespace-pre-wrap break-all`}>
-                    {!isTerminal && <span className="font-bold uppercase opacity-80">[{evt.type || evt.status || "info"}] </span>}
-                    {evt.message || JSON.stringify(evt.metadata || evt)}
-                  </span>
-                </div>
-              );
-            })
+            return (
+              <div key={evt.id || idx} className="flex gap-4 group border-l-2 border-white/5 pl-2 mb-2 bg-white/5 py-1 rounded">
+                <span className="text-[#666] shrink-0 select-none">[{time}]</span>
+                <span className={`${colorClass} whitespace-pre-wrap break-all uppercase text-[10px]`}>
+                  [{evt.status || "EVENT"}] {evt.message}
+                </span>
+              </div>
+            );
+          })}
+
+          {/* Real-time Terminal Logs */}
+          {terminalLogs.map((log, idx) => (
+            <div key={idx} className="flex gap-4 group">
+              <span className="text-[#444] shrink-0 select-none">[{log.time}]</span>
+              <span className="text-[#ccc] whitespace-pre-wrap break-all font-light">
+                {log.message}
+              </span>
+            </div>
+          ))}
+
+          {terminalLogs.length === 0 && !isLive && (
+            <div className="text-amber-500/80 animate-pulse py-2">
+              Waiting for worker output...
+            </div>
           )}
+          
           <div className="text-[#666] animate-pulse">_</div>
+        </div>
+
+        <div className="px-4 py-2 bg-[#111] border-t border-[#333] text-[10px] text-[#555] flex justify-between">
+          <span>SUPABASE_REALTIME: ENABLED</span>
+          <span>WORKER_SSE: {isLive ? "ACTIVE" : "RECONNECTING"}</span>
         </div>
       </div>
     </div>

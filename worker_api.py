@@ -172,47 +172,6 @@ async def _publish_status_event(job_id, event, status_callback=None):
         await _update_job_status(job_id, mapped_status, message if mapped_status == "failed" else None)
 
 
-async def _forward_terminal_logs(stdout_path, job_id, payload, process):
-    status_callback = payload.get("status_callback")
-    position = 0
-
-    while True:
-        if stdout_path.exists():
-            with stdout_path.open("r", encoding="utf-8", errors="replace") as file_handle:
-                file_handle.seek(position)
-                lines = file_handle.readlines()
-                position = file_handle.tell()
-
-            terminal_lines = []
-            for line in lines:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                # Skip the structured JSON events that get printed to stdout by emit_progress
-                if stripped.startswith("SCRAPER_EVENT"):
-                    continue
-                terminal_lines.append(stripped)
-            
-            if terminal_lines:
-                # Batch all new lines into a single event message to avoid webhook spam
-                message = "\n".join(terminal_lines)
-                event = {
-                    "status": "terminal",
-                    "type": "terminal",
-                    "message": message
-                }
-                try:
-                    await _publish_status_event(job_id, event, status_callback)
-                except Exception as exc:
-                    print(f"[worker] terminal log batch publish failed for job {job_id}: {exc}", flush=True)
-
-        if process.poll() is not None:
-            if not stdout_path.exists() or position >= stdout_path.stat().st_size:
-                return
-
-        await asyncio.sleep(1)
-
-
 async def _forward_status_events(status_output_path, job_id, payload, process):
     status_callback = payload.get("status_callback")
     position = 0
@@ -360,15 +319,14 @@ async def _deliver_exports(job_id, job_config, payload):
 async def _monitor_process(process, job_id, job_config, payload, status_output_path, stdout_handle, stderr_handle, stdout_path):
     status_callback = payload.get("status_callback")
     status_forwarder = asyncio.create_task(_forward_status_events(status_output_path, job_id, payload, process))
-    terminal_forwarder = asyncio.create_task(_forward_terminal_logs(stdout_path, job_id, payload, process))
     try:
         return_code = await asyncio.to_thread(process.wait)
     finally:
         stdout_handle.close()
-        stderr_handle.close()
+        if stderr_handle:
+            stderr_handle.close()
         try:
             await asyncio.wait_for(status_forwarder, timeout=10)
-            await asyncio.wait_for(terminal_forwarder, timeout=10)
         except Exception as exc:
             print(f"[worker] status forwarder did not finish cleanly for job {job_id}: {exc}", flush=True)
 
@@ -407,6 +365,52 @@ async def _monitor_process(process, job_id, job_config, payload, status_output_p
 
 async def health(_request):
     return _json_response({"ok": True, "service": "exportflow-worker"})
+
+
+async def stream_logs(request):
+    job_id = request.match_info.get("job_id")
+    log_path = RUNS_DIR / job_id / "stdout.log"
+
+    if not log_path.exists():
+        return web.Response(text="Log file not found", status=404)
+
+    response = web.StreamResponse(
+        status=200,
+        reason='OK',
+        headers={
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+        },
+    )
+    await response.prepare(request)
+
+    try:
+        with log_path.open("r", encoding="utf-8", errors="replace") as file_handle:
+            # Send current content
+            while True:
+                line = file_handle.readline()
+                if not line:
+                    break
+                event_data = json.dumps({"message": line.strip()})
+                await response.write(f"data: {event_data}\n\n".encode('utf-8'))
+
+            # Tail for new content
+            while True:
+                line = file_handle.readline()
+                if not line:
+                    # Check if process is done? For now just sleep
+                    await asyncio.sleep(0.5)
+                    continue
+                event_data = json.dumps({"message": line.strip()})
+                await response.write(f"data: {event_data}\n\n".encode('utf-8'))
+    except ConnectionResetError:
+        pass
+    except Exception as exc:
+        print(f"[worker] log stream error for job {job_id}: {exc}")
+
+    return response
 
 
 async def run_job(request):
@@ -481,6 +485,7 @@ async def run_job(request):
 def create_app():
     app = web.Application()
     app.router.add_get("/health", health)
+    app.router.add_get("/api/logs/{job_id}", stream_logs)
     app.router.add_post("/run-job", run_job)
     return app
 
