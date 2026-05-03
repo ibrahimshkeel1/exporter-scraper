@@ -35,6 +35,8 @@ services:
       - proxy-network
     depends_on:
       - db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 networks:
   proxy-network:
