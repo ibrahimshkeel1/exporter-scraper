@@ -14,6 +14,7 @@ export function AdminConsole() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeLogs, setActiveLogs] = useState<JobEvent[] | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
   async function loadJobs() {
     setLoading(true);
@@ -208,7 +209,10 @@ export function AdminConsole() {
                       </button>
                       
                       <button 
-                        onClick={() => setActiveLogs((job as any).job_events || [])}
+                        onClick={() => {
+                          setActiveJobId(job.id);
+                          setActiveLogs((job as any).job_events || []);
+                        }}
                         className="inline-flex items-center gap-1.5 bg-vercel-accent text-black hover:bg-white rounded-md px-3 py-1.5 text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_10px_rgba(255,255,255,0.1)]"
                       >
                         <TerminalSquare size={14} /> Logs
@@ -221,7 +225,16 @@ export function AdminConsole() {
           </table>
         </div>
       </div>
-      {activeLogs && <JobLogViewer events={activeLogs} onClose={() => setActiveLogs(null)} />}
+      {activeJobId && activeLogs && (
+        <JobLogViewer 
+          jobId={activeJobId} 
+          initialEvents={activeLogs} 
+          onClose={() => {
+            setActiveJobId(null);
+            setActiveLogs(null);
+          }} 
+        />
+      )}
     </div>
   );
 }
