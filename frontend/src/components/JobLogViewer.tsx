@@ -58,7 +58,8 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
     // 2. Subscribe to Raw Terminal Noise via SSE
     // Use worker.cristalinawater.com or similar if set, otherwise fallback to a default
     // We assume the user has configured Nginx to proxy /api/logs to the worker
-    const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL || "https://worker.cristalinawater.com";
+    const rawWorkerUrl = process.env.NEXT_PUBLIC_WORKER_URL || "https://worker.cristalinawater.com";
+    const workerUrl = rawWorkerUrl.endsWith("/") ? rawWorkerUrl.slice(0, -1) : rawWorkerUrl;
     const sseUrl = `${workerUrl}/api/logs/${jobId}`;
     
     let eventSource: EventSource | null = null;
