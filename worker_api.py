@@ -183,7 +183,7 @@ async def _forward_terminal_logs(stdout_path, job_id, payload, process):
                 lines = file_handle.readlines()
                 position = file_handle.tell()
 
-            batch_events = []
+            terminal_lines = []
             for line in lines:
                 stripped = line.strip()
                 if not stripped:
@@ -191,19 +191,20 @@ async def _forward_terminal_logs(stdout_path, job_id, payload, process):
                 # Skip the structured JSON events that get printed to stdout by emit_progress
                 if stripped.startswith("SCRAPER_EVENT"):
                     continue
-                
+                terminal_lines.append(stripped)
+            
+            if terminal_lines:
+                # Batch all new lines into a single event message to avoid webhook spam
+                message = "\n".join(terminal_lines)
                 event = {
                     "status": "terminal",
                     "type": "terminal",
-                    "message": stripped
+                    "message": message
                 }
-                batch_events.append(event)
-                
-            for event in batch_events:
                 try:
                     await _publish_status_event(job_id, event, status_callback)
                 except Exception as exc:
-                    print(f"[worker] terminal log publish failed for job {job_id}: {exc}", flush=True)
+                    print(f"[worker] terminal log batch publish failed for job {job_id}: {exc}", flush=True)
 
         if process.poll() is not None:
             if not stdout_path.exists() or position >= stdout_path.stat().st_size:
@@ -452,15 +453,14 @@ async def run_job(request):
     ]
 
     stdout_handle = stdout_path.open("ab")
-    stderr_handle = stderr_path.open("ab")
     process = subprocess.Popen(
         command,
         cwd=str(PROJECT_ROOT),
         stdout=stdout_handle,
-        stderr=stderr_handle,
+        stderr=subprocess.STDOUT,  # Merge stderr into stdout for live terminal logs
         start_new_session=os.name != "nt",
     )
-    asyncio.create_task(_monitor_process(process, job_id, job_config, payload, status_output_path, stdout_handle, stderr_handle))
+    asyncio.create_task(_monitor_process(process, job_id, job_config, payload, status_output_path, stdout_handle, None, stdout_path))
 
     started_at = datetime.now(timezone.utc).isoformat()
     return _json_response(
