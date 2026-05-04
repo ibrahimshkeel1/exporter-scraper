@@ -4,7 +4,14 @@ import { leadPacks } from "../lib/pricing";
 
 export default function HomePage() {
   return (
-    <main className="flex flex-col gap-12 pb-12">
+    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-12 px-4 pb-12 pt-6 sm:px-6 lg:px-10">
+      <header className="flex items-center justify-between border-b border-white/10 pb-4">
+        <a className="text-lg font-semibold text-vercel-text" href="/">ExportFlow</a>
+        <div className="flex items-center gap-2">
+          <a className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-vercel-text hover:bg-white/10" href="/dashboard">Dashboard</a>
+          <a className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-vercel-text hover:bg-white/10" href="/admin">Admin</a>
+        </div>
+      </header>
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
         <div className="flex flex-col gap-6">
           <span className="text-sm font-medium text-vercel-muted tracking-tight">Pakistan exporters - Apparel/Textile v1</span>

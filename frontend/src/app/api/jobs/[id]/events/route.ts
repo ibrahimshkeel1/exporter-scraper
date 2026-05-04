@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ensureJobReport } from "../../../../../lib/job-report";
 import { createAdminSupabase } from "../../../../../lib/supabase-admin";
 
 type RouteContext = {
@@ -55,6 +56,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     .eq("id", id);
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
+
+  if (status === "delivered") {
+    await ensureJobReport(id);
   }
 
   return NextResponse.json({ ok: true });

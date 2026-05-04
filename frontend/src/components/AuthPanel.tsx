@@ -76,11 +76,25 @@ export function AuthPanel({ compact = false, onSessionChange }: AuthPanelProps) 
   }
 
   if (currentEmail) {
+    if (compact) {
+      return (
+        <div className="space-y-2 rounded-lg border border-white/10 bg-black/35 p-3">
+          <div className="space-y-1">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Signed in</p>
+            <p className="break-all text-xs font-medium leading-5 text-vercel-text" title={currentEmail}>{currentEmail}</p>
+          </div>
+          <button className="inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-white/15 bg-white/5 px-3 text-xs text-vercel-text hover:bg-white/10" type="button" onClick={signOut}>
+            <LogOut size={14} aria-hidden="true" />
+            Sign out
+          </button>
+        </div>
+      );
+    }
     return (
-      <div className={compact ? "flex items-center gap-4" : "bg-gradient-to-b from-[#18181B] to-[#09090B] backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-2xl flex items-center justify-between gap-4"}>
+      <div className="bg-gradient-to-b from-[#18181B] to-[#09090B] backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-2xl flex items-center justify-between gap-4">
         <div className="flex flex-col gap-1.5">
           <strong className="font-medium text-vercel-text text-lg">{currentEmail}</strong>
-          {!compact && <span className="text-sm text-vercel-muted">Signed in and ready to create lead jobs.</span>}
+          <span className="text-sm text-vercel-muted">Signed in and ready to create lead jobs.</span>
         </div>
         <button className="inline-flex items-center gap-2 bg-black/50 backdrop-blur-md border border-white/10 text-vercel-text hover:bg-white/5 rounded-lg px-5 py-2.5 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap" type="button" onClick={signOut}>
           <LogOut size={16} aria-hidden="true" />
@@ -91,22 +105,66 @@ export function AuthPanel({ compact = false, onSessionChange }: AuthPanelProps) 
   }
 
   if (!supabase) {
+    if (compact) {
+      return (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          Supabase env vars missing.
+        </div>
+      );
+    }
     return (
-      <div className={compact ? "text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 px-4 py-3 rounded-lg" : "bg-gradient-to-b from-[#18181B] to-[#09090B] backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-2xl text-sm text-amber-400 bg-amber-500/10"}>
+      <div className="bg-gradient-to-b from-[#18181B] to-[#09090B] backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-2xl text-sm text-amber-400 bg-amber-500/10">
         Supabase public env vars are not configured.
       </div>
     );
   }
 
-  return (
-    <form className={compact ? "flex items-center gap-4" : "bg-gradient-to-b from-[#18181B] to-[#09090B] backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-2xl flex flex-col gap-6"} onSubmit={signInWithPassword}>
-      {!compact && (
-        <div className="flex flex-col gap-2">
-          <h3 className="text-xl font-semibold text-vercel-text tracking-tight">Sign in</h3>
-          <p className="text-sm text-vercel-muted">Password login avoids local testing email limits. Email links remain available as a fallback.</p>
+  if (compact) {
+    return (
+      <form className="space-y-2 rounded-lg border border-white/10 bg-black/35 p-3" onSubmit={signInWithPassword}>
+        <div className="space-y-1">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Account</p>
+          <input
+            id="email"
+            className="h-8 w-full rounded-md border border-white/10 bg-black/40 px-3 text-xs text-vercel-text outline-none focus:border-cyan-300/40"
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
+          <input
+            id="password"
+            className="h-8 w-full rounded-md border border-white/10 bg-black/40 px-3 text-xs text-vercel-text outline-none focus:border-cyan-300/40"
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
         </div>
-      )}
-      <div className={compact ? "flex flex-1 gap-4 items-end" : "flex flex-col gap-5"}>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <button className="inline-flex h-8 items-center justify-center gap-1 rounded-md bg-white px-2 text-[11px] font-medium text-black hover:bg-cyan-100" type="submit" disabled={loading}>
+            <LogIn size={13} aria-hidden="true" />
+            Login
+          </button>
+          <button className="inline-flex h-8 items-center justify-center gap-1 rounded-md border border-white/15 bg-white/5 px-2 text-[11px] text-vercel-text hover:bg-white/10" type="button" onClick={sendEmailLink} disabled={loading || !email}>
+            <Mail size={13} aria-hidden="true" />
+            Email link
+          </button>
+        </div>
+        {message && <p className="text-[11px] text-vercel-muted">{message}</p>}
+      </form>
+    );
+  }
+
+  return (
+    <form className="bg-gradient-to-b from-[#18181B] to-[#09090B] backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-2xl flex flex-col gap-6" onSubmit={signInWithPassword}>
+      <div className="flex flex-col gap-2">
+        <h3 className="text-xl font-semibold text-vercel-text tracking-tight">Sign in</h3>
+        <p className="text-sm text-vercel-muted">Password login avoids local testing email limits. Email links remain available as a fallback.</p>
+      </div>
+      <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2 flex-1">
           <label htmlFor="email" className="text-sm font-medium text-vercel-text">Email</label>
           <input
@@ -132,7 +190,7 @@ export function AuthPanel({ compact = false, onSessionChange }: AuthPanelProps) 
           />
         </div>
       </div>
-      <div className={compact ? "flex items-center gap-3" : "flex flex-wrap gap-4"}>
+      <div className="flex flex-wrap gap-4">
         <button className="inline-flex items-center justify-center gap-2 bg-vercel-accent text-black hover:bg-white rounded-lg px-6 py-3 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.2)] flex-1 sm:flex-none" type="submit" disabled={loading}>
           <LogIn size={18} aria-hidden="true" />
           {loading ? "Signing in..." : "Password login"}

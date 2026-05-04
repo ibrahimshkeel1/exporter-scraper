@@ -1,17 +1,21 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { AuthPanel } from "../../components/AuthPanel";
+import { useState } from "react";
 import { AgenticChat } from "../../components/AgenticChat";
+import { JobTable } from "../../components/JobTable";
+import { WorkspaceShell } from "../../components/WorkspaceShell";
 
 export default function DashboardPage() {
   const [refreshSignal, setRefreshSignal] = useState(0);
-  const refresh = useCallback(() => setRefreshSignal((value) => value + 1), []);
 
   return (
-    <main className="flex flex-col gap-8 w-full pb-12 max-w-5xl mx-auto h-[90vh]">
-      <AuthPanel onSessionChange={refresh} />
-      <AgenticChat onJobCreated={refresh} />
-    </main>
+    <WorkspaceShell mode="dashboard" title="Agentic Lead Search" subtitle="Single SSE stream, dual live lanes">
+      <div className="grid h-full min-h-0 grid-cols-1 gap-3 xl:grid-rows-[minmax(0,1fr)_minmax(300px,38vh)]">
+        <AgenticChat onJobCreated={() => setRefreshSignal((value) => value + 1)} />
+        <div className="min-h-0 overflow-y-auto">
+          <JobTable refreshSignal={refreshSignal} />
+        </div>
+      </div>
+    </WorkspaceShell>
   );
 }

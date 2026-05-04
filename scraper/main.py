@@ -7,10 +7,11 @@ from pathlib import Path
 from uuid import uuid4
 
 
-def emit_progress(status, message, status_output=None, job_id=None, **metadata):
+def emit_progress(status, message, status_output=None, job_id=None, source="worker", **metadata):
     event = {
         "status": status,
         "message": message,
+        "source": source,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     if job_id:
@@ -164,6 +165,7 @@ async def run_scraper(
         "Scraper job started.",
         status_output=status_output,
         job_id=job_id,
+        source="system",
         region=region,
         industry=industry,
         limit=limit,
@@ -182,20 +184,174 @@ async def run_scraper(
     from modules.enrichment import LeadEnrichment
     from modules.export import LeadExport
     from modules.scoring import LeadScoring
-    
+
+    try:
+        import aiohttp
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Missing dependency: aiohttp. Install with `pip install -r scraper/requirements.txt`."
+        ) from exc
+
     discovery_limit = compute_discovery_limit(
         limit=limit,
         test_mode=test_mode,
         max_analyzed=max_analyzed,
     )
-    discovery = LeadDiscovery(limit=discovery_limit, search_terms=search_terms)
     run_id = f"run-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
-    
+    effective_min_score = min_score
+
     candidates = []
     enriched_candidates = []
     scored_candidates = []
     top_leads = []
-    effective_min_score = min_score
+
+    scoring = LeadScoring(
+        require_email=not allow_no_email,
+        require_buyer_evidence=not allow_weak_buyer_evidence,
+        scoring_context=scoring_context,
+    )
+
+    worker_count = 2 if test_mode else 4
+    candidate_queue = asyncio.Queue(maxsize=max(80, min(240, limit * 20)))
+    stop_event = asyncio.Event()
+    state_lock = asyncio.Lock()
+
+    async def discovery_producer(discovery, page, chunk_size):
+        batch_index = 0
+        discovered_count = 0
+        try:
+            emit_progress(
+                "discovering",
+                "Discovery started.",
+                status_output=status_output,
+                job_id=job_id,
+                source="discovery",
+                queue_maxsize=candidate_queue.maxsize,
+            )
+            async for candidate_batch in discovery.run_discovery(
+                page,
+                region=region,
+                industry=industry,
+                chunk_size=chunk_size,
+            ):
+                if stop_event.is_set():
+                    break
+                if not candidate_batch:
+                    continue
+                batch_index += 1
+                candidates.extend(candidate_batch)
+                discovered_count += len(candidate_batch)
+                emit_progress(
+                    "discovering",
+                    "Discovery batch queued for enrichment.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    source="discovery",
+                    batch_index=batch_index,
+                    batch_size=len(candidate_batch),
+                    discovered_count=discovered_count,
+                    queued_count=candidate_queue.qsize(),
+                )
+                for candidate in candidate_batch:
+                    if stop_event.is_set():
+                        break
+                    await candidate_queue.put(candidate)
+                if stop_event.is_set():
+                    break
+        finally:
+            for _ in range(worker_count):
+                await candidate_queue.put(None)
+            emit_progress(
+                "discovered",
+                "Discovery stream completed.",
+                status_output=status_output,
+                job_id=job_id,
+                source="discovery",
+                discovered_count=discovered_count,
+            )
+
+    async def enrichment_worker(enrichment, session, worker_id):
+        target_announced = False
+        while True:
+            candidate = await candidate_queue.get()
+            if candidate is None:
+                candidate_queue.task_done()
+                return
+
+            if stop_event.is_set():
+                candidate_queue.task_done()
+                continue
+
+            domain = candidate.get("domain", "")
+            emit_progress(
+                "enriching",
+                "Enriching candidate.",
+                status_output=status_output,
+                job_id=job_id,
+                source="enrichment",
+                worker_id=worker_id,
+                domain=domain,
+                queued_count=candidate_queue.qsize(),
+            )
+            try:
+                enriched = await enrichment.enrich_candidate(session, candidate)
+            except Exception as exc:
+                emit_progress(
+                    "enriching",
+                    "Candidate enrichment failed.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    source="enrichment",
+                    worker_id=worker_id,
+                    domain=domain,
+                    error=str(exc),
+                )
+                candidate_queue.task_done()
+                continue
+
+            scored = scoring.evaluate_candidate(enriched)
+            async with state_lock:
+                enriched_candidates.append(enriched)
+                scored_candidates.append(scored)
+                ranked = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
+                top_leads.clear()
+                top_leads.extend(ranked)
+                analyzed_count = len(scored_candidates)
+                qualified_count = len(top_leads)
+                hit_target = qualified_count >= limit
+
+            emit_progress(
+                "scoring",
+                "Candidate scored.",
+                status_output=status_output,
+                job_id=job_id,
+                source="scoring",
+                worker_id=worker_id,
+                domain=scored.get("domain", ""),
+                score=scored.get("score", 0),
+                analyzed_count=analyzed_count,
+                qualified_count=qualified_count,
+                target_count=limit,
+                min_score=min_score,
+            )
+
+            if hit_target:
+                stop_event.set()
+                if not target_announced:
+                    target_announced = True
+                    emit_progress(
+                        "scoring",
+                        "Lead target reached; draining queue and finalizing exports.",
+                        status_output=status_output,
+                        job_id=job_id,
+                        source="scoring",
+                        analyzed_count=analyzed_count,
+                        qualified_count=qualified_count,
+                        target_count=limit,
+                    )
+
+            candidate_queue.task_done()
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
@@ -203,88 +359,81 @@ async def run_scraper(
         )
         page = await context.new_page()
 
-        candidates = []
+        discovery = LeadDiscovery(limit=discovery_limit, search_terms=search_terms)
+        enrichment = LeadEnrichment(
+            concurrency=worker_count,
+            max_extra_pages=12,
+            browser_context=context,
+            browser_fallback_concurrency=max(1, worker_count // 2),
+        )
         batch_size = 60 if test_mode else max(80, min(160, limit * 12))
-        
-        async for candidate_batch in discovery.run_discovery(page, region=region, industry=industry, chunk_size=batch_size):
-            candidates.extend(candidate_batch)
-            
-            if not enriched_candidates:
-                # Initialize these only once we actually find candidates
-                scoring = LeadScoring(
-                    require_email=not allow_no_email,
-                    require_buyer_evidence=not allow_weak_buyer_evidence,
-                    scoring_context=scoring_context,
-                )
-                enrichment = LeadEnrichment(
-                    concurrency=4,
-                    max_extra_pages=12,
-                    browser_context=context,
-                )
 
-            emit_progress(
-                "enriching",
-                "Enriching candidate batch to fill paid lead pack.",
-                status_output=status_output,
-                job_id=job_id,
-                batch_index=len(enriched_candidates) // batch_size + 1,
-                batch_size=len(candidate_batch),
-                analyzed_count=len(scored_candidates),
-                qualified_count=len(top_leads),
-                target_count=limit,
-            )
-            enriched_batch = await enrichment.run_enrichment(candidate_batch)
-            enriched_candidates.extend(enriched_batch)
-            scored_candidates.extend(scoring.evaluate_candidate(candidate) for candidate in enriched_batch)
-            top_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
-            
+        connector = aiohttp.TCPConnector(limit_per_host=max(2, worker_count), ttl_dns_cache=300)
+        timeout = aiohttp.ClientTimeout(total=enrichment.request_timeout)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Upgrade-Insecure-Requests": "1",
+        }
+
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout, headers=headers) as session:
+            producer_task = asyncio.create_task(discovery_producer(discovery, page, batch_size))
+            worker_tasks = [
+                asyncio.create_task(enrichment_worker(enrichment, session, worker_id=index + 1))
+                for index in range(worker_count)
+            ]
+
+            try:
+                await producer_task
+                await candidate_queue.join()
+                await asyncio.gather(*worker_tasks)
+            finally:
+                stop_event.set()
+                for worker_task in worker_tasks:
+                    if not worker_task.done():
+                        worker_task.cancel()
+                await asyncio.gather(*worker_tasks, return_exceptions=True)
+
+        await browser.close()
+
+    if fill_until_complete and len(top_leads) < limit and scored_candidates:
+        for threshold in relaxed_score_thresholds(min_score)[1:]:
+            candidate_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=threshold)
+            if len(candidate_leads) <= len(top_leads):
+                continue
+            top_leads.clear()
+            top_leads.extend(candidate_leads)
+            effective_min_score = threshold
             emit_progress(
                 "scoring",
-                "Lead pack fill progress.",
+                "Relaxed quality threshold to fill the lead pack.",
                 status_output=status_output,
                 job_id=job_id,
+                source="scoring",
                 analyzed_count=len(scored_candidates),
                 qualified_count=len(top_leads),
                 target_count=limit,
-                min_score=min_score,
+                min_score=threshold,
+                effective_min_score=threshold,
             )
             if len(top_leads) >= limit:
                 break
 
-        if fill_until_complete and len(top_leads) < limit and scored_candidates:
-            for threshold in relaxed_score_thresholds(min_score)[1:]:
-                candidate_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=threshold)
-                if len(candidate_leads) <= len(top_leads):
-                    continue
-                top_leads = candidate_leads
-                effective_min_score = threshold
-                emit_progress(
-                    "scoring",
-                    "Relaxed quality threshold to fill the lead pack.",
-                    status_output=status_output,
-                    job_id=job_id,
-                    analyzed_count=len(scored_candidates),
-                    qualified_count=len(top_leads),
-                    target_count=limit,
-                    min_score=threshold,
-                    effective_min_score=threshold,
-                )
-                if len(top_leads) >= limit:
-                    break
-
-        emit_progress(
-            "enriched",
-            "Candidate enrichment completed.",
-            status_output=status_output,
-            job_id=job_id,
-            enriched_count=len(enriched_candidates),
-            qualified_count=len(top_leads),
-            target_count=limit,
-            candidate_count=len(candidates),
-            effective_min_score=effective_min_score,
-        )
-
-        await browser.close()
+    emit_progress(
+        "enriched",
+        "Candidate enrichment stream completed.",
+        status_output=status_output,
+        job_id=job_id,
+        source="enrichment",
+        enriched_count=len(enriched_candidates),
+        qualified_count=len(top_leads),
+        target_count=limit,
+        candidate_count=len(candidates),
+        analyzed_count=len(scored_candidates),
+        effective_min_score=effective_min_score,
+    )
 
     if not candidates:
         print("No candidates found during discovery phase.")
@@ -293,6 +442,7 @@ async def run_scraper(
             "No candidates found during discovery.",
             status_output=status_output,
             job_id=job_id,
+            source="discovery",
         )
         return
 
@@ -305,6 +455,7 @@ async def run_scraper(
         "Writing customer exports.",
         status_output=status_output,
         job_id=job_id,
+        source="scoring",
         qualified_count=len(top_leads),
         target_count=limit,
         analyzed_count=len(scored_candidates),
@@ -338,6 +489,7 @@ async def run_scraper(
                 "Scraper job completed with relaxed fill results.",
                 status_output=status_output,
                 job_id=job_id,
+                source="scoring",
                 qualified_count=len(top_leads),
                 target_count=limit,
                 analyzed_count=len(scored_candidates),
@@ -355,6 +507,7 @@ async def run_scraper(
             "Scraper job completed with partial results.",
             status_output=status_output,
             job_id=job_id,
+            source="scoring",
             qualified_count=len(top_leads),
             target_count=limit,
             analyzed_count=len(scored_candidates),
@@ -373,6 +526,7 @@ async def run_scraper(
         "Scraper job completed.",
         status_output=status_output,
         job_id=job_id,
+        source="scoring",
         qualified_count=len(top_leads),
         target_count=limit,
         analyzed_count=len(scored_candidates),

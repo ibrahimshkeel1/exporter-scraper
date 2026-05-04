@@ -336,6 +336,26 @@ class LeadDiscovery:
         return industry.strip() or "apparel"
 
     @staticmethod
+    def _is_apparel_industry(industry):
+        lowered = (industry or "").lower()
+        apparel_terms = (
+            "activewear",
+            "apparel",
+            "boutique",
+            "clothing",
+            "denim",
+            "fabric",
+            "fashion",
+            "garment",
+            "jeans",
+            "private label clothing",
+            "sportswear",
+            "streetwear",
+            "textile",
+        )
+        return any(term in lowered for term in apparel_terms)
+
+    @staticmethod
     def _canonical_region(region):
         value = str(region or "").strip().lower()
         if value in {"usa", "us", "u.s.", "u.s.a.", "united states", "united states of america", "america", "american"}:
@@ -357,47 +377,69 @@ class LeadDiscovery:
             "Europe": "Europe",
         }.get(region, region)
         supplied_queries = []
+        is_apparel = self._is_apparel_industry(industry)
         for term in self.search_terms:
             normalized = term.strip()
             if not normalized:
                 continue
             if region.lower() not in normalized.lower() and market.lower() not in normalized.lower():
                 normalized = f"{normalized} {market}"
-            supplied_queries.append(
-                f"{normalized} -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter"
-            )
+            if is_apparel:
+                normalized = f"{normalized} -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter"
+            supplied_queries.append(f"{normalized} contact email")
 
-        default_queries = [
-            f'{base} importer wholesaler distributor "{market}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} wholesale buyer retailer "{market}" contact email -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} private label clothing brand sourcing "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} procurement vendor application retailer "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} boutique retailer wholesale distributor "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} supplier application "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} vendor portal "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} wholesale account "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} trade account "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} stockist "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} line sheet "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} buying office "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'{base} sourcing manager "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'"{base} importer" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'"{base} wholesaler" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'"{base} distributor" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'"{base} retailer" "vendor application" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'"{base} brand" "wholesale" "contact" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'"{base} brand" "supplier portal" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-            f'"{base} brand" "buying office" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-        ]
+        if is_apparel:
+            default_queries = [
+                f'{base} importer wholesaler distributor "{market}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} wholesale buyer retailer "{market}" contact email -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} private label clothing brand sourcing "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} procurement vendor application retailer "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} boutique retailer wholesale distributor "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} supplier application "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} vendor portal "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} wholesale account "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} trade account "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} stockist "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} line sheet "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} buying office "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'{base} sourcing manager "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'"{base} importer" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'"{base} wholesaler" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'"{base} distributor" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'"{base} retailer" "vendor application" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'"{base} brand" "wholesale" "contact" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'"{base} brand" "supplier portal" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                f'"{base} brand" "buying office" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+            ]
+        else:
+            default_queries = [
+                f'"{base}" "{market}" projects contact email',
+                f'"{base}" "{market}" companies contact',
+                f'"{base}" "{market}" firms contact',
+                f'"{base}" "{market}" services contact',
+                f'"{base}" "{market}" request proposal',
+                f'"{base}" "{market}" procurement vendor contact',
+                f'"{base}" "{market}" partnerships contact',
+                f'"{base}" "{market}" decision maker contact',
+            ]
         if region == "Europe":
             for country in ("Germany", "France", "Netherlands", "Italy", "Spain", "Poland", "Sweden"):
-                default_queries.extend(
-                    [
-                        f'{base} importer wholesaler distributor "{country}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-                        f'{base} retailer "supplier portal" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-                        f'{base} brand "vendor application" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
-                    ]
-                )
+                if is_apparel:
+                    default_queries.extend(
+                        [
+                            f'{base} importer wholesaler distributor "{country}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                            f'{base} retailer "supplier portal" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                            f'{base} brand "vendor application" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                        ]
+                    )
+                else:
+                    default_queries.extend(
+                        [
+                            f'"{base}" "{country}" projects contact email',
+                            f'"{base}" "{country}" companies contact',
+                            f'"{base}" "{country}" procurement vendor contact',
+                        ]
+                    )
 
         return list(dict.fromkeys(supplied_queries + default_queries))
 
@@ -441,7 +483,10 @@ class LeadDiscovery:
     def generate_sources(self, region, industry):
         region = self._canonical_region(region)
         query = quote_plus(self._product_seed(industry))
+        is_apparel = self._is_apparel_industry(industry)
         if region == "USA":
+            if not is_apparel:
+                return self._search_sources(region, industry)
             buyer_intent_sources = [
                 DiscoverySource(
                     name="seed-usa-buyer-intent-pages",
@@ -509,6 +554,8 @@ class LeadDiscovery:
             ]
             return buyer_intent_sources + directory_sources + self._search_sources(region, industry)
         if region == "UK":
+            if not is_apparel:
+                return self._search_sources(region, industry)
             buyer_intent_sources = [
                 DiscoverySource(
                     name="seed-uk-buyer-intent-pages",
@@ -537,6 +584,8 @@ class LeadDiscovery:
             ]
             return buyer_intent_sources + directory_sources + self._search_sources(region, industry)
         if region == "International":
+            if not is_apparel:
+                return self._search_sources(region, industry)
             seed_sources = [
                 DiscoverySource(
                     name="seed-usa-buyer-intent-pages",
@@ -561,6 +610,8 @@ class LeadDiscovery:
                 ),
             ]
             return seed_sources + self._search_sources(region, industry)
+        if not is_apparel:
+            return self._search_sources(region, industry)
         buyer_intent_sources = [
             DiscoverySource(
                 name="seed-europe-buyer-intent-pages",
