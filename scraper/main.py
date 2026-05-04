@@ -98,6 +98,8 @@ def apply_job_config(args, config):
         args.allow_weak_buyer_evidence = bool(quality["allow_weak_buyer_evidence"])
     if quality.get("a_plus_score") is not None:
         args.a_plus_score = int(quality["a_plus_score"])
+    if config.get("scoring_context") is not None:
+        args.scoring_context = config["scoring_context"]
 
     return args
 
@@ -130,6 +132,7 @@ async def run_scraper(
     job_id=None,
     max_analyzed=None,
     search_terms=None,
+    scoring_context=None,
 ):
     print(
         f"Starting scraper | Region: {region} | Industry: {industry} | Limit: {limit} | Test mode: {test_mode}"
@@ -197,6 +200,7 @@ async def run_scraper(
             scoring = LeadScoring(
                 require_email=not allow_no_email,
                 require_buyer_evidence=not allow_weak_buyer_evidence,
+                scoring_context=scoring_context,
             )
             enrichment = LeadEnrichment(
                 concurrency=4,
@@ -544,7 +548,7 @@ if __name__ == "__main__":
         default=None,
         help="Optional external job id included in progress events.",
     )
-    parser.add_argument("--region", choices=["USA", "UK", "Europe"], default="USA", help="Target market region")
+    parser.add_argument("--region", choices=["USA", "UK", "Europe", "International"], default="USA", help="Target market region")
     parser.add_argument(
         "--industry",
         default="clothing brands",
@@ -605,6 +609,7 @@ if __name__ == "__main__":
         action="store_true",
         help="Allow leads that have product fit but weak buyer/importer/procurement evidence",
     )
+    parser.set_defaults(scoring_context=None)
     
     args = parser.parse_args()
     if args.job_config:
@@ -639,6 +644,7 @@ if __name__ == "__main__":
                 job_id=args.job_id,
                 max_analyzed=args.max_analyzed,
                 search_terms=args.search_terms,
+                scoring_context=args.scoring_context,
             ))
     except Exception as exc:
         emit_progress(

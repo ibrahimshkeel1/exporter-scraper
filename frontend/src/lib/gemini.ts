@@ -1,31 +1,53 @@
 import { TargetingPreflight } from "./types";
 
+type IntakeMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 type PreflightInput = {
   region: string;
   productCategory: string;
   buyerType: string;
   notes?: string;
+  conversation?: IntakeMessage[];
 };
 
 function fallbackPreflight(input: PreflightInput): TargetingPreflight {
-  const product = input.productCategory.trim() || "apparel textile";
-  const buyer = input.buyerType.trim() || "importers wholesalers distributors";
-  const region = input.region || "USA";
+  const transcript = (input.conversation || [])
+    .filter((message) => message.role === "user")
+    .map((message) => message.content)
+    .join(" ")
+    .trim();
+  const product = input.productCategory.trim() || transcript.slice(0, 100) || "business services";
+  const buyer = input.buyerType.trim() || "ideal customers decision makers";
+  const region = input.region || "International";
   const base = `${product} ${buyer} ${region}`;
 
   return {
-    refinedIndustry: `${product} importers wholesalers private label clothing buyers`,
+    businessSummary: product,
+    offerSummary: product,
+    website: "",
+    idealCustomerProfile: buyer,
+    refinedIndustry: `${product} target customers`,
     searchTerms: [
       `${base} contact email`,
-      `${product} supplier application vendor portal ${region}`,
-      `${product} procurement sourcing buyers ${region}`,
-      `${product} wholesale distributor retailer ${region}`
+      `${product} companies ${region}`,
+      `${product} service buyers ${region}`,
+      `${product} decision makers ${region}`
     ],
-    buyerTypes: [input.buyerType || "Importers", "Wholesalers", "Distributors"],
+    buyerTypes: [input.buyerType || "Ideal customers", "Decision makers", "Companies with buying intent"],
+    targetMarkets: [region],
+    excludedMarkets: [],
+    qualificationSignals: ["Clear fit for the offer", "Public website", "Usable contact route"],
+    disqualificationSignals: ["Directories without company websites", "Competitors", "Irrelevant consumer pages"],
+    outreachAngle: "Lead with the specific business problem the offer solves.",
+    needsMoreInfo: false,
+    followUpQuestions: [],
     riskLevel: product.length < 4 ? "high" : "low",
     qualityNotes:
-      "Fallback preflight used because Gemini is not configured. The scraper will run with strict buyer-side evidence filters.",
-    recommendedMinScore: 75,
+      "Fallback AI brief used because Gemini is not configured. Discovery will use broad generic customer-fit signals.",
+    recommendedMinScore: 60,
     warnings: product.length < 4 ? ["Product category is too broad."] : []
   };
 }
@@ -41,12 +63,23 @@ function parseGeminiJson(text: string): TargetingPreflight | null {
     }
 
     return {
+      businessSummary: String(parsed.businessSummary ?? ""),
+      offerSummary: String(parsed.offerSummary ?? ""),
+      website: String(parsed.website ?? ""),
+      idealCustomerProfile: String(parsed.idealCustomerProfile ?? ""),
       refinedIndustry: String(parsed.refinedIndustry ?? ""),
       searchTerms: Array.isArray(parsed.searchTerms) ? parsed.searchTerms.map(String).slice(0, 8) : [],
       buyerTypes: Array.isArray(parsed.buyerTypes) ? parsed.buyerTypes.map(String).slice(0, 6) : [],
+      targetMarkets: Array.isArray(parsed.targetMarkets) ? parsed.targetMarkets.map(String).slice(0, 8) : [],
+      excludedMarkets: Array.isArray(parsed.excludedMarkets) ? parsed.excludedMarkets.map(String).slice(0, 8) : [],
+      qualificationSignals: Array.isArray(parsed.qualificationSignals) ? parsed.qualificationSignals.map(String).slice(0, 12) : [],
+      disqualificationSignals: Array.isArray(parsed.disqualificationSignals) ? parsed.disqualificationSignals.map(String).slice(0, 12) : [],
+      outreachAngle: String(parsed.outreachAngle ?? ""),
+      needsMoreInfo: Boolean(parsed.needsMoreInfo),
+      followUpQuestions: Array.isArray(parsed.followUpQuestions) ? parsed.followUpQuestions.map(String).slice(0, 4) : [],
       riskLevel: ["low", "medium", "high"].includes(parsed.riskLevel) ? parsed.riskLevel : "medium",
       qualityNotes: String(parsed.qualityNotes ?? ""),
-      recommendedMinScore: Math.round(minScore || 75),
+      recommendedMinScore: Math.round(minScore || 60),
       warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map(String).slice(0, 6) : []
     };
   } catch {
@@ -62,16 +95,29 @@ export async function runTargetingPreflight(input: PreflightInput): Promise<Targ
     return fallbackPreflight(input);
   }
 
+  const transcript = (input.conversation || [])
+    .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+    .join("\n")
+    .slice(-12000);
+
   const prompt = [
-    "You are refining a paid B2B buyer-lead generation job for Pakistan-based apparel/textile exporters.",
-    "Return JSON only with keys: refinedIndustry, searchTerms, buyerTypes, riskLevel, qualityNotes, recommendedMinScore (integer 0-100), warnings.",
-    "The scraper works best when search terms include buyer-side intent: importer, wholesaler, distributor, retailer, procurement, sourcing, vendor application, supplier portal.",
-    "Reject or warn about vague consumer niches, supplier/manufacturer targets, and anything outside apparel/textile for v1.",
+    "You are an AI lead-generation strategist. Build a generic B2B/B2C lead search brief from the user's chat context.",
+    "Return JSON only. Do not include markdown.",
+    "Schema keys: businessSummary, offerSummary, website, idealCustomerProfile, refinedIndustry, searchTerms, buyerTypes, targetMarkets, excludedMarkets, qualificationSignals, disqualificationSignals, outreachAngle, needsMoreInfo, followUpQuestions, riskLevel, qualityNotes, recommendedMinScore, warnings.",
+    "Make searchTerms specific enough for web discovery. Include commercial intent words relevant to the target, such as contact, email, suppliers, vendors, agencies, clinics, founders, procurement, booking, partnerships, directories, or country/city terms when appropriate.",
+    "buyerTypes must describe the actual client/company/person types to find, not generic labels.",
+    "qualificationSignals should include keywords or website evidence that prove a lead fits the user's offer.",
+    "disqualificationSignals should include competitors, irrelevant pages, marketplaces/directories without direct company websites, jobs/careers, and countries/categories the user excludes.",
+    "If the user did not provide enough context to run a good search, set needsMoreInfo true and ask up to 4 specific followUpQuestions. Still provide your best draft brief.",
+    "Use recommendedMinScore 45-65 for broad exploratory lead gen, 65-80 only when the user asks for strict verified leads.",
     "",
-    `Region: ${input.region}`,
-    `Product category: ${input.productCategory}`,
-    `Buyer type: ${input.buyerType}`,
-    `Customer notes: ${input.notes || "none"}`
+    `Selected market: ${input.region || "International"}`,
+    `Legacy category field, if any: ${input.productCategory || "none"}`,
+    `Legacy client type field, if any: ${input.buyerType || "none"}`,
+    `Extra notes: ${input.notes || "none"}`,
+    "",
+    "Conversation:",
+    transcript || "No conversation supplied."
   ].join("\n");
 
   const response = await fetch(
@@ -93,7 +139,7 @@ export async function runTargetingPreflight(input: PreflightInput): Promise<Targ
     return {
       ...fallbackPreflight(input),
       riskLevel: "medium",
-      warnings: [`Gemini preflight failed with HTTP ${response.status}; fallback targeting was used.`]
+      warnings: [`Gemini lead brief failed with HTTP ${response.status}; fallback targeting was used.`]
     };
   }
 
@@ -105,7 +151,7 @@ export async function runTargetingPreflight(input: PreflightInput): Promise<Targ
     return {
       ...fallbackPreflight(input),
       riskLevel: "medium",
-      warnings: ["Gemini returned an incomplete preflight; fallback targeting was used."]
+      warnings: ["Gemini returned an incomplete lead brief; fallback targeting was used."]
     };
   }
 

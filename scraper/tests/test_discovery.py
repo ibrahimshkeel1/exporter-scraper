@@ -99,6 +99,17 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertEqual(sources[0].name, "seed-europe-buyer-intent-pages")
         self.assertGreater(len(self.discovery.seed_urls("Europe", "seed-europe-buyer-intent-pages")), 10)
 
+    def test_international_sources_combine_seed_regions(self):
+        sources = self.discovery.generate_sources("International", "web design agencies")
+        names = [source.name for source in sources]
+
+        self.assertEqual(names[:3], [
+            "seed-usa-buyer-intent-pages",
+            "seed-uk-buyer-intent-pages",
+            "seed-europe-buyer-intent-pages",
+        ])
+        self.assertGreater(len(self.discovery.seed_urls("International", "seed-uk-buyer-intent-pages")), 5)
+
 
 if __name__ == "__main__":
     unittest.main()

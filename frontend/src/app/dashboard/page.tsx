@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { AuthPanel } from "../../components/AuthPanel";
 import { JobTable } from "../../components/JobTable";
-import { LeadRequestWizard } from "../../components/LeadRequestWizard";
+import { LeadIntakeChat } from "../../components/LeadIntakeChat";
 
 export default function DashboardPage() {
   const [refreshSignal, setRefreshSignal] = useState(0);
@@ -14,11 +14,11 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <span className="text-sm font-bold text-vercel-muted tracking-widest uppercase">Customer dashboard</span>
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-vercel-text">Create and track verified buyer lead packs.</h1>
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-vercel-text">Create AI-built lead searches for any market.</h1>
         </div>
       </div>
       <AuthPanel onSessionChange={refresh} />
-      <LeadRequestWizard onJobCreated={refresh} />
+      <LeadIntakeChat onJobCreated={refresh} />
       <JobTable refreshSignal={refreshSignal} />
     </main>
   );

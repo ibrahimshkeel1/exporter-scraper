@@ -12,9 +12,20 @@ export type LeadJobStatus =
 export type PaymentStatus = "not_required" | "pending" | "under_review" | "approved" | "rejected";
 
 export type TargetingPreflight = {
+  businessSummary?: string;
+  offerSummary?: string;
+  website?: string;
+  idealCustomerProfile?: string;
   refinedIndustry: string;
   searchTerms: string[];
   buyerTypes: string[];
+  targetMarkets?: string[];
+  excludedMarkets?: string[];
+  qualificationSignals?: string[];
+  disqualificationSignals?: string[];
+  outreachAngle?: string;
+  needsMoreInfo?: boolean;
+  followUpQuestions?: string[];
   riskLevel: "low" | "medium" | "high";
   qualityNotes: string;
   recommendedMinScore: number;
@@ -78,6 +89,10 @@ export type LeadRequestInput = {
   exportFormat: string;
   adminBypassCode?: string;
   preflight: TargetingPreflight;
+  conversation?: Array<{
+    role: "user" | "assistant";
+    content: string;
+  }>;
   advanced?: {
     allowNoEmail: boolean;
     allowWeakBuyerEvidence: boolean;

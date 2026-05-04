@@ -1,7 +1,11 @@
+import re
+
+
 class LeadScoring:
-    def __init__(self, require_email=True, require_buyer_evidence=True):
+    def __init__(self, require_email=True, require_buyer_evidence=True, scoring_context=None):
         self.require_email = require_email
         self.require_buyer_evidence = require_buyer_evidence
+        scoring_context = scoring_context or {}
         self.weights = {
             "product_fit": 20,
             "buyer_intent": 30,
@@ -193,6 +197,31 @@ class LeadScoring:
             "just-style.com",
             "textileworld.com",
         ]
+        self._apply_scoring_context(scoring_context)
+
+    @staticmethod
+    def _normalize_keywords(values):
+        keywords = []
+        for value in values or []:
+            text = str(value).lower().strip()
+            if not text:
+                continue
+            keywords.append(text)
+            keywords.extend(piece for piece in re.split(r"[^a-z0-9]+", text) if len(piece) >= 4)
+        return list(dict.fromkeys(keywords))
+
+    def _apply_scoring_context(self, scoring_context):
+        product_keywords = self._normalize_keywords(scoring_context.get("product_keywords", []))
+        buyer_keywords = self._normalize_keywords(scoring_context.get("buyer_keywords", []))
+        negative_keywords = self._normalize_keywords(scoring_context.get("negative_keywords", []))
+
+        if product_keywords:
+            self.product_keywords = list(dict.fromkeys(product_keywords + self.product_keywords))
+        if buyer_keywords:
+            self.strong_buyer_keywords = list(dict.fromkeys(buyer_keywords + self.strong_buyer_keywords))
+            self.moderate_buyer_keywords = list(dict.fromkeys(buyer_keywords + self.moderate_buyer_keywords))
+        if negative_keywords:
+            self.negative_keywords = list(dict.fromkeys(negative_keywords + self.negative_keywords))
 
     @staticmethod
     def _keyword_hits(content, keywords):

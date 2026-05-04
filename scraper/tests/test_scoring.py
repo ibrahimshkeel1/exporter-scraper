@@ -263,6 +263,41 @@ class LeadScoringTests(unittest.TestCase):
         self.assertFalse(scored["passes_hard_checks"])
         self.assertFalse(self.scoring.is_a_plus(scored))
 
+    def test_generic_scoring_context_qualifies_non_apparel_lead(self):
+        scoring = LeadScoring(
+            require_email=False,
+            require_buyer_evidence=False,
+            scoring_context={
+                "product_keywords": ["dental clinic website redesign patient booking"],
+                "buyer_keywords": ["dental clinic", "dentist", "appointment booking"],
+                "negative_keywords": ["job board"],
+            },
+        )
+        candidate = {
+            "domain": "smileclinic.co.uk",
+            "url": "https://smileclinic.co.uk",
+            "content": (
+                "Private dental clinic accepting new patients. "
+                "Book an appointment online and contact our dentist team for cosmetic dentistry."
+            ),
+            "emails": [],
+            "high_quality_emails": [],
+            "email_quality": "none",
+            "contact_form_urls": ["https://smileclinic.co.uk/contact"],
+            "social_urls": ["https://linkedin.com/company/smileclinic"],
+            "linkedin_url": "https://linkedin.com/company/smileclinic",
+            "fetch_ok": True,
+            "fetch_status_codes": [200, 200],
+            "crawled_pages": ["https://smileclinic.co.uk", "https://smileclinic.co.uk/contact"],
+        }
+
+        scored = scoring.evaluate_candidate(candidate)
+        results = scoring.rank_and_filter([scored], limit=10, min_score=45)
+
+        self.assertTrue(scored["passes_hard_checks"])
+        self.assertEqual(results, [scored])
+        self.assertIn("dental", scored["product_evidence"])
+
 
 if __name__ == "__main__":
     unittest.main()

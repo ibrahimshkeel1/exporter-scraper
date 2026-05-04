@@ -24,8 +24,17 @@ export function buildScraperJobConfig(
   const maxAnalyzed = demoBypass ? 80 : Math.max(1000, pack.leads * 300);
 
   const minScore = options.minScore ?? input.advanced?.minScore ?? (demoBypass ? 0 : preflight.recommendedMinScore || 75);
-  const allowNoEmail = input.advanced?.allowNoEmail ?? demoBypass;
-  const allowWeakBuyerEvidence = input.advanced?.allowWeakBuyerEvidence ?? demoBypass;
+  const allowNoEmail = input.advanced?.allowNoEmail ?? true;
+  const allowWeakBuyerEvidence = input.advanced?.allowWeakBuyerEvidence ?? true;
+  const scoringKeywords = [
+    preflight.refinedIndustry,
+    preflight.offerSummary,
+    preflight.idealCustomerProfile,
+    ...(preflight.buyerTypes || []),
+    ...(preflight.qualificationSignals || [])
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return {
     job_id: jobId,
@@ -46,7 +55,33 @@ export function buildScraperJobConfig(
     quality: {
       allow_no_email: allowNoEmail,
       allow_weak_buyer_evidence: allowWeakBuyerEvidence,
-      a_plus_score: 85
+      a_plus_score: 85,
+      qualification_signals: preflight.qualificationSignals || [],
+      disqualification_signals: preflight.disqualificationSignals || [],
+      outreach_angle: preflight.outreachAngle || ""
+    },
+    scoring_context: {
+      product_keywords: scoringKeywords
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((word) => word.length >= 4)
+        .slice(0, 80),
+      buyer_keywords: [
+        ...(preflight.buyerTypes || []),
+        ...(preflight.qualificationSignals || []),
+        "contact",
+        "email",
+        "book",
+        "quote",
+        "pricing",
+        "partner",
+        "vendor",
+        "supplier",
+        "procurement",
+        "services",
+        "solutions"
+      ],
+      negative_keywords: preflight.disqualificationSignals || []
     },
     delivery: {
       format: input.exportFormat || "all",

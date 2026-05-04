@@ -511,6 +511,31 @@ class LeadDiscovery:
                 ),
             ]
             return buyer_intent_sources + directory_sources + self._search_sources(region, industry)
+        if region == "International":
+            seed_sources = [
+                DiscoverySource(
+                    name="seed-usa-buyer-intent-pages",
+                    url="seed://usa-buyer-intent-pages",
+                    selectors=(),
+                    discovery_method="curated_seed",
+                    candidate_kind="seed_list",
+                ),
+                DiscoverySource(
+                    name="seed-uk-buyer-intent-pages",
+                    url="seed://uk-buyer-intent-pages",
+                    selectors=(),
+                    discovery_method="curated_seed",
+                    candidate_kind="seed_list",
+                ),
+                DiscoverySource(
+                    name="seed-europe-buyer-intent-pages",
+                    url="seed://europe-buyer-intent-pages",
+                    selectors=(),
+                    discovery_method="curated_seed",
+                    candidate_kind="seed_list",
+                ),
+            ]
+            return seed_sources + self._search_sources(region, industry)
         buyer_intent_sources = [
             DiscoverySource(
                 name="seed-europe-buyer-intent-pages",
@@ -585,6 +610,14 @@ class LeadDiscovery:
 
     @staticmethod
     def seed_urls(region, source_name="seed-usa-apparel-buyers"):
+        if region == "International":
+            if source_name.startswith("seed-usa"):
+                return LeadDiscovery.seed_urls("USA", source_name)
+            if source_name.startswith("seed-uk"):
+                return LeadDiscovery.seed_urls("UK", source_name)
+            if source_name.startswith("seed-europe"):
+                return LeadDiscovery.seed_urls("Europe", source_name)
+            return []
         if region == "UK":
             buyer_intent_urls = [
                 "https://www.nextplc.co.uk/suppliers",
