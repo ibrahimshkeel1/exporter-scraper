@@ -210,95 +210,95 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="soft-panel flex h-[90vh] w-full max-w-[84rem] flex-col overflow-hidden rounded-3xl"
+        className="ide-panel flex h-[90vh] w-full max-w-[84rem] flex-col overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-white/10 bg-black/20 px-4 py-3">
-          <div className="inline-flex items-center gap-2 text-xs font-mono text-cyan-200">
+        <div className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-4 py-2">
+          <div className="inline-flex items-center gap-2 text-xs font-mono text-[#00ffff]">
             <Terminal size={13} />
             JOB {jobId.slice(0, 8)}... LIVE LOGS
           </div>
           <button
             onClick={onClose}
-            className="soft-btn soft-btn-ghost inline-flex h-8 w-8 items-center justify-center rounded-md text-vercel-text"
+            className="ide-btn inline-flex h-8 w-8 items-center justify-center text-vercel-text"
           >
             <X size={15} />
           </button>
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 xl:grid-cols-3 xl:grid-rows-[minmax(18rem,1.2fr)_minmax(18rem,1fr)]">
-          <section className="soft-terminal grid min-h-0 grid-cols-1 grid-rows-3 gap-2 overflow-hidden p-2 xl:col-span-3 xl:row-span-1">
+          <section className="ide-terminal grid min-h-0 grid-cols-1 gap-2 overflow-hidden p-2 xl:col-span-3 xl:grid-cols-3 xl:row-span-1">
             {[
               { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
               { key: "duckduckgo", label: "DISCOVERY / DUCKDUCKGO", ref: discoveryDuckRef },
               { key: "yahoo", label: "DISCOVERY / YAHOO", ref: discoveryYahooRef },
             ].map((laneRow) => (
-              <div key={laneRow.key} className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-300/20 bg-black/45">
-                <header className="flex items-center justify-between border-b border-cyan-300/15 bg-cyan-400/10 px-2 py-1.5 text-[10px] font-mono text-cyan-100">
+              <div key={laneRow.key} className="flex min-h-0 flex-col overflow-hidden border border-[#30363d] bg-black">
+                <header className="flex items-center justify-between border-b border-[#30363d] px-2 py-1.5 text-[10px] font-mono text-[#00ffff]">
                   <span>{laneRow.label}</span>
                   <div className="inline-flex items-center gap-2">
                     <span>{state.toUpperCase()}</span>
                     <button
                       type="button"
                       onClick={() => void copyLaneLogs(laneRow.key as DiscoveryLane)}
-                      className="soft-btn soft-btn-ghost inline-flex h-5 items-center gap-1 px-1.5 text-[9px]"
+                      className="ide-btn inline-flex h-5 items-center gap-1 px-1.5 text-[9px]"
                     >
                       {copiedLane === laneRow.key ? <Check size={10} /> : <Copy size={10} />}
                       Copy
                     </button>
                   </div>
                 </header>
-                <div ref={laneRow.ref} className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-cyan-100/85">
+                <div ref={laneRow.ref} className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-[#00ff00]">
                   {(discoveryLogs[laneRow.key as DiscoveryLane] || []).map((log, index) => (
                     <div key={`${laneRow.key}-${index}`} className="whitespace-pre-wrap break-words">
-                      <span className="text-cyan-300/55">[{log.time}]</span> {log.message}
+                      <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
                       {log.proxyBefore && log.proxyAfter && (
-                        <div className="text-[10px] text-cyan-200/70">
+                        <div className="text-[10px] text-[#00ffff]">
                           proxy rotated: {log.proxyBefore} → {log.proxyAfter}
                         </div>
                       )}
                     </div>
                   ))}
                   {(discoveryLogs[laneRow.key as DiscoveryLane] || []).length === 0 && (
-                    <div className="text-cyan-200/55">Waiting for {laneRow.key} lane...</div>
+                    <div className="text-[#8b949e]">Waiting for {laneRow.key} lane...</div>
                   )}
                 </div>
               </div>
             ))}
           </section>
 
-          <section className="soft-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-3 xl:row-span-1">
-            <header className="flex items-center justify-between border-b border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-[11px] font-mono text-emerald-100">
+          <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-2 xl:row-span-1">
+            <header className="flex items-center justify-between border-b border-[#30363d] px-3 py-1.5 text-[11px] font-mono text-[#00ffff]">
               <span>ENRICH / SCORE</span>
               <div className="inline-flex items-center gap-2">
                 <span>{state.toUpperCase()}</span>
                 <button
                   type="button"
                   onClick={() => void copyLaneLogs("enrichment")}
-                  className="soft-btn soft-btn-ghost inline-flex h-6 items-center gap-1 px-2 text-[10px]"
+                  className="ide-btn inline-flex h-6 items-center gap-1 px-2 text-[10px]"
                 >
                   {copiedLane === "enrichment" ? <Check size={11} /> : <Copy size={11} />}
                   Copy
                 </button>
               </div>
             </header>
-            <div ref={enrichmentRef} className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-emerald-100/85">
+            <div ref={enrichmentRef} className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-xs leading-5 text-[#00ff00]">
               {enrichmentLogs.map((log, index) => (
                 <div key={`e-${index}`} className="whitespace-pre-wrap break-words">
-                  <span className="text-emerald-300/55">[{log.time}]</span> {log.message}
+                  <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
                   {log.proxyBefore && log.proxyAfter && (
-                    <div className="text-[11px] text-emerald-200/70">
+                    <div className="text-[11px] text-[#00ffff]">
                       proxy rotated: {log.proxyBefore} → {log.proxyAfter}
                     </div>
                   )}
                 </div>
               ))}
-              {enrichmentLogs.length === 0 && <div className="text-emerald-200/55">Waiting for enrichment lane...</div>}
+              {enrichmentLogs.length === 0 && <div className="text-[#8b949e]">Waiting for enrichment lane...</div>}
             </div>
           </section>
 
-          <section className="soft-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-1 xl:row-span-1">
-            <header className="border-b border-white/10 bg-white/5 px-3 py-2 text-[11px] font-mono text-vercel-muted">MILESTONES</header>
+          <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-1 xl:row-span-1">
+            <header className="border-b border-[#30363d] bg-[#161b22] px-3 py-2 text-[11px] font-mono text-[#8b949e]">MILESTONES</header>
             <div ref={eventRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 font-mono text-[11px] leading-5">
               {latestReport !== null && (
                 <div className="mb-3 font-sans">
@@ -306,8 +306,8 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
                 </div>
               )}
               {sortedEvents.map((event, index) => (
-                <div key={event.id || `event-${index}`} className="rounded-md border border-white/10 bg-black/30 p-2">
-                  <p className="text-[10px] uppercase text-cyan-300/70">{event.status || "event"}</p>
+                <div key={event.id || `event-${index}`} className="border border-[#30363d] bg-black p-2">
+                  <p className="text-[10px] uppercase text-[#00ffff]">{event.status || "event"}</p>
                   <p className="whitespace-pre-wrap text-vercel-text">{event.message || ""}</p>
                 </div>
               ))}

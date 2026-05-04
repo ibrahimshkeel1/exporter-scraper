@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, CheckCircle2, Check, Copy, Download, Loader2, Send, Sparkles, Terminal, UserRound } from "lucide-react";
+import { CheckCircle2, Check, Copy, Download, Loader2, Send, Sparkles, Terminal } from "lucide-react";
 import { leadPacks } from "../lib/pricing";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 import { TargetingPreflight } from "../lib/types";
@@ -199,15 +199,15 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
   }
 
   return (
-    <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3 xl:grid-rows-[minmax(11rem,0.9fr)_minmax(18rem,2.1fr)]">
-      <section className="soft-terminal grid h-[20rem] min-h-0 grid-cols-1 grid-rows-3 gap-2 overflow-hidden p-2 xl:col-span-3 xl:h-auto">
+    <div className="grid min-h-0 grid-cols-1 gap-2 xl:grid-cols-3 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+      <section className="ide-terminal grid min-h-0 grid-cols-1 gap-2 p-2 xl:col-span-3 xl:grid-cols-3">
         {[
           { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
           { key: "duckduckgo", label: "DISCOVERY / DUCKDUCKGO", ref: discoveryDuckRef },
           { key: "yahoo", label: "DISCOVERY / YAHOO", ref: discoveryYahooRef },
         ].map((laneRow) => (
-          <div key={laneRow.key} className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-300/20 bg-black/45">
-            <div className="flex items-center justify-between border-b border-cyan-300/15 bg-cyan-400/10 px-3 py-2 text-[10px] font-mono text-cyan-100">
+          <div key={laneRow.key} className="flex h-full min-h-0 flex-col overflow-hidden border border-[#30363d] bg-black">
+            <div className="flex items-center justify-between border-b border-[#30363d] px-2 py-1 text-[10px] font-mono text-[#00ffff]">
               <span className="inline-flex items-center gap-1.5">
                 <Terminal size={11} />
                 {laneRow.label}
@@ -217,33 +217,33 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
                 <button
                   type="button"
                   onClick={() => void copyLaneLogs(laneRow.key as DiscoveryLane)}
-                  className="soft-btn soft-btn-ghost inline-flex h-5 items-center gap-1 px-1.5 text-[9px]"
+                  className="ide-btn inline-flex h-5 items-center gap-1 px-1.5 text-[9px]"
                 >
                   {copiedLane === laneRow.key ? <Check size={10} /> : <Copy size={10} />}
                   Copy
                 </button>
               </div>
             </div>
-            <div ref={laneRow.ref} className="flex-1 overflow-y-auto p-2.5 font-mono text-[11px] leading-5 text-cyan-100/85">
+            <div ref={laneRow.ref} className="flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-[#00ff00]">
               {(discoveryLogs[laneRow.key as DiscoveryLane] || []).map((log, index) => (
                 <div key={`${laneRow.key}-${index}`} className="whitespace-pre-wrap break-words">
-                  <span className="text-cyan-300/55">[{log.time}]</span> {log.message}
+                  <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
                   {log.proxyBefore && log.proxyAfter && (
-                    <div className="text-[10px] text-cyan-200/70">
+                    <div className="text-[10px] text-[#00ffff]">
                       proxy rotated: {log.proxyBefore} → {log.proxyAfter}
                     </div>
                   )}
                 </div>
               ))}
               {(discoveryLogs[laneRow.key as DiscoveryLane] || []).length === 0 && (
-                <div className="text-cyan-200/55">Waiting for {laneRow.key} logs...</div>
+                <div className="text-[#8b949e]">Waiting for {laneRow.key} logs...</div>
               )}
             </div>
           </div>
         ))}
       </section>
-      <section className="soft-terminal flex h-[22rem] min-h-0 flex-col overflow-hidden xl:col-span-3 xl:h-auto">
-        <div className="flex items-center justify-between border-b border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-[11px] font-mono text-emerald-100">
+      <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-3">
+        <div className="flex items-center justify-between border-b border-[#30363d] px-3 py-1.5 text-[11px] font-mono text-[#00ffff]">
           <span className="inline-flex items-center gap-1.5">
             <Terminal size={12} />
             ENRICH / SCORE
@@ -253,25 +253,25 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
               <button
                 type="button"
                 onClick={() => void copyLaneLogs("enrichment")}
-              className="soft-btn soft-btn-ghost inline-flex h-6 items-center gap-1 px-2 text-[10px]"
+              className="ide-btn inline-flex h-6 items-center gap-1 px-2 text-[10px]"
             >
               {copiedLane === "enrichment" ? <Check size={11} /> : <Copy size={11} />}
               Copy
             </button>
           </div>
         </div>
-        <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-emerald-100/85">
+        <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-2 font-mono text-xs leading-5 text-[#00ff00]">
           {enrichmentLogs.map((log, index) => (
             <div key={`e-${index}`} className="whitespace-pre-wrap break-words">
-              <span className="text-emerald-300/55">[{log.time}]</span> {log.message}
+              <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
               {log.proxyBefore && log.proxyAfter && (
-                <div className="text-[11px] text-emerald-200/70">
+                <div className="text-[11px] text-[#00ffff]">
                   proxy rotated: {log.proxyBefore} → {log.proxyAfter}
                 </div>
               )}
             </div>
           ))}
-          {enrichmentLogs.length === 0 && <div className="text-emerald-200/55">Waiting for enrichment logs...</div>}
+          {enrichmentLogs.length === 0 && <div className="text-[#8b949e]">Waiting for enrichment logs...</div>}
         </div>
       </section>
     </div>
@@ -336,7 +336,7 @@ function ReportDownloads({
           <button
             type="button"
             onClick={downloadReportJson}
-            className="soft-btn soft-btn-ghost inline-flex items-center gap-2 px-4 py-2 text-sm"
+            className="ide-btn inline-flex items-center gap-2 px-3 py-2 text-sm"
           >
             <Download size={14} />
             AI Report
@@ -346,7 +346,7 @@ function ReportDownloads({
           type="button"
           onClick={() => void openExport("csv")}
           disabled={downloadingFormat !== null}
-          className="soft-btn soft-btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50"
+          className="ide-btn ide-btn-primary inline-flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50"
         >
           <Download size={14} />
           Leads CSV
@@ -355,7 +355,7 @@ function ReportDownloads({
           type="button"
           onClick={() => void openExport("xlsx")}
           disabled={downloadingFormat !== null}
-          className="soft-btn soft-btn-ghost inline-flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50"
+          className="ide-btn inline-flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50"
         >
           <Download size={14} />
           Audit XLSX
@@ -628,97 +628,97 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
     await analyzeConversation(nextMessages);
   }
 
+  const activeTerminalJobId = [...messages]
+    .reverse()
+    .find((message) => message.type === "terminal" && typeof message.payload?.jobId === "string")?.payload?.jobId as
+    | string
+    | undefined;
+  const visibleMessages = messages.filter((message) => message.type !== "terminal");
+
   return (
-    <section className="soft-panel flex h-full min-h-0 flex-col rounded-3xl">
-      <header className="flex items-center justify-between border-b border-white/10 px-5 py-4 sm:px-6">
+    <section className="ide-panel flex h-full min-h-0 flex-col">
+      <header className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Agentic Lead Search</p>
-          <h2 className="text-lg font-semibold text-vercel-text">Live discovery + enrichment workspace</h2>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-[#8b949e]">Agentic Lead Search</p>
+          <h2 className="text-sm font-semibold text-vercel-text">Live discovery + enrichment workspace</h2>
         </div>
-        <span className="soft-pill text-[11px]">{sessionLoaded ? "Session synced" : "Loading session..."}</span>
+        <span className="ide-status">{sessionLoaded ? "session synced" : "loading session"}</span>
       </header>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
-        {messages.map((message) => (
-          <div key={message.id} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-            {message.role === "assistant" && (
-              <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
-                <Bot size={16} />
-              </div>
-            )}
-            <div className={message.role === "user" ? "max-w-[78%]" : "w-full max-w-5xl"}>
+      <div className={`min-h-0 flex-1 ${activeTerminalJobId ? "grid grid-rows-[minmax(0,1fr)_minmax(0,52%)]" : ""}`}>
+        <div ref={scrollRef} className="min-h-0 space-y-3 overflow-y-auto p-3">
+          {visibleMessages.map((message) => (
+            <div key={message.id}>
               {message.type === "text" && (
-                <div
-                  className={`whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${
-                    message.role === "user"
-                      ? "bg-white text-black"
-                      : "border border-white/10 bg-black/35 text-vercel-text shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-                  }`}
-                >
-                  {message.content}
+                <div className={`ide-panel px-3 py-2 text-sm leading-6 ${message.role === "user" ? "text-[#00ffff]" : "text-vercel-text"}`}>
+                  <span className="mr-2 text-[#8b949e]">{message.role === "user" ? ">" : "ai>"}</span>
+                  <span className="whitespace-pre-wrap">{message.content}</span>
                 </div>
               )}
 
               {message.type === "config" && Boolean(message.payload?.brief) && (
-                <ConfigWidget
-                  brief={message.payload.brief as TargetingPreflight}
-                  messages={messages}
-                  supabase={supabase}
-                  onJobStarted={(jobId) => {
-                    setMessages((current) => [
-                      ...current,
-                      {
-                        id: crypto.randomUUID(),
-                        role: "assistant",
-                        type: "terminal",
-                        payload: { jobId },
-                        created_at: new Date().toISOString(),
-                      },
-                    ]);
-                    onJobCreated?.();
-                  }}
-                />
-              )}
-
-              {message.type === "terminal" && typeof message.payload?.jobId === "string" && (
-                <div className="rounded-2xl border border-white/10 bg-black/25 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-                  <p className="text-xs text-vercel-muted">Live worker logs for `{message.payload.jobId.slice(0, 8)}...`</p>
-                  <DualLiveTerminal jobId={message.payload.jobId} />
+                <div className="mt-2">
+                  <ConfigWidget
+                    brief={message.payload.brief as TargetingPreflight}
+                    messages={messages}
+                    supabase={supabase}
+                    onJobStarted={(jobId) => {
+                      setMessages((current) => [
+                        ...current,
+                        {
+                          id: crypto.randomUUID(),
+                          role: "assistant",
+                          type: "terminal",
+                          payload: { jobId },
+                          created_at: new Date().toISOString(),
+                        },
+                        {
+                          id: crypto.randomUUID(),
+                          role: "assistant",
+                          type: "text",
+                          content: `Job ${jobId.slice(0, 8)} started. Streaming live lanes below.`,
+                          created_at: new Date().toISOString(),
+                        },
+                      ]);
+                      onJobCreated?.();
+                    }}
+                  />
                 </div>
               )}
 
               {message.type === "report" && Boolean(message.payload?.report) && (
-                <div className="space-y-3">
+                <div className="mt-2 space-y-2">
                   <JobReportCard report={message.payload.report as any} />
                   <ReportDownloads jobId={String(message.payload.jobId)} supabase={supabase} report={message.payload.report as Record<string, unknown>} />
                 </div>
               )}
             </div>
-            {message.role === "user" && (
-              <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white">
-                <UserRound size={16} />
-              </div>
-            )}
-          </div>
-        ))}
+          ))}
 
-        {isThinking && (
-          <div className="flex gap-3">
-            <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
-              <Bot size={16} />
+          {isThinking && (
+            <div className="ide-panel inline-flex items-center gap-2 px-3 py-2 text-sm text-[#00ffff]">
+              <Loader2 size={14} className="animate-spin" />
+              analyzing request...
             </div>
-            <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cyan-100">
-              <Loader2 size={15} className="animate-spin" />
-              Analyzing request...
+          )}
+        </div>
+
+        {activeTerminalJobId && (
+          <div className="min-h-0 border-t border-[#30363d] bg-[#0d1117] p-2">
+            <p className="mb-2 text-[11px] uppercase tracking-[0.15em] text-[#8b949e]">
+              Live worker lanes for {activeTerminalJobId.slice(0, 8)}
+            </p>
+            <div className="h-[calc(100%-1.25rem)] min-h-0">
+              <DualLiveTerminal jobId={activeTerminalJobId} />
             </div>
           </div>
         )}
       </div>
 
-      <footer className="border-t border-white/10 bg-black/25 px-4 py-4 sm:px-6">
-        <form className="mx-auto flex max-w-5xl gap-3" onSubmit={appendUserMessage}>
+      <footer className="border-t border-[#30363d] bg-[#161b22] p-3">
+        <form className="flex gap-2" onSubmit={appendUserMessage}>
           <textarea
-            className="soft-input h-14 flex-1 resize-none rounded-xl px-4 py-3 text-sm"
+            className="ide-input h-14 flex-1 resize-none px-3 py-2 text-sm"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -731,7 +731,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
             disabled={isThinking}
           />
           <button
-            className="soft-btn soft-btn-primary inline-flex h-14 w-14 items-center justify-center rounded-xl disabled:opacity-50"
+            className="ide-btn ide-btn-primary inline-flex h-14 w-14 items-center justify-center disabled:opacity-50"
             type="submit"
             disabled={isThinking || !draft.trim()}
           >
@@ -808,12 +808,12 @@ function ConfigWidget({
   }
 
   if (hasStarted) {
-    return <div className="text-sm text-vercel-muted">Job request sent. Streaming will appear below.</div>;
+    return <div className="ide-panel px-3 py-2 text-sm text-[#8b949e]">Job request sent. Streaming will appear below.</div>;
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-emerald-300/20 bg-emerald-300/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-      <div className="flex items-center gap-2 text-emerald-300">
+    <div className="ide-panel space-y-4 p-4">
+      <div className="flex items-center gap-2 text-[#00ff00]">
         <CheckCircle2 size={18} />
         <h3 className="font-semibold">Brief ready to run</h3>
       </div>
@@ -828,15 +828,15 @@ function ConfigWidget({
         </div>
       </div>
 
-      <div className="space-y-4 border-t border-white/10 pt-4">
+      <div className="space-y-4 border-t border-[#30363d] pt-4">
         <div className="grid grid-cols-3 gap-2">
           {leadPacks.map((pack) => (
             <button
               key={pack.id}
               type="button"
               onClick={() => setPackId(pack.id)}
-              className={`soft-btn rounded-lg px-2 py-2 text-xs transition ${
-                pack.id === packId ? "soft-btn-primary" : "soft-btn-ghost text-vercel-muted hover:text-white"
+              className={`ide-btn px-2 py-2 text-xs transition ${
+                pack.id === packId ? "ide-btn-primary" : "text-vercel-muted hover:text-white"
               }`}
             >
               {pack.leads} leads
@@ -847,10 +847,10 @@ function ConfigWidget({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <label className="flex max-w-[240px] flex-col gap-1 text-xs text-vercel-text">
             <span className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Min Quality Score: {minScore}</span>
-            <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-cyan-200" />
+            <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-[#00ffff]" />
           </label>
           <label className="flex items-center gap-2 text-xs text-vercel-text">
-            <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} className="rounded border-white/20" />
+            <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} className="border border-[#30363d] bg-[#010409]" />
             Allow missing emails
           </label>
         </div>
@@ -859,7 +859,7 @@ function ConfigWidget({
       <button
         onClick={createJob}
         disabled={submitting}
-        className="soft-btn soft-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
+        className="ide-btn ide-btn-primary inline-flex w-full items-center justify-center gap-2 px-5 py-3 text-sm font-semibold disabled:opacity-50"
       >
         {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
         Run this search
