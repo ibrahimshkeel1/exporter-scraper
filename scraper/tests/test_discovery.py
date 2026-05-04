@@ -106,8 +106,8 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertEqual(sources[0].name, "seed-europe-buyer-intent-pages")
         self.assertGreater(len(self.discovery.seed_urls("Europe", "seed-europe-buyer-intent-pages")), 10)
 
-    def test_international_sources_combine_seed_regions(self):
-        sources = self.discovery.generate_sources("International", "web design agencies")
+    def test_international_apparel_sources_combine_seed_regions(self):
+        sources = self.discovery.generate_sources("International", "apparel")
         names = [source.name for source in sources]
 
         self.assertEqual(names[:3], [
@@ -116,6 +116,20 @@ class LeadDiscoveryTests(unittest.TestCase):
             "seed-europe-buyer-intent-pages",
         ])
         self.assertGreater(len(self.discovery.seed_urls("International", "seed-uk-buyer-intent-pages")), 5)
+
+    def test_non_apparel_sources_do_not_use_apparel_seeds_or_queries(self):
+        sources = self.discovery.generate_sources("USA", "architecture projects")
+        names = [source.name for source in sources]
+        urls = [source.url.lower() for source in sources]
+        queries = self.discovery._buyer_search_queries("USA", "architecture projects")
+        query_text = " ".join(queries).lower()
+
+        self.assertTrue(names[0].startswith("bing-p1-architecture-projects"))
+        self.assertFalse(any("fashion" in name or "apparel" in name for name in names))
+        self.assertFalse(any("yellowpages" in url for url in urls))
+        self.assertNotIn("private label clothing", query_text)
+        self.assertNotIn("wholesaler", query_text)
+        self.assertIn("projects contact email", query_text)
 
 
 if __name__ == "__main__":

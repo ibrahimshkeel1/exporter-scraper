@@ -17,6 +17,7 @@ from aiohttp import web
 PROJECT_ROOT = Path(__file__).resolve().parent
 RUNS_DIR = PROJECT_ROOT / "exports" / "worker-runs"
 EXPORT_BUCKET = os.environ.get("SUPABASE_EXPORT_BUCKET", "lead-exports")
+SCRAPER_EVENT_PREFIX = "SCRAPER_EVENT "
 
 
 def _json_response(payload, status=200):
@@ -416,6 +417,25 @@ async def _wait_for_log_file(response, log_path, timeout=60):
     return True
 
 
+def _parse_log_line_payload(line):
+    trimmed = line.rstrip("\n")
+    if not trimmed:
+        return None, None
+    if trimmed.startswith(SCRAPER_EVENT_PREFIX):
+        raw_payload = trimmed[len(SCRAPER_EVENT_PREFIX):].strip()
+        try:
+            payload = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            payload = {"message": raw_payload, "source": "worker", "status": "terminal"}
+        if not isinstance(payload, dict):
+            payload = {"message": str(payload), "source": "worker", "status": "terminal"}
+        payload.setdefault("source", "worker")
+        if "message" not in payload:
+            payload["message"] = str(payload.get("status") or "Worker event")
+        return payload, "worker_event"
+    return {"message": trimmed, "source": "worker", "status": "terminal"}, None
+
+
 async def stream_logs(request):
     job_id = request.match_info.get("job_id")
     log_path = RUNS_DIR / job_id / "stdout.log"
@@ -444,7 +464,9 @@ async def stream_logs(request):
                 line = file_handle.readline()
                 if not line:
                     break
-                await _write_sse(response, {"message": line.rstrip("\n")})
+                payload, event = _parse_log_line_payload(line)
+                if payload:
+                    await _write_sse(response, payload, event=event)
 
             # Tail for new content
             while True:
@@ -457,7 +479,9 @@ async def stream_logs(request):
                     await asyncio.sleep(0.5)
                     continue
                 last_heartbeat = time.monotonic()
-                await _write_sse(response, {"message": line.rstrip("\n")})
+                payload, event = _parse_log_line_payload(line)
+                if payload:
+                    await _write_sse(response, payload, event=event)
     except ConnectionResetError:
         pass
     except Exception as exc:
