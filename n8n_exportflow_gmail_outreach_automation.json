@@ -268,6 +268,22 @@
     },
     {
       "parameters": {
+        "httpMethod": "POST",
+        "path": "exportflow-outreach-send-due",
+        "responseMode": "onReceived",
+        "responseData": "{\n  \"ok\": true,\n  \"message\": \"Send-due outreach run accepted.\"\n}"
+      },
+      "id": "6df542e5-6f61-4b6f-8510-35cfcb756a55",
+      "name": "Webhook - Send Due Emails Now",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        160,
+        840
+      ]
+    },
+    {
+      "parameters": {
         "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{ json: { appUrl, secret: $env.N8N_WEBHOOK_SECRET || '', gemini_key: $env.GEMINI_API_KEY || '', gemini_model: $env.GEMINI_MODEL || 'gemini-3-flash-preview', batch_limit: Number($env.EXPORTFLOW_SEND_BATCH_LIMIT || 5), test_mode: String($env.EXPORTFLOW_TEST_MODE || 'true').toLowerCase() !== 'false', test_recipient: $env.EXPORTFLOW_TEST_RECIPIENT || 'ibrahimshkeel1@gmail.com' } }];"
       },
       "id": "a180e493-f72a-4474-8bd3-010e7e4d8e1b",
@@ -482,7 +498,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const appUrl = 'https://exportflow-lovat.vercel.app';\nreturn [{\n  json: {\n    appUrl,\n    secret: '',\n    step: 'followup_1',\n    after_days: 3,\n    from_status: 'initial_sent',\n    to_status: 'followup_1_pending'\n  }\n}];"
+        "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{\n  json: {\n    appUrl,\n    secret: $env.N8N_WEBHOOK_SECRET || '',\n    step: 'followup_1',\n    after_minutes: Number($env.EXPORTFLOW_FOLLOWUP_1_MINUTES || 10),\n    from_status: 'initial_sent',\n    to_status: 'followup_1_pending'\n  }\n}];"
       },
       "id": "c39b2429-8741-4e90-9358-37a87807443b",
       "name": "Prepare Follow Up 1 Queue Request",
@@ -512,7 +528,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ step: $json.step, after_days: $json.after_days, from_status: $json.from_status, to_status: $json.to_status }) }}",
+        "jsonBody": "={{ JSON.stringify({ step: $json.step, after_days: $json.after_days, after_minutes: $json.after_minutes, from_status: $json.from_status, to_status: $json.to_status }) }}",
         "options": {}
       },
       "id": "b10e0f47-76fb-48b4-9a8b-8d76106a13d4",
@@ -555,7 +571,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const appUrl = 'https://exportflow-lovat.vercel.app';\nreturn [{\n  json: {\n    appUrl,\n    secret: '',\n    step: 'followup_2',\n    after_days: 7,\n    from_status: 'followup_1_sent',\n    to_status: 'followup_2_pending'\n  }\n}];"
+        "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{\n  json: {\n    appUrl,\n    secret: $env.N8N_WEBHOOK_SECRET || '',\n    step: 'followup_2',\n    after_minutes: Number($env.EXPORTFLOW_FOLLOWUP_2_MINUTES || 20),\n    from_status: 'followup_1_sent',\n    to_status: 'followup_2_pending'\n  }\n}];"
       },
       "id": "0269837d-0045-4bea-a579-2331a454f900",
       "name": "Prepare Follow Up 2 Queue Request",
@@ -585,7 +601,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ step: $json.step, after_days: $json.after_days, from_status: $json.from_status, to_status: $json.to_status }) }}",
+        "jsonBody": "={{ JSON.stringify({ step: $json.step, after_days: $json.after_days, after_minutes: $json.after_minutes, from_status: $json.from_status, to_status: $json.to_status }) }}",
         "options": {}
       },
       "id": "c37ab39d-0a60-42c0-bb8a-b191d175ed01",
@@ -761,6 +777,17 @@
       ]
     },
     "Schedule - Send Due Emails": {
+      "main": [
+        [
+          {
+            "node": "Prepare Due Messages Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Send Due Emails Now": {
       "main": [
         [
           {

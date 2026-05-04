@@ -2,10 +2,10 @@
 
 import { ReactNode, useState } from "react";
 import Link from "next/link";
-import { LayoutDashboard, Menu, PanelLeft, Plus, ShieldClose, X } from "lucide-react";
+import { LayoutDashboard, Mail, Menu, PanelLeft, Plus, ShieldClose, X } from "lucide-react";
 import { AuthPanel } from "./AuthPanel";
 
-type WorkspaceMode = "dashboard" | "admin";
+type WorkspaceMode = "dashboard" | "outreach" | "admin";
 
 type WorkspaceShellProps = {
   mode: WorkspaceMode;
@@ -64,6 +64,16 @@ function SideNav({
           Agentic Lead Search
         </Link>
         <Link
+          href="/outreach"
+          onClick={onClose}
+          className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
+            mode === "outreach" ? "bg-cyan-400/10 text-cyan-200" : "text-vercel-muted hover:bg-white/5 hover:text-vercel-text"
+          }`}
+        >
+          <Mail size={15} />
+          Auto Email Test
+        </Link>
+        <Link
           href="/admin"
           onClick={onClose}
           className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
@@ -101,6 +111,9 @@ export function WorkspaceShell({ mode, title, subtitle, children }: WorkspaceShe
               </button>
               <Link href="/dashboard" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-vercel-text hover:bg-white/10">
                 <LayoutDashboard size={15} />
+              </Link>
+              <Link href="/outreach" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-vercel-text hover:bg-white/10">
+                <Mail size={15} />
               </Link>
               <button
                 type="button"

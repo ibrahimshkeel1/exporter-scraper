@@ -57,6 +57,46 @@ ibrahimshkeel1@gmail.com
 
 The real lead email should be stored and shown inside the test email body, but it must not be used as the recipient in test mode.
 
+## Local Website Test Setup
+The first website-connected test uses the new `/outreach` page and does not call the scraper worker.
+
+Set these in `frontend/.env.local`:
+
+```env
+N8N_OUTREACH_GENERATE_WEBHOOK_URL=https://YOUR_N8N_DOMAIN/webhook/exportflow-outreach-generate
+N8N_OUTREACH_LAUNCH_WEBHOOK_URL=https://YOUR_N8N_DOMAIN/webhook/exportflow-outreach-launch
+N8N_OUTREACH_SEND_WEBHOOK_URL=https://YOUR_N8N_DOMAIN/webhook/exportflow-outreach-send-due
+N8N_WEBHOOK_SECRET=same-secret-as-n8n
+OUTREACH_TEST_MODE=true
+OUTREACH_TEST_RECIPIENT=ibrahimshkeel1@gmail.com
+OUTREACH_TEST_GMAIL_FROM_EMAIL=your-test-gmail@gmail.com
+OUTREACH_TEST_GMAIL_ACCESS_TOKEN=temporary-gmail-api-access-token
+OUTREACH_TEST_SENDER_NAME=Ibrahim
+```
+
+Set these in n8n:
+
+```env
+EXPORTFLOW_APP_URL=http://localhost:3000
+N8N_WEBHOOK_SECRET=same-secret-as-frontend
+GEMINI_API_KEY=your-gemini-key
+GEMINI_MODEL=gemini-3-flash-preview
+EXPORTFLOW_TEST_MODE=true
+EXPORTFLOW_TEST_RECIPIENT=ibrahimshkeel1@gmail.com
+EXPORTFLOW_SEND_BATCH_LIMIT=5
+EXPORTFLOW_FOLLOWUP_1_MINUTES=10
+EXPORTFLOW_FOLLOWUP_2_MINUTES=20
+```
+
+If n8n is running on a VPS and cannot reach localhost, run `ngrok http 3000` and use the HTTPS ngrok URL as `EXPORTFLOW_APP_URL`.
+
+The imported workflow now includes:
+- `exportflow-outreach-generate`
+- `exportflow-outreach-launch`
+- `exportflow-outreach-send-due`
+
+The send-due webhook is what lets the website `Send test emails` button trigger sending immediately instead of waiting for the 15-minute schedule.
+
 ## Stats
 Track and display:
 - Total scraped emails per user.
