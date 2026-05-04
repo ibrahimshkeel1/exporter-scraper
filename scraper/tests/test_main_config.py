@@ -15,6 +15,7 @@ from main import (
     compute_discovery_limit,
     load_recent_domains,
     relaxed_score_thresholds,
+    resolve_proxy_pool,
     save_recent_domains,
 )
 
@@ -41,6 +42,8 @@ class MainConfigTests(unittest.TestCase):
             status_output=None,
             job_id=None,
             scoring_context=None,
+            proxy_pool=[],
+            proxy_file=None,
         )
 
     def test_max_analyzed_caps_normal_discovery(self):
@@ -76,6 +79,36 @@ class MainConfigTests(unittest.TestCase):
         self.assertTrue(configured.fill_until_complete)
         self.assertFalse(configured.allow_no_email)
         self.assertTrue(configured.allow_weak_buyer_evidence)
+
+    def test_apply_job_config_reads_network_proxy_settings(self):
+        args = self._base_args()
+        configured = apply_job_config(
+            args,
+            {
+                "network": {
+                    "proxy_pool": ["http://user:pass@127.0.0.1:8080", "socks5://10.0.0.2:1080"],
+                    "proxy_file": "/tmp/proxies.txt",
+                }
+            },
+        )
+        self.assertEqual(configured.proxy_pool, ["http://user:pass@127.0.0.1:8080", "socks5://10.0.0.2:1080"])
+        self.assertEqual(configured.proxy_file, "/tmp/proxies.txt")
+
+    def test_resolve_proxy_pool_merges_inline_and_file_entries(self):
+        with TemporaryDirectory() as tmp_dir:
+            proxy_file = os.path.join(tmp_dir, "proxies.txt")
+            with open(proxy_file, "w", encoding="utf-8") as handle:
+                handle.write("# list\n")
+                handle.write("http://2.2.2.2:8080\n")
+                handle.write("socks5://3.3.3.3:1080\n")
+            proxies = resolve_proxy_pool(
+                proxy_pool=["http://1.1.1.1:8080", "invalid-entry"],
+                proxy_file=proxy_file,
+            )
+        self.assertEqual(
+            [row["raw"] for row in proxies],
+            ["http://1.1.1.1:8080", "http://2.2.2.2:8080", "socks5://3.3.3.3:1080"],
+        )
 
     def test_recent_domain_memory_roundtrip(self):
         with TemporaryDirectory() as tmp_dir:

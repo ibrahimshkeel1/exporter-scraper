@@ -939,7 +939,14 @@ class LeadDiscovery:
         engine_state["blocked_until_ts"] = time.monotonic() + backoff * cooldown_multiplier
         return engine_state["failures"] >= 2
 
-    async def run_discovery(self, page, region, industry="clothing brands", chunk_size=60):
+    async def run_discovery(
+        self,
+        page,
+        region,
+        industry="clothing brands",
+        chunk_size=60,
+        on_engine_blocked=None,
+    ):
         print(
             f"Starting discovery for region: {region} | Industry: {industry} | Limit: {self.limit}"
         )
@@ -1022,7 +1029,25 @@ class LeadDiscovery:
                 await page.goto(source.url, timeout=45000, wait_until="domcontentloaded")
                 blocked_page = await self._looks_like_block_page(page)
                 if blocked_page:
-                    if self._record_engine_failure(source_engine, engine_state):
+                    rotated = False
+                    if on_engine_blocked and source_engine:
+                        try:
+                            rotated = bool(
+                                await on_engine_blocked(
+                                    source_engine,
+                                    source.url,
+                                    "blocked_page",
+                                )
+                            )
+                        except Exception as callback_exc:
+                            print(f"Engine blocked callback failed for {source_engine}: {callback_exc}")
+                    if rotated:
+                        if source_engine in engine_state:
+                            engine_state[source_engine]["failures"] = 0
+                            engine_state[source_engine]["blocked_until_ts"] = 0.0
+                        skipped_engines.discard(source_engine)
+                        print(f"Rotated proxy after blocked page for {source_engine}; continuing discovery.")
+                    elif self._record_engine_failure(source_engine, engine_state):
                         skipped_engines.add(source_engine)
                         print(
                             f"{source_engine.title()} circuit breaker activated after repeated blocking pages; "
@@ -1052,7 +1077,25 @@ class LeadDiscovery:
                 print(f"Error visiting {source.url}: {exc}")
                 error_text = str(exc).lower()
                 if self._is_throttle_or_block_error(error_text):
-                    if self._record_engine_failure(source_engine, engine_state):
+                    rotated = False
+                    if on_engine_blocked and source_engine:
+                        try:
+                            rotated = bool(
+                                await on_engine_blocked(
+                                    source_engine,
+                                    source.url,
+                                    error_text[:180],
+                                )
+                            )
+                        except Exception as callback_exc:
+                            print(f"Engine blocked callback failed for {source_engine}: {callback_exc}")
+                    if rotated:
+                        if source_engine in engine_state:
+                            engine_state[source_engine]["failures"] = 0
+                            engine_state[source_engine]["blocked_until_ts"] = 0.0
+                        skipped_engines.discard(source_engine)
+                        print(f"Rotated proxy after {source_engine} failure; continuing discovery.")
+                    elif self._record_engine_failure(source_engine, engine_state):
                         skipped_engines.add(source_engine)
                         print(
                             f"{source_engine.title()} circuit breaker activated after repeated connection/rate-limit failures; "

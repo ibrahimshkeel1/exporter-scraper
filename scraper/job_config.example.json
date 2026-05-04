@@ -22,6 +22,13 @@
     "allow_weak_buyer_evidence": false,
     "a_plus_score": 85
   },
+  "network": {
+    "proxy_pool": [
+      "http://user:pass@127.0.0.1:8080",
+      "socks5://127.0.0.1:1080"
+    ],
+    "proxy_file": "proxies.txt"
+  },
   "delivery": {
     "format": "all",
     "output_dir": "exports"
