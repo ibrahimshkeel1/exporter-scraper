@@ -56,6 +56,9 @@ python "final scrapper.py" --job-config scraper/job_config.example.json --status
 Proxy pool can also be passed by environment variable:
 
 - `EXPORTFLOW_PROXY_POOL=http://user:pass@host:port,http://user:pass@host2:port`
+- `EXPORTFLOW_PROXY_HEALTHCHECK_URL=https://ip.oxylabs.io/location`
+- `EXPORTFLOW_PROXY_HEALTHCHECK_TIMEOUT_SECONDS=12`
+- `EXPORTFLOW_PROXY_MIN_HEALTHY=1`
 
 ## Output Fields
 

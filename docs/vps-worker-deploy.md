@@ -58,10 +58,32 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 SUPABASE_EXPORT_BUCKET=lead-exports
 EXPORTFLOW_PROXY_POOL=http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8001,http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8002,http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8003,http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8004,http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8005
+EXPORTFLOW_PROXY_HEALTHCHECK_URL=https://ip.oxylabs.io/location
+EXPORTFLOW_PROXY_HEALTHCHECK_TIMEOUT_SECONDS=12
+EXPORTFLOW_PROXY_MIN_HEALTHY=1
 ```
 
 `EXPORTFLOW_PROXY_POOL` is optional, but recommended for search stability.
 No Nginx changes are required for proxy rotation.
+
+### First-time `worker.env` edit (copy/paste)
+
+```bash
+cd /srv/exportflow
+sudo cp worker.env worker.env.bak.$(date +%F-%H%M%S)
+sudo nano worker.env
+```
+
+In `nano`:
+- paste/update values
+- save with `Ctrl + O`, then `Enter`
+- exit with `Ctrl + X`
+
+Validate the file quickly:
+
+```bash
+grep -E "^(WORKER_PORT|WORKER_API_SECRET|N8N_WEBHOOK_SECRET|SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_EXPORT_BUCKET|EXPORTFLOW_PROXY_POOL|EXPORTFLOW_PROXY_HEALTHCHECK_URL|EXPORTFLOW_PROXY_HEALTHCHECK_TIMEOUT_SECONDS|EXPORTFLOW_PROXY_MIN_HEALTHY)=" /srv/exportflow/worker.env
+```
 
 ## 4. Run As A Service
 

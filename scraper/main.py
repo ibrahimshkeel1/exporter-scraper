@@ -240,6 +240,90 @@ def resolve_proxy_pool(proxy_pool=None, proxy_file=None):
     return parsed
 
 
+async def healthcheck_proxy_pool(proxy_pool, status_output=None, job_id=None):
+    if not proxy_pool:
+        return []
+
+    try:
+        import aiohttp
+    except ModuleNotFoundError:
+        # Proxy checks are optional; if aiohttp is missing, keep original pool.
+        return list(proxy_pool)
+
+    check_url = str(os.environ.get("EXPORTFLOW_PROXY_HEALTHCHECK_URL", "https://ip.oxylabs.io/location")).strip()
+    timeout_seconds = float(os.environ.get("EXPORTFLOW_PROXY_HEALTHCHECK_TIMEOUT_SECONDS", "12"))
+    min_healthy = int(os.environ.get("EXPORTFLOW_PROXY_MIN_HEALTHY", "1"))
+    timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+    connector = aiohttp.TCPConnector(ssl=False, ttl_dns_cache=120)
+
+    emit_progress(
+        "planning",
+        "Running proxy health checks.",
+        status_output=status_output,
+        job_id=job_id,
+        source="system",
+        proxy_check_url=check_url,
+        proxy_count=len(proxy_pool),
+        min_healthy=min_healthy,
+    )
+
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+        async def check_one(index, proxy_entry):
+            proxy_raw = proxy_entry.get("raw", "")
+            try:
+                async with session.get(check_url, proxy=proxy_raw, allow_redirects=True) as response:
+                    ok = 200 <= int(response.status) < 400
+                    return index, proxy_entry, ok, int(response.status), ""
+            except Exception as exc:
+                return index, proxy_entry, False, 0, str(exc)
+
+        tasks = [asyncio.create_task(check_one(index, proxy_entry)) for index, proxy_entry in enumerate(proxy_pool, start=1)]
+        results = await asyncio.gather(*tasks)
+
+    healthy = []
+    for index, proxy_entry, ok, status_code, error in results:
+        if ok:
+            healthy.append(proxy_entry)
+            emit_progress(
+                "planning",
+                "Proxy passed health check.",
+                status_output=status_output,
+                job_id=job_id,
+                source="system",
+                proxy_index=index,
+                proxy=proxy_entry.get("raw", ""),
+                proxy_status=status_code,
+            )
+        else:
+            emit_progress(
+                "planning",
+                "Proxy failed health check.",
+                status_output=status_output,
+                job_id=job_id,
+                source="system",
+                proxy_index=index,
+                proxy=proxy_entry.get("raw", ""),
+                proxy_status=status_code,
+                error=error,
+            )
+
+    emit_progress(
+        "planning",
+        "Proxy health checks completed.",
+        status_output=status_output,
+        job_id=job_id,
+        source="system",
+        proxy_healthy_count=len(healthy),
+        proxy_total_count=len(proxy_pool),
+    )
+    if len(healthy) < min_healthy:
+        raise RuntimeError(
+            f"Proxy health check failed: {len(healthy)}/{len(proxy_pool)} healthy proxies "
+            f"(minimum required: {min_healthy})."
+        )
+    return healthy
+
+
 class RotatingDiscoveryBrowser:
     def __init__(self, playwright, user_agent, proxy_pool=None, start_index=0):
         self.playwright = playwright
@@ -484,6 +568,12 @@ async def run_scraper(
     merged_search_terms = merge_search_terms(signal_map.get("routed_search_terms", []), search_terms or [])
     merged_scoring_context = merge_scoring_context(signal_map.get("scoring_context"), scoring_context)
     resolved_proxies = resolve_proxy_pool(proxy_pool=proxy_pool, proxy_file=proxy_file)
+    if resolved_proxies:
+        resolved_proxies = await healthcheck_proxy_pool(
+            resolved_proxies,
+            status_output=status_output,
+            job_id=job_id,
+        )
     emit_progress(
         "planning",
         "Signal map generated for discovery routing.",
@@ -1053,6 +1143,12 @@ async def run_hunt_first_a_plus(
     found_lead = None
 
     resolved_proxies = resolve_proxy_pool(proxy_pool=proxy_pool, proxy_file=proxy_file)
+    if resolved_proxies:
+        resolved_proxies = await healthcheck_proxy_pool(
+            resolved_proxies,
+            status_output=status_output,
+            job_id=job_id,
+        )
     async with async_playwright() as p:
         user_agent = (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
