@@ -121,6 +121,17 @@ function fallbackPreflight(input: PreflightInput): TargetingPreflight {
   const brief = inferFallbackBriefParts(input);
   const marketText = brief.targetMarkets.join(" ");
   const searchBase = `${brief.searchStem} ${marketText}`.trim();
+  const transcript = brief.transcript.toLowerCase();
+  const hasSpecificAudience = brief.buyerTypes.some((buyer) => !/qualified prospects|decision makers|companies with buying intent/i.test(buyer));
+  const hasMarketSignal = brief.targetMarkets.some((market) => market !== "International") || /international|global|worldwide/.test(transcript);
+  const hasOfferSignal = brief.offerSummary.length > 30 || hasAny(transcript, ["sell", "offer", "service", "manufacturer", "agency", "brand", "website", "export"]);
+  const needsMoreInfo = brief.transcript.length < 80 || !hasSpecificAudience || !hasMarketSignal || !hasOfferSignal;
+  const followUpQuestions = [
+    !hasOfferSignal ? "What exactly are you selling, and what makes your offer different?" : "",
+    !hasSpecificAudience ? "What type of companies or people should count as ideal leads?" : "",
+    !hasMarketSignal ? "Which countries or regions should I prioritize, or should this be international?" : "",
+    "What lead evidence should I require before a result is considered useful, such as email, contact form, buying intent, company size, or niche fit?"
+  ].filter(Boolean).slice(0, 4);
 
   return {
     businessSummary: brief.businessSummary,
@@ -140,13 +151,18 @@ function fallbackPreflight(input: PreflightInput): TargetingPreflight {
     qualificationSignals: brief.qualificationSignals,
     disqualificationSignals: brief.disqualificationSignals,
     outreachAngle: brief.offerSummary,
-    needsMoreInfo: false,
-    followUpQuestions: [],
-    riskLevel: brief.transcript.length < 40 ? "high" : "medium",
+    needsMoreInfo,
+    followUpQuestions,
+    riskLevel: needsMoreInfo ? "high" : "medium",
     qualityNotes:
-      "Fallback lead brief used because Gemini was unavailable or rate-limited. The brief was inferred from your chat context.",
+      needsMoreInfo
+        ? "Fallback draft used because Gemini was unavailable or rate-limited. More context is needed before running a high-quality search."
+        : "Fallback lead brief used because Gemini was unavailable or rate-limited. The brief was inferred from your chat context.",
     recommendedMinScore: 55,
-    warnings: brief.transcript.length < 40 ? ["Add more business context for a stronger AI brief."] : []
+    warnings: [
+      "Gemini was unavailable or rate-limited, so fallback targeting was used.",
+      ...(needsMoreInfo ? ["Answer the follow-up questions for a stronger lead search."] : [])
+    ]
   };
 }
 
@@ -206,7 +222,8 @@ export async function runTargetingPreflight(input: PreflightInput): Promise<Targ
     "buyerTypes must describe the actual client/company/person types to find, not generic labels.",
     "qualificationSignals should include keywords or website evidence that prove a lead fits the user's offer.",
     "disqualificationSignals should include competitors, irrelevant pages, marketplaces/directories without direct company websites, jobs/careers, and countries/categories the user excludes.",
-    "If the user did not provide enough context to run a good search, set needsMoreInfo true and ask up to 4 specific followUpQuestions. Still provide your best draft brief.",
+    "Do not finalize too early. If the business offer, target customer type, target market, or lead quality/contact requirements are unclear, set needsMoreInfo true and ask up to 4 concise followUpQuestions. Still provide your best draft brief.",
+    "If the user gives enough context, set needsMoreInfo false and write qualityNotes as a short final confirmation of the search strategy.",
     "Use recommendedMinScore 45-65 for broad exploratory lead gen, 65-80 only when the user asks for strict verified leads.",
     "",
     `Selected market: ${input.region || "International"}`,
