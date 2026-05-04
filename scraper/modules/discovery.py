@@ -2,6 +2,7 @@ import base64
 import binascii
 import random
 import re
+import time
 from dataclasses import dataclass
 from ipaddress import ip_address
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlsplit
@@ -126,6 +127,21 @@ class LeadDiscovery:
         ".tr",
         ".vn",
     )
+    SEARCH_ENGINE_MIN_DELAY_SECONDS = {
+        "bing": 8.0,
+        "duckduckgo": 5.0,
+        "yahoo": 6.0,
+    }
+    SEARCH_ENGINE_MAX_REQUESTS = {
+        "bing": 10,
+        "duckduckgo": 12,
+        "yahoo": 8,
+    }
+    SEARCH_ENGINE_COOLDOWN_SECONDS = {
+        "bing": 90.0,
+        "duckduckgo": 45.0,
+        "yahoo": 60.0,
+    }
 
     def __init__(self, limit=30, search_terms=None, signal_map=None):
         self.limit = limit
@@ -304,8 +320,7 @@ class LeadDiscovery:
         signals = self.signal_map.get("signals", []) if isinstance(self.signal_map, dict) else []
         if not signals:
             return []
-        is_architecture = self._is_architecture_industry(industry)
-        query_budget = 2 if is_architecture else 1
+        query_budget = 1
         sources = []
         for signal_index, signal in enumerate(signals, start=1):
             signal_name = str(signal.get("signal", "")).strip()
@@ -619,11 +634,11 @@ class LeadDiscovery:
         is_architecture = self._is_architecture_industry(industry)
         queries = self._buyer_search_queries(region, industry)
         if is_architecture:
-            queries = queries[:8]
+            queries = queries[:6]
         elif is_apparel:
-            queries = queries[:10]
-        else:
             queries = queries[:8]
+        else:
+            queries = queries[:6]
         for query_index, query in enumerate(queries, start=1):
             slug = self._slug(query)
             encoded = quote_plus(query)
@@ -676,17 +691,6 @@ class LeadDiscovery:
         is_apparel = self._is_apparel_industry(industry)
         if region == "USA":
             if not is_apparel:
-                architecture_seed_sources = []
-                if self._is_architecture_industry(industry):
-                    architecture_seed_sources = [
-                        DiscoverySource(
-                            name="seed-usa-retail-restaurant-industrial-growth",
-                            url="seed://usa-retail-restaurant-industrial-growth",
-                            selectors=(),
-                            discovery_method="curated_seed",
-                            candidate_kind="seed_list",
-                        ),
-                    ]
                 directory_sources = [
                     DiscoverySource(
                         name="yellowpages-usa-business-search",
@@ -694,7 +698,7 @@ class LeadDiscovery:
                         selectors=("a.track-visit-website", "a[data-analytics='website']"),
                     ),
                 ]
-                return architecture_seed_sources + signal_sources + directory_sources + self._search_sources(region, industry)
+                return signal_sources + directory_sources + self._search_sources(region, industry)
             buyer_intent_sources = [
                 DiscoverySource(
                     name="seed-usa-buyer-intent-pages",
@@ -763,17 +767,6 @@ class LeadDiscovery:
             return signal_sources + buyer_intent_sources + directory_sources + self._search_sources(region, industry)
         if region == "UK":
             if not is_apparel:
-                architecture_seed_sources = []
-                if self._is_architecture_industry(industry):
-                    architecture_seed_sources = [
-                        DiscoverySource(
-                            name="seed-uk-retail-restaurant-industrial-growth",
-                            url="seed://uk-retail-restaurant-industrial-growth",
-                            selectors=(),
-                            discovery_method="curated_seed",
-                            candidate_kind="seed_list",
-                        ),
-                    ]
                 directory_sources = [
                     DiscoverySource(
                         name="yell-uk-business-search",
@@ -784,7 +777,7 @@ class LeadDiscovery:
                         ),
                     ),
                 ]
-                return signal_sources + architecture_seed_sources + directory_sources + self._search_sources(region, industry)
+                return signal_sources + directory_sources + self._search_sources(region, industry)
             buyer_intent_sources = [
                 DiscoverySource(
                     name="seed-uk-buyer-intent-pages",
@@ -862,6 +855,90 @@ class LeadDiscovery:
         ]
         return signal_sources + buyer_intent_sources + sources + self._search_sources(region, industry)
 
+    @staticmethod
+    def _is_throttle_or_block_error(text):
+        lowered = (text or "").lower()
+        return any(
+            marker in lowered
+            for marker in (
+                "err_connection_closed",
+                "err_timed_out",
+                "timeout",
+                "too many requests",
+                "429",
+                "rate",
+                "blocked",
+                "captcha",
+                "automated queries",
+                "unusual traffic",
+                "verify you are human",
+                "access denied",
+            )
+        )
+
+    async def _looks_like_block_page(self, page):
+        try:
+            title = (await page.title() or "").lower()
+        except Exception:
+            title = ""
+        body_text = ""
+        try:
+            body = await page.query_selector("body")
+            if body:
+                body_text = ((await body.inner_text()) or "")[:3000].lower()
+        except Exception:
+            body_text = ""
+        signal_text = f"{title}\n{body_text}"
+        return self._is_throttle_or_block_error(signal_text)
+
+    def _build_engine_runtime_state(self):
+        return {
+            engine: {
+                "failures": 0,
+                "last_request_ts": 0.0,
+                "blocked_until_ts": 0.0,
+                "requests": 0,
+            }
+            for engine in self.SEARCH_ENGINE_MIN_DELAY_SECONDS
+        }
+
+    async def _wait_for_engine_window(self, page, engine, state):
+        if not engine or engine not in state:
+            return True
+        engine_state = state[engine]
+        now = time.monotonic()
+        if now < engine_state["blocked_until_ts"]:
+            return False
+        max_requests = self.SEARCH_ENGINE_MAX_REQUESTS.get(engine, 12)
+        if engine_state["requests"] >= max_requests:
+            return False
+        min_delay = self.SEARCH_ENGINE_MIN_DELAY_SECONDS.get(engine, 4.0)
+        elapsed = now - engine_state["last_request_ts"]
+        if elapsed < min_delay:
+            wait_seconds = min_delay - elapsed + random.uniform(0.4, 1.1)
+            await page.wait_for_timeout(int(wait_seconds * 1000))
+        return True
+
+    def _record_engine_success(self, engine, state):
+        if not engine or engine not in state:
+            return
+        engine_state = state[engine]
+        engine_state["failures"] = 0
+        engine_state["last_request_ts"] = time.monotonic()
+        engine_state["requests"] += 1
+
+    def _record_engine_failure(self, engine, state):
+        if not engine or engine not in state:
+            return False
+        engine_state = state[engine]
+        engine_state["failures"] += 1
+        engine_state["last_request_ts"] = time.monotonic()
+        engine_state["requests"] += 1
+        backoff = self.SEARCH_ENGINE_COOLDOWN_SECONDS.get(engine, 60.0)
+        cooldown_multiplier = min(engine_state["failures"], 3)
+        engine_state["blocked_until_ts"] = time.monotonic() + backoff * cooldown_multiplier
+        return engine_state["failures"] >= 2
+
     async def run_discovery(self, page, region, industry="clothing brands", chunk_size=60):
         print(
             f"Starting discovery for region: {region} | Industry: {industry} | Limit: {self.limit}"
@@ -870,7 +947,7 @@ class LeadDiscovery:
 
         yielded_count = 0
         current_chunk = []
-        engine_failures = {"bing": 0, "duckduckgo": 0, "yahoo": 0}
+        engine_state = self._build_engine_runtime_state()
         skipped_engines = set()
 
         for source in sources:
@@ -888,6 +965,15 @@ class LeadDiscovery:
             if source_engine in skipped_engines:
                 print(f"Skipping {source.name} due to repeated {source_engine} failures earlier in this run.")
                 continue
+            if source_engine and source_engine in engine_state:
+                allowed = await self._wait_for_engine_window(page, source_engine, engine_state)
+                if not allowed:
+                    skipped_engines.add(source_engine)
+                    print(
+                        f"Skipping remaining {source_engine} sources due to request budget/cooldown limits "
+                        "for this run."
+                    )
+                    continue
             if source.candidate_kind == "direct_url":
                 candidate = self._candidate_from_url(source.url, source, region, industry)
                 if candidate:
@@ -934,8 +1020,16 @@ class LeadDiscovery:
             found_in_source = 0
             try:
                 await page.goto(source.url, timeout=45000, wait_until="domcontentloaded")
-                if source_engine in engine_failures:
-                    engine_failures[source_engine] = 0
+                blocked_page = await self._looks_like_block_page(page)
+                if blocked_page:
+                    if self._record_engine_failure(source_engine, engine_state):
+                        skipped_engines.add(source_engine)
+                        print(
+                            f"{source_engine.title()} circuit breaker activated after repeated blocking pages; "
+                            "continuing with remaining sources."
+                        )
+                    continue
+                self._record_engine_success(source_engine, engine_state)
                 await page.wait_for_timeout(random.randint(1500, 3000))
                 links = await self._extract_links_from_source(page, source)
                 for raw_href in links:
@@ -957,20 +1051,8 @@ class LeadDiscovery:
             except Exception as exc:
                 print(f"Error visiting {source.url}: {exc}")
                 error_text = str(exc).lower()
-                if source_engine in engine_failures and any(
-                    marker in error_text
-                    for marker in (
-                        "err_connection_closed",
-                        "err_timed_out",
-                        "timeout",
-                        "too many requests",
-                        "429",
-                        "rate",
-                        "blocked",
-                    )
-                ):
-                    engine_failures[source_engine] += 1
-                    if engine_failures[source_engine] >= 3:
+                if self._is_throttle_or_block_error(error_text):
+                    if self._record_engine_failure(source_engine, engine_state):
                         skipped_engines.add(source_engine)
                         print(
                             f"{source_engine.title()} circuit breaker activated after repeated connection/rate-limit failures; "
@@ -1003,68 +1085,6 @@ class LeadDiscovery:
                 return LeadDiscovery.seed_urls("Europe", source_name)
             return []
         if region == "UK":
-            if source_name == "seed-uk-retail-restaurant-industrial-growth":
-                return [
-                    "https://www.pret.co.uk/en-GB/contact-us",
-                    "https://www.costa.co.uk/contact-us",
-                    "https://www.caffenero.com/uk/contact/",
-                    "https://www.greggs.co.uk/contact-us",
-                    "https://www.leon.co/contact",
-                    "https://www.itsu.com/contact-us",
-                    "https://www.wagamama.com/contact-us",
-                    "https://www.pizzapilgrims.co.uk/contact",
-                    "https://www.dishoom.com/contact/",
-                    "https://www.nandos.co.uk/contact-us",
-                    "https://www.burgerking.co.uk/contact-us",
-                    "https://www.fiveguys.co.uk/contact-us",
-                    "https://www.subway.com/en-gb/contactus",
-                    "https://www.dominos.co.uk/contact-us",
-                    "https://www.papajohns.co.uk/contact-us",
-                    "https://www.mcdonalds.com/gb/en-gb/help/faq/contact-us.html",
-                    "https://www.kfc.co.uk/help/contact-us",
-                    "https://www.tortila.co.uk/contact-us",
-                    "https://www.zizzi.co.uk/contact",
-                    "https://www.pizzahut.co.uk/contact-us",
-                    "https://www.askitalian.co.uk/contact-us",
-                    "https://www.gbk.co.uk/contact",
-                    "https://www.bone-daddies.com/contact",
-                    "https://www.sushidog.com/pages/contact",
-                    "https://www.ikea.com/gb/en/customer-service/contact-us/",
-                    "https://www.dunelm.com/info/contact-us",
-                    "https://www.bmstores.co.uk/contact-us",
-                    "https://www.theworks.co.uk/contactus",
-                    "https://www.petsathome.com/contact-us",
-                    "https://www.halfords.com/customer-services/contact-us/",
-                    "https://www.toolstation.com/contact-us",
-                    "https://www.wickes.co.uk/help-and-support/contact-us",
-                    "https://www.screwfix.com/help/contact-us",
-                    "https://www.diy.com/customer-support/contact-us",
-                    "https://www.currys.co.uk/services/contact-us.html",
-                    "https://www.argos.co.uk/help/contact-us/",
-                    "https://www.jysk.co.uk/customer-service/contact",
-                    "https://www.bensonsforbeds.co.uk/contact-us/",
-                    "https://www.benscookies.com/pages/contact-us",
-                    "https://www.hotelchocolat.com/uk/help/contact-us.html",
-                    "https://www.poundland.co.uk/contact-us",
-                    "https://www.iceland.co.uk/customer-support",
-                    "https://www.spar.co.uk/contact/",
-                    "https://www.coop.co.uk/get-in-touch",
-                    "https://www.marksandspencer.com/c/help/contact-us",
-                    "https://www.tesco.com/help/contact/",
-                    "https://www.sainsburys.co.uk/help/contact-us",
-                    "https://www.waitrose.com/ecom/help-information/customer-service",
-                    "https://www.asda.com/help/contact-us",
-                    "https://www.ocado.com/webshop/customer-service/contact-us",
-                    "https://www.aldi.co.uk/contact",
-                    "https://www.lidl.co.uk/c/customer-services/s10019520",
-                    "https://www.petsathome.com/shop/en/pets/store-locator",
-                    "https://www.travisperkins.co.uk/contact-us",
-                    "https://www.jewson.co.uk/contact-us",
-                    "https://www.sigplc.com/contact-us",
-                    "https://www.cef.co.uk/help/contact-us",
-                    "https://www.cityplumbing.co.uk/help/contact-us",
-                    "https://www.premierinn.com/gb/en/contact.html",
-                ]
             buyer_intent_urls = [
                 "https://www.nextplc.co.uk/suppliers",
                 "https://www.marksandspencer.com/c/suppliers",
@@ -1122,53 +1142,6 @@ class LeadDiscovery:
             ]
         if region != "USA":
             return []
-        if source_name == "seed-usa-retail-restaurant-industrial-growth":
-            return [
-                "https://www.chipotle.com/contact-us",
-                "https://www.shakeshack.com/contact-us",
-                "https://www.sweetgreen.com/contact",
-                "https://cava.com/contact-us",
-                "https://www.panerabread.com/en-us/contact.html",
-                "https://www.modpizza.com/contact/",
-                "https://www.jersey-mikes.com/contact-us",
-                "https://www.fiveguys.com/contact-us",
-                "https://www.dominos.com/en/pages/content/customer-service/",
-                "https://www.pizzahut.com/index.php?contactus=true",
-                "https://www.papajohns.com/company/contact-us/",
-                "https://www.olivegarden.com/contact-us",
-                "https://www.chilis.com/contact",
-                "https://www.outback.com/contact",
-                "https://www.ihop.com/en/contact-us",
-                "https://www.dennys.com/contact-us",
-                "https://www.cheesecakefactory.com/contact-us",
-                "https://www.redlobster.com/contact-us",
-                "https://www.bjsrestaurants.com/contact-us",
-                "https://www.californiapizzakitchen.com/contact-us",
-                "https://www.target.com/c/contact-us/-/N-hn3j4",
-                "https://www.costco.com/customer-service.html",
-                "https://www.bestbuy.com/contact-us",
-                "https://www.homedepot.com/c/customer_service",
-                "https://www.lowes.com/l/contact-us",
-                "https://www.ikea.com/us/en/customer-service/contact-us/",
-                "https://www.wayfair.com/help/article/contact_us",
-                "https://www.williams-sonoma.com/customer-service/contact-us.html",
-                "https://www.crateandbarrel.com/customer-service/contact-us/",
-                "https://www.containerstore.com/contactus",
-                "https://www.dickssportinggoods.com/s/contact-us",
-                "https://www.rei.com/help",
-                "https://www.academy.com/help/contact-us",
-                "https://www.flooranddecor.com/contact-us.html",
-                "https://www.uline.com/CustomerService/ContactUs",
-                "https://www.grainger.com/content/contact-us",
-                "https://www.fastenal.com/en/22/contact-us",
-                "https://www.mscdirect.com/contactus",
-                "https://www.cintas.com/company/contact-us/",
-                "https://www.univar.com/contact-us",
-                "https://www.prologis.com/contact-us",
-                "https://www.hines.com/contact",
-                "https://www.jll.com/en-us/contact-us",
-                "https://www.cbre.com/about-us/contact-us",
-            ]
         buyer_intent_urls = [
             "https://www.ssactivewear.com/contact",
             "https://www.alphabroder.com/pages/contact-us",

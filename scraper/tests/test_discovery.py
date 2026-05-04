@@ -125,7 +125,6 @@ class LeadDiscoveryTests(unittest.TestCase):
         queries = self.discovery._buyer_search_queries("USA", "architecture projects")
         query_text = " ".join(queries).lower()
 
-        self.assertEqual(names[0], "seed-usa-retail-restaurant-industrial-growth")
         self.assertIn("yellowpages-usa-business-search", names)
         self.assertFalse(any("fashion" in name or "apparel" in name for name in names))
         self.assertTrue(any("yellowpages" in url for url in urls))
@@ -136,7 +135,6 @@ class LeadDiscoveryTests(unittest.TestCase):
     def test_uk_architecture_sources_include_non_bing_fallbacks(self):
         sources = self.discovery.generate_sources("UK", "architecture planning")
         names = [source.name for source in sources]
-        self.assertIn("seed-uk-retail-restaurant-industrial-growth", names)
         self.assertIn("yell-uk-business-search", names)
         self.assertLess(
             names.index("yell-uk-business-search"),
