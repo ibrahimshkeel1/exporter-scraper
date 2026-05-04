@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 
@@ -8,7 +9,14 @@ SCRAPER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SCRAPER_DIR not in sys.path:
     sys.path.insert(0, SCRAPER_DIR)
 
-from main import apply_job_config, compute_discovery_limit, relaxed_score_thresholds
+from main import (
+    apply_job_config,
+    apply_recent_dedupe,
+    compute_discovery_limit,
+    load_recent_domains,
+    relaxed_score_thresholds,
+    save_recent_domains,
+)
 
 
 class MainConfigTests(unittest.TestCase):
@@ -68,6 +76,42 @@ class MainConfigTests(unittest.TestCase):
         self.assertTrue(configured.fill_until_complete)
         self.assertFalse(configured.allow_no_email)
         self.assertTrue(configured.allow_weak_buyer_evidence)
+
+    def test_recent_domain_memory_roundtrip(self):
+        with TemporaryDirectory() as tmp_dir:
+            memory_path = os.path.join(tmp_dir, "recent_domains.json")
+            saved = save_recent_domains(
+                memory_path,
+                existing_domains=["alpha.com", "www.beta.com"],
+                new_domains=["beta.com", "gamma.com", "www.alpha.com"],
+                max_items=500,
+            )
+            loaded = load_recent_domains(memory_path, max_items=500)
+
+        self.assertEqual(saved, ["beta.com", "gamma.com", "alpha.com"])
+        self.assertEqual(loaded, ["beta.com", "gamma.com", "alpha.com"])
+
+    def test_apply_recent_dedupe_drops_seen_domains(self):
+        class DummyScoring:
+            @staticmethod
+            def rank_and_filter(candidates, limit, min_score):
+                return list(candidates)[:limit]
+
+        scored_candidates = [
+            {"domain": "repeat.com", "score": 90},
+            {"domain": "newco.com", "score": 89},
+            {"domain": "fresh.com", "score": 88},
+        ]
+        filtered, dropped = apply_recent_dedupe(
+            scoring=DummyScoring(),
+            scored_candidates=scored_candidates,
+            min_score=70,
+            limit=2,
+            recent_domains=["repeat.com"],
+        )
+
+        self.assertEqual(dropped, 1)
+        self.assertEqual([lead["domain"] for lead in filtered], ["newco.com", "fresh.com"])
 
 
 if __name__ == "__main__":

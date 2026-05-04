@@ -15,6 +15,9 @@ class DiscoverySource:
     include_directory_links: bool = False
     discovery_method: str = "directory"
     candidate_kind: str = "website"
+    signal_detected: str = ""
+    signal_confidence: float = 0.0
+    why_now: str = ""
 
 
 class LeadDiscovery:
@@ -122,9 +125,10 @@ class LeadDiscovery:
         ".vn",
     )
 
-    def __init__(self, limit=30, search_terms=None):
+    def __init__(self, limit=30, search_terms=None, signal_map=None):
         self.limit = limit
         self.search_terms = [term for term in (search_terms or []) if term]
+        self.signal_map = signal_map or {}
         self.seen_domains = set()
 
     @staticmethod
@@ -221,6 +225,8 @@ class LeadDiscovery:
         host = (parsed.hostname or "").lower()
         if not host:
             return False
+        if source.candidate_kind == "direct_url":
+            return True
         domain = self._normalize_domain(candidate_url)
         if domain in self.EXCLUDED_ROOT_DOMAINS:
             return False
@@ -281,9 +287,61 @@ class LeadDiscovery:
             "source_url": source.url,
             "discovery_method": source.discovery_method,
             "candidate_kind": source.candidate_kind,
+            "signal_detected": source.signal_detected,
+            "signal_confidence_score": source.signal_confidence,
+            "why_now": source.why_now,
             "region": region,
             "industry": industry,
         }
+
+    @staticmethod
+    def _signal_slug(value):
+        return re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")[:36] or "signal"
+
+    def _signal_search_sources(self, region, industry):
+        signals = self.signal_map.get("signals", []) if isinstance(self.signal_map, dict) else []
+        if not signals:
+            return []
+        sources = []
+        for signal_index, signal in enumerate(signals, start=1):
+            signal_name = str(signal.get("signal", "")).strip()
+            confidence = float(signal.get("confidence", 0.7) or 0.7)
+            why_now = str(signal.get("why_now", "")).strip()
+            queries = [str(query or "").strip() for query in signal.get("queries", []) if str(query or "").strip()]
+            source_urls = [str(url or "").strip() for url in signal.get("source_urls", []) if str(url or "").strip()]
+            signal_slug = self._signal_slug(signal_name or f"signal-{signal_index}")
+            for page_url in source_urls:
+                sources.append(
+                    DiscoverySource(
+                        name=f"signal-seed-{signal_slug}",
+                        url=page_url,
+                        selectors=(),
+                        discovery_method="signal_seed",
+                        candidate_kind="direct_url",
+                        signal_detected=signal_name,
+                        signal_confidence=confidence,
+                        why_now=why_now,
+                    )
+                )
+            for query in queries[:4]:
+                encoded = quote_plus(query)
+                for page_number, first in enumerate((1, 11), start=1):
+                    sources.append(
+                        DiscoverySource(
+                            name=f"signal-bing-p{page_number}-{signal_slug}",
+                            url=f"https://www.bing.com/search?q={encoded}&first={first}",
+                            selectors=(
+                                "li.b_algo h2 a[href]",
+                                "ol#b_results a[href]",
+                                "a[href*='http']",
+                            ),
+                            discovery_method="signal_search",
+                            signal_detected=signal_name,
+                            signal_confidence=confidence,
+                            why_now=why_now,
+                        )
+                    )
+        return sources
 
     async def _extract_links_from_source(self, page, source):
         seen = set()
@@ -519,13 +577,24 @@ class LeadDiscovery:
 
     def _search_sources(self, region, industry):
         sources = []
+        is_apparel = self._is_apparel_industry(industry)
+        is_architecture = self._is_architecture_industry(industry)
         for query in self._buyer_search_queries(region, industry):
             slug = self._slug(query)
             encoded = quote_plus(query)
-            if region in {"Europe", "International"}:
+            if is_apparel:
+                if region in {"Europe", "International"}:
+                    bing_pages = (1, 11, 21)
+                else:
+                    bing_pages = (1, 11, 21, 31, 41)
+            elif is_architecture:
+                # Architecture searches trigger anti-bot controls quickly on Bing,
+                # so keep pages shallow and rely on more query variety.
+                bing_pages = (1, 11)
+            elif region in {"Europe", "International"}:
                 bing_pages = (1, 11, 21)
             else:
-                bing_pages = (1, 11, 21, 31, 41)
+                bing_pages = (1, 11, 21)
             # DuckDuckGo's HTML endpoint frequently stalls under Playwright on
             # the VPS, which blocks discovery before curated sources run.
             duckduckgo_pages = ()
@@ -559,11 +628,12 @@ class LeadDiscovery:
 
     def generate_sources(self, region, industry):
         region = self._canonical_region(region)
+        signal_sources = self._signal_search_sources(region, industry)
         query = quote_plus(self._product_seed(industry))
         is_apparel = self._is_apparel_industry(industry)
         if region == "USA":
             if not is_apparel:
-                return self._search_sources(region, industry)
+                return signal_sources + self._search_sources(region, industry)
             buyer_intent_sources = [
                 DiscoverySource(
                     name="seed-usa-buyer-intent-pages",
@@ -629,10 +699,31 @@ class LeadDiscovery:
                     candidate_kind="seed_list",
                 ),
             ]
-            return buyer_intent_sources + directory_sources + self._search_sources(region, industry)
+            return signal_sources + buyer_intent_sources + directory_sources + self._search_sources(region, industry)
         if region == "UK":
             if not is_apparel:
-                return self._search_sources(region, industry)
+                architecture_seed_sources = []
+                if self._is_architecture_industry(industry):
+                    architecture_seed_sources = [
+                        DiscoverySource(
+                            name="seed-uk-retail-restaurant-industrial-growth",
+                            url="seed://uk-retail-restaurant-industrial-growth",
+                            selectors=(),
+                            discovery_method="curated_seed",
+                            candidate_kind="seed_list",
+                        ),
+                    ]
+                directory_sources = [
+                    DiscoverySource(
+                        name="yell-uk-business-search",
+                        url=f"https://www.yell.com/ucs/UcsSearchAction.do?keywords={query}+companies+contact&location=UK",
+                        selectors=(
+                            "a.businessCapsule--ctaItem[href]",
+                            "a[data-tracking*='website'][href]",
+                        ),
+                    ),
+                ]
+                return signal_sources + architecture_seed_sources + directory_sources + self._search_sources(region, industry)
             buyer_intent_sources = [
                 DiscoverySource(
                     name="seed-uk-buyer-intent-pages",
@@ -659,10 +750,10 @@ class LeadDiscovery:
                     ),
                 ),
             ]
-            return buyer_intent_sources + directory_sources + self._search_sources(region, industry)
+            return signal_sources + buyer_intent_sources + directory_sources + self._search_sources(region, industry)
         if region == "International":
             if not is_apparel:
-                return self._search_sources(region, industry)
+                return signal_sources + self._search_sources(region, industry)
             seed_sources = [
                 DiscoverySource(
                     name="seed-usa-buyer-intent-pages",
@@ -686,9 +777,9 @@ class LeadDiscovery:
                     candidate_kind="seed_list",
                 ),
             ]
-            return seed_sources + self._search_sources(region, industry)
+            return signal_sources + seed_sources + self._search_sources(region, industry)
         if not is_apparel:
-            return self._search_sources(region, industry)
+            return signal_sources + self._search_sources(region, industry)
         buyer_intent_sources = [
             DiscoverySource(
                 name="seed-europe-buyer-intent-pages",
@@ -708,7 +799,7 @@ class LeadDiscovery:
                 ),
             ),
         ]
-        return buyer_intent_sources + sources + self._search_sources(region, industry)
+        return signal_sources + buyer_intent_sources + sources + self._search_sources(region, industry)
 
     async def run_discovery(self, page, region, industry="clothing brands", chunk_size=60):
         print(
@@ -718,10 +809,34 @@ class LeadDiscovery:
 
         yielded_count = 0
         current_chunk = []
+        bing_failures = 0
+        skip_bing = False
 
         for source in sources:
             if yielded_count >= self.limit:
                 break
+            source_name_lower = source.name.lower()
+            if skip_bing and "bing-" in source_name_lower:
+                print(f"Skipping {source.name} due to repeated Bing failures earlier in this run.")
+                continue
+            if source.candidate_kind == "direct_url":
+                candidate = self._candidate_from_url(source.url, source, region, industry)
+                if candidate:
+                    current_chunk.append(candidate)
+                    if len(current_chunk) >= chunk_size:
+                        yield current_chunk
+                        yielded_count += len(current_chunk)
+                        current_chunk = []
+                print(
+                    f"Discovery progress: {yielded_count + len(current_chunk)} total candidates (+{1 if candidate else 0} from {source.name})"
+                )
+                if current_chunk and yielded_count < self.limit:
+                    remaining = self.limit - yielded_count
+                    batch = current_chunk[:remaining]
+                    current_chunk = current_chunk[remaining:]
+                    yielded_count += len(batch)
+                    yield batch
+                continue
             if source.candidate_kind == "seed_list":
                 found_in_source = 0
                 for seed_url in self.seed_urls(region, source.name):
@@ -750,6 +865,8 @@ class LeadDiscovery:
             found_in_source = 0
             try:
                 await page.goto(source.url, timeout=45000, wait_until="domcontentloaded")
+                if "bing-" in source_name_lower:
+                    bing_failures = 0
                 await page.wait_for_timeout(random.randint(1500, 3000))
                 links = await self._extract_links_from_source(page, source)
                 for raw_href in links:
@@ -770,6 +887,18 @@ class LeadDiscovery:
                             break
             except Exception as exc:
                 print(f"Error visiting {source.url}: {exc}")
+                error_text = str(exc).lower()
+                if "bing-" in source_name_lower and any(
+                    marker in error_text
+                    for marker in ("err_connection_closed", "too many requests", "429", "rate")
+                ):
+                    bing_failures += 1
+                    if bing_failures >= 3:
+                        skip_bing = True
+                        print(
+                            "Bing circuit breaker activated after repeated connection/rate-limit failures; "
+                            "continuing with non-Bing sources."
+                        )
 
             print(
                 f"Discovery progress: {yielded_count + len(current_chunk)} total candidates (+{found_in_source} from {source.name})"
@@ -797,6 +926,68 @@ class LeadDiscovery:
                 return LeadDiscovery.seed_urls("Europe", source_name)
             return []
         if region == "UK":
+            if source_name == "seed-uk-retail-restaurant-industrial-growth":
+                return [
+                    "https://www.pret.co.uk/en-GB/contact-us",
+                    "https://www.costa.co.uk/contact-us",
+                    "https://www.caffenero.com/uk/contact/",
+                    "https://www.greggs.co.uk/contact-us",
+                    "https://www.leon.co/contact",
+                    "https://www.itsu.com/contact-us",
+                    "https://www.wagamama.com/contact-us",
+                    "https://www.pizzapilgrims.co.uk/contact",
+                    "https://www.dishoom.com/contact/",
+                    "https://www.nandos.co.uk/contact-us",
+                    "https://www.burgerking.co.uk/contact-us",
+                    "https://www.fiveguys.co.uk/contact-us",
+                    "https://www.subway.com/en-gb/contactus",
+                    "https://www.dominos.co.uk/contact-us",
+                    "https://www.papajohns.co.uk/contact-us",
+                    "https://www.mcdonalds.com/gb/en-gb/help/faq/contact-us.html",
+                    "https://www.kfc.co.uk/help/contact-us",
+                    "https://www.tortila.co.uk/contact-us",
+                    "https://www.zizzi.co.uk/contact",
+                    "https://www.pizzahut.co.uk/contact-us",
+                    "https://www.askitalian.co.uk/contact-us",
+                    "https://www.gbk.co.uk/contact",
+                    "https://www.bone-daddies.com/contact",
+                    "https://www.sushidog.com/pages/contact",
+                    "https://www.ikea.com/gb/en/customer-service/contact-us/",
+                    "https://www.dunelm.com/info/contact-us",
+                    "https://www.bmstores.co.uk/contact-us",
+                    "https://www.theworks.co.uk/contactus",
+                    "https://www.petsathome.com/contact-us",
+                    "https://www.halfords.com/customer-services/contact-us/",
+                    "https://www.toolstation.com/contact-us",
+                    "https://www.wickes.co.uk/help-and-support/contact-us",
+                    "https://www.screwfix.com/help/contact-us",
+                    "https://www.diy.com/customer-support/contact-us",
+                    "https://www.currys.co.uk/services/contact-us.html",
+                    "https://www.argos.co.uk/help/contact-us/",
+                    "https://www.jysk.co.uk/customer-service/contact",
+                    "https://www.bensonsforbeds.co.uk/contact-us/",
+                    "https://www.benscookies.com/pages/contact-us",
+                    "https://www.hotelchocolat.com/uk/help/contact-us.html",
+                    "https://www.poundland.co.uk/contact-us",
+                    "https://www.iceland.co.uk/customer-support",
+                    "https://www.spar.co.uk/contact/",
+                    "https://www.coop.co.uk/get-in-touch",
+                    "https://www.marksandspencer.com/c/help/contact-us",
+                    "https://www.tesco.com/help/contact/",
+                    "https://www.sainsburys.co.uk/help/contact-us",
+                    "https://www.waitrose.com/ecom/help-information/customer-service",
+                    "https://www.asda.com/help/contact-us",
+                    "https://www.ocado.com/webshop/customer-service/contact-us",
+                    "https://www.aldi.co.uk/contact",
+                    "https://www.lidl.co.uk/c/customer-services/s10019520",
+                    "https://www.petsathome.com/shop/en/pets/store-locator",
+                    "https://www.travisperkins.co.uk/contact-us",
+                    "https://www.jewson.co.uk/contact-us",
+                    "https://www.sigplc.com/contact-us",
+                    "https://www.cef.co.uk/help/contact-us",
+                    "https://www.cityplumbing.co.uk/help/contact-us",
+                    "https://www.premierinn.com/gb/en/contact.html",
+                ]
             buyer_intent_urls = [
                 "https://www.nextplc.co.uk/suppliers",
                 "https://www.marksandspencer.com/c/suppliers",

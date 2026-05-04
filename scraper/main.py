@@ -158,6 +158,102 @@ def relaxed_score_thresholds(min_score):
     return [threshold for index, threshold in enumerate(thresholds) if threshold not in thresholds[:index]]
 
 
+def merge_search_terms(primary_terms, secondary_terms):
+    merged = []
+    for values in (primary_terms or [], secondary_terms or []):
+        for value in values:
+            text = str(value or "").strip()
+            if text and text not in merged:
+                merged.append(text)
+    return merged
+
+
+def merge_scoring_context(base_context, override_context):
+    merged = {}
+    for key in ("product_keywords", "buyer_keywords", "negative_keywords"):
+        merged_values = []
+        for context in (base_context or {}, override_context or {}):
+            for value in context.get(key, []) if isinstance(context, dict) else []:
+                text = str(value or "").strip()
+                if text and text not in merged_values:
+                    merged_values.append(text)
+        if merged_values:
+            merged[key] = merged_values
+    return merged or None
+
+
+def _normalize_domain_value(value):
+    domain = str(value or "").strip().lower()
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain
+
+
+def _recent_domains_file(output_path):
+    output_file = Path(output_path or "buyer_leads.csv")
+    parent = output_file.parent if str(output_file.parent) else Path(".")
+    return parent / "recent_delivered_domains.json"
+
+
+def load_recent_domains(file_path, max_items=500):
+    path = Path(file_path)
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    cleaned = []
+    for item in payload:
+        domain = _normalize_domain_value(item)
+        if domain and domain not in cleaned:
+            cleaned.append(domain)
+    return cleaned[:max_items]
+
+
+def save_recent_domains(file_path, existing_domains, new_domains, max_items=500):
+    seen = []
+    for domain in new_domains + existing_domains:
+        normalized = _normalize_domain_value(domain)
+        if normalized and normalized not in seen:
+            seen.append(normalized)
+    final_domains = seen[:max_items]
+    path = Path(file_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(final_domains, ensure_ascii=True, indent=2), encoding="utf-8")
+    return final_domains
+
+
+def apply_recent_dedupe(scoring, scored_candidates, min_score, limit, recent_domains):
+    if not scored_candidates or not recent_domains:
+        ranked = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
+        return ranked, 0
+
+    ranked_candidates = scoring.rank_and_filter(
+        scored_candidates,
+        limit=max(limit * 6, len(scored_candidates)),
+        min_score=min_score,
+    )
+    recent_set = {_normalize_domain_value(domain) for domain in recent_domains}
+    filtered = []
+    dropped = 0
+    seen = set()
+    for candidate in ranked_candidates:
+        domain = _normalize_domain_value(candidate.get("domain", ""))
+        if not domain or domain in seen:
+            continue
+        seen.add(domain)
+        if domain in recent_set:
+            dropped += 1
+            continue
+        filtered.append(candidate)
+        if len(filtered) >= limit:
+            break
+    return filtered, dropped
+
+
 async def run_scraper(
     region,
     industry,
@@ -204,6 +300,7 @@ async def run_scraper(
     from modules.enrichment import LeadEnrichment
     from modules.export import LeadExport
     from modules.scoring import LeadScoring
+    from modules.signal_map import build_signal_map
 
     try:
         import aiohttp
@@ -226,10 +323,24 @@ async def run_scraper(
     top_leads = []
     seen_enriched_domains = set()
 
+    signal_map = build_signal_map(region=region, industry=industry, search_terms=search_terms)
+    merged_search_terms = merge_search_terms(signal_map.get("routed_search_terms", []), search_terms or [])
+    merged_scoring_context = merge_scoring_context(signal_map.get("scoring_context"), scoring_context)
+    emit_progress(
+        "planning",
+        "Signal map generated for discovery routing.",
+        status_output=status_output,
+        job_id=job_id,
+        source="system",
+        signal_cluster=signal_map.get("cluster", ""),
+        signal_count=len(signal_map.get("signals", [])),
+        routed_search_terms=len(merged_search_terms),
+    )
+
     scoring = LeadScoring(
         require_email=not allow_no_email,
         require_buyer_evidence=not allow_weak_buyer_evidence,
-        scoring_context=scoring_context,
+        scoring_context=merged_scoring_context,
     )
 
     worker_count = 2 if test_mode else 4
@@ -403,7 +514,11 @@ async def run_scraper(
         )
         page = await context.new_page()
 
-        discovery = LeadDiscovery(limit=discovery_limit, search_terms=search_terms)
+        discovery = LeadDiscovery(
+            limit=discovery_limit,
+            search_terms=merged_search_terms,
+            signal_map=signal_map,
+        )
         enrichment = LeadEnrichment(
             concurrency=worker_count,
             max_extra_pages=12,
@@ -494,6 +609,28 @@ async def run_scraper(
         f"Quality filter: {len(top_leads)}/{limit} qualified leads from {len(scored_candidates)} enriched candidates"
     )
 
+    recent_domains_path = _recent_domains_file(output)
+    recent_domains = load_recent_domains(recent_domains_path, max_items=500)
+    top_leads, dropped_as_repeats = apply_recent_dedupe(
+        scoring=scoring,
+        scored_candidates=scored_candidates,
+        min_score=effective_min_score,
+        limit=limit,
+        recent_domains=recent_domains,
+    )
+    if dropped_as_repeats:
+        emit_progress(
+            "scoring",
+            "Suppressed recently delivered domains from this batch.",
+            status_output=status_output,
+            job_id=job_id,
+            source="scoring",
+            dropped_repeat_domains=dropped_as_repeats,
+            recent_memory_size=len(recent_domains),
+            qualified_count=len(top_leads),
+            target_count=limit,
+        )
+
     emit_progress(
         "exporting",
         "Writing customer exports.",
@@ -525,6 +662,14 @@ async def run_scraper(
             output_format=output_format,
         )
     filled_pack = len(top_leads) >= limit
+    delivered_domains = [_normalize_domain_value(lead.get("domain", "")) for lead in top_leads if lead.get("domain")]
+    if delivered_domains:
+        save_recent_domains(
+            recent_domains_path,
+            recent_domains,
+            delivered_domains,
+            max_items=500,
+        )
     if not filled_pack:
         message = "Could not fill the paid lead pack before the candidate hard cap."
         if fill_until_complete:

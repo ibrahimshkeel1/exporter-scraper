@@ -6,7 +6,7 @@ SCRAPER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SCRAPER_DIR not in sys.path:
     sys.path.insert(0, SCRAPER_DIR)
 
-from modules.discovery import LeadDiscovery
+from modules.discovery import DiscoverySource, LeadDiscovery
 
 
 class LeadDiscoveryTests(unittest.TestCase):
@@ -130,6 +130,62 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertNotIn("private label clothing", query_text)
         self.assertNotIn("wholesaler", query_text)
         self.assertIn("projects contact email", query_text)
+
+    def test_uk_architecture_sources_include_non_bing_fallbacks(self):
+        sources = self.discovery.generate_sources("UK", "architecture planning")
+        names = [source.name for source in sources]
+        self.assertIn("seed-uk-retail-restaurant-industrial-growth", names)
+        self.assertIn("yell-uk-business-search", names)
+        self.assertLess(
+            names.index("yell-uk-business-search"),
+            next(index for index, name in enumerate(names) if name.startswith("bing-p1-")),
+        )
+
+    def test_architecture_search_sources_limit_bing_pages(self):
+        sources = self.discovery._search_sources("UK", "architecture planning")
+        names = [source.name for source in sources]
+        self.assertTrue(any(name.startswith("bing-p1-") for name in names))
+        self.assertTrue(any(name.startswith("bing-p2-") for name in names))
+        self.assertFalse(any(name.startswith("bing-p3-") for name in names))
+
+    def test_signal_map_adds_signal_sources(self):
+        signal_map = {
+            "signals": [
+                {
+                    "signal": "fit-out-rfp",
+                    "confidence": 0.9,
+                    "why_now": "RFP activity indicates immediate buying intent.",
+                    "queries": ["architecture UK fit out rfp"],
+                    "source_urls": ["https://example.com/contact"],
+                }
+            ]
+        }
+        discovery = LeadDiscovery(limit=10, signal_map=signal_map)
+        sources = discovery.generate_sources("UK", "architecture planning")
+        names = [source.name for source in sources]
+        self.assertIn("signal-seed-fit-out-rfp", names)
+        self.assertTrue(any(name.startswith("signal-bing-p1-fit-out-rfp") for name in names))
+
+    def test_signal_fields_are_carried_to_candidates(self):
+        signaled_source = DiscoverySource(
+            name="signal-seed-test",
+            url="https://example.com/contact",
+            selectors=(),
+            discovery_method="signal_seed",
+            candidate_kind="direct_url",
+            signal_detected="new-location-openings",
+            signal_confidence=0.88,
+            why_now="Recent expansion signal.",
+        )
+        candidate = self.discovery._candidate_from_url(
+            "https://example.com/contact",
+            signaled_source,
+            "USA",
+            "architecture projects",
+        )
+        self.assertEqual(candidate["signal_detected"], "new-location-openings")
+        self.assertEqual(candidate["signal_confidence_score"], 0.88)
+        self.assertEqual(candidate["why_now"], "Recent expansion signal.")
 
 
 if __name__ == "__main__":
