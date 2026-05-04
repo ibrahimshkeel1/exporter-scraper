@@ -13,42 +13,140 @@ type PreflightInput = {
   conversation?: IntakeMessage[];
 };
 
-function fallbackPreflight(input: PreflightInput): TargetingPreflight {
+function unique(values: string[]) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function hasAny(text: string, terms: string[]) {
+  return terms.some((term) => text.includes(term));
+}
+
+function extractWebsite(text: string) {
+  return text.match(/https?:\/\/[^\s)]+/i)?.[0]?.replace(/[.,]+$/, "") || "";
+}
+
+function inferMarkets(region: string, transcript: string) {
+  const lower = transcript.toLowerCase();
+  const markets: string[] = [];
+  if (/\busa\b|\bu\.s\.\b|united states|america|american/.test(lower)) markets.push("USA");
+  if (/\buk\b|u\.k\.|united kingdom|britain|england|london/.test(lower)) markets.push("UK");
+  if (/europe|germany|france|netherlands|italy|spain|poland|sweden/.test(lower)) markets.push("Europe");
+  if (/uae|dubai|saudi|qatar|kuwait|middle east|gcc/.test(lower)) markets.push("GCC");
+  if (region && region !== "International") markets.unshift(region);
+  return unique(markets.length ? markets : [region || "International"]).slice(0, 5);
+}
+
+function inferFallbackBriefParts(input: PreflightInput) {
   const transcript = (input.conversation || [])
     .filter((message) => message.role === "user")
     .map((message) => message.content)
     .join(" ")
     .trim();
-  const product = input.productCategory.trim() || transcript.slice(0, 100) || "business services";
-  const buyer = input.buyerType.trim() || "ideal customers decision makers";
-  const region = input.region || "International";
-  const base = `${product} ${buyer} ${region}`;
+  const lower = transcript.toLowerCase();
+  const website = extractWebsite(transcript);
+  const targetMarkets = inferMarkets(input.region, transcript);
+  const isClothingManufacturer = hasAny(lower, ["manufacturer", "manufacturing", "factory", "export"]) && hasAny(lower, ["clothing", "apparel", "denim", "jeans", "garment"]);
+  const isAgency = hasAny(lower, ["agency", "web design", "marketing", "seo", "software", "development"]);
+  const isHealthcare = hasAny(lower, ["clinic", "dentist", "dental", "doctor", "medical"]);
 
+  if (isClothingManufacturer) {
+    const product = hasAny(lower, ["denim", "jeans"]) ? "denim jeans and clothing manufacturing" : "clothing manufacturing";
+    return {
+      transcript,
+      website,
+      businessSummary: `Pakistan-based ${product} business${website ? ` with website ${website}` : ""}.`,
+      offerSummary: `Affordable ${product}, private-label production, and export supply for overseas buyers.`,
+      idealCustomerProfile: "Fashion retailers, denim brands, boutiques, wholesalers, importers, and private-label clothing brands buying from USA/UK/international suppliers.",
+      refinedIndustry: `${product} buyers retailers wholesalers importers private label brands`,
+      buyerTypes: ["Fashion retailers", "Denim brands", "Private-label clothing brands", "Boutiques", "Wholesalers", "Importers"],
+      targetMarkets,
+      excludedMarkets: ["Pakistan", "India", "Bangladesh", "China"],
+      qualificationSignals: [
+        "denim",
+        "jeans",
+        "clothing",
+        "apparel",
+        "fashion retailer",
+        "boutique",
+        "wholesale",
+        "private label",
+        "supplier",
+        "vendor",
+        "import",
+        "contact"
+      ],
+      disqualificationSignals: ["manufacturer competitors", "factories", "job listings", "fashion magazines", "marketplaces without direct brand websites"],
+      searchStem: `${product} retailers wholesalers importers private label brands`
+    };
+  }
+
+  if (isAgency || isHealthcare) {
+    const offer = isAgency ? "digital services" : "business services";
+    const audience = isHealthcare ? "clinics and healthcare businesses" : "companies likely to buy digital services";
+    return {
+      transcript,
+      website,
+      businessSummary: transcript.slice(0, 180) || `Business offering ${offer}.`,
+      offerSummary: offer,
+      idealCustomerProfile: audience,
+      refinedIndustry: `${audience} needing ${offer}`,
+      buyerTypes: isHealthcare ? ["Dental clinics", "Private clinics", "Healthcare practices"] : ["Small businesses", "Founders", "Local service companies", "Marketing decision makers"],
+      targetMarkets,
+      excludedMarkets: [],
+      qualificationSignals: ["website", "contact", "booking", "services", "about", "email"],
+      disqualificationSignals: ["job boards", "directories without websites", "competitors", "irrelevant blogs"],
+      searchStem: `${audience} ${offer}`
+    };
+  }
+
+  const product = input.productCategory.trim() || transcript.slice(0, 140) || "business services";
+  const buyer = input.buyerType.trim() || "qualified prospects and decision makers";
   return {
-    businessSummary: product,
+    transcript,
+    website,
+    businessSummary: transcript.slice(0, 180) || product,
     offerSummary: product,
-    website: "",
     idealCustomerProfile: buyer,
-    refinedIndustry: `${product} target customers`,
-    searchTerms: [
-      `${base} contact email`,
-      `${product} companies ${region}`,
-      `${product} service buyers ${region}`,
-      `${product} decision makers ${region}`
-    ],
-    buyerTypes: [input.buyerType || "Ideal customers", "Decision makers", "Companies with buying intent"],
-    targetMarkets: [region],
+    refinedIndustry: `${product} ${buyer}`,
+    buyerTypes: [buyer, "Decision makers", "Companies with buying intent"],
+    targetMarkets,
     excludedMarkets: [],
     qualificationSignals: ["Clear fit for the offer", "Public website", "Usable contact route"],
     disqualificationSignals: ["Directories without company websites", "Competitors", "Irrelevant consumer pages"],
-    outreachAngle: "Lead with the specific business problem the offer solves.",
+    searchStem: `${product} ${buyer}`
+  };
+}
+
+function fallbackPreflight(input: PreflightInput): TargetingPreflight {
+  const brief = inferFallbackBriefParts(input);
+  const marketText = brief.targetMarkets.join(" ");
+  const searchBase = `${brief.searchStem} ${marketText}`.trim();
+
+  return {
+    businessSummary: brief.businessSummary,
+    offerSummary: brief.offerSummary,
+    website: brief.website,
+    idealCustomerProfile: brief.idealCustomerProfile,
+    refinedIndustry: brief.refinedIndustry,
+    searchTerms: [
+      `${searchBase} contact email`,
+      `${searchBase} supplier vendor procurement`,
+      `${searchBase} wholesale private label buyers`,
+      `${searchBase} retailers boutiques brands`
+    ],
+    buyerTypes: brief.buyerTypes,
+    targetMarkets: brief.targetMarkets,
+    excludedMarkets: brief.excludedMarkets,
+    qualificationSignals: brief.qualificationSignals,
+    disqualificationSignals: brief.disqualificationSignals,
+    outreachAngle: brief.offerSummary,
     needsMoreInfo: false,
     followUpQuestions: [],
-    riskLevel: product.length < 4 ? "high" : "low",
+    riskLevel: brief.transcript.length < 40 ? "high" : "medium",
     qualityNotes:
-      "Fallback AI brief used because Gemini is not configured. Discovery will use broad generic customer-fit signals.",
-    recommendedMinScore: 60,
-    warnings: product.length < 4 ? ["Product category is too broad."] : []
+      "Fallback lead brief used because Gemini was unavailable or rate-limited. The brief was inferred from your chat context.",
+    recommendedMinScore: 55,
+    warnings: brief.transcript.length < 40 ? ["Add more business context for a stronger AI brief."] : []
   };
 }
 
@@ -139,7 +237,11 @@ export async function runTargetingPreflight(input: PreflightInput): Promise<Targ
     return {
       ...fallbackPreflight(input),
       riskLevel: "medium",
-      warnings: [`Gemini lead brief failed with HTTP ${response.status}; fallback targeting was used.`]
+      warnings: [
+        response.status === 429
+          ? "Gemini is currently rate-limited, so a local context-based brief was used. Try Build AI brief again later for a richer analysis."
+          : `Gemini lead brief failed with HTTP ${response.status}; a local context-based brief was used.`
+      ]
     };
   }
 

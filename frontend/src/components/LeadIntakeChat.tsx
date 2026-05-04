@@ -19,7 +19,7 @@ const initialMessages: IntakeMessage[] = [
   {
     role: "assistant",
     content:
-      "Tell me about your business, website, offer, current sales plan, and the kind of customers you want. I’ll turn that into a lead-search brief before we run the scraper."
+      "Tell me about your business, website, offer, current sales plan, and the kind of customers you want. After you send context, click Build AI brief and I’ll turn it into a lead-search plan before we run the scraper."
   }
 ];
 
@@ -53,7 +53,15 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
     event.preventDefault();
     const content = draft.trim();
     if (!content) return;
-    setMessages((current) => [...current, { role: "user", content }]);
+    setMessages((current) => [
+      ...current,
+      { role: "user", content },
+      {
+        role: "assistant",
+        content:
+          "Context captured. Add more details if you want, or click Build AI brief to confirm the audience, markets, search terms, and lead-quality rules."
+      }
+    ]);
     setDraft("");
     setBrief(null);
     setMessage("");
