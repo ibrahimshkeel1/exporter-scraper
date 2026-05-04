@@ -1,0 +1,8 @@
+# Oxylabs Datacenter proxy pool template (US free plan: 5 IPs/ports)
+# Replace USERNAME and PASSWORD before use.
+# If password has special characters, URL-encode it.
+http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8001
+http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8002
+http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8003
+http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8004
+http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8005

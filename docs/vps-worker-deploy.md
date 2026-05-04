@@ -57,7 +57,11 @@ N8N_WEBHOOK_SECRET=same-value-as-n8n-secret
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 SUPABASE_EXPORT_BUCKET=lead-exports
+EXPORTFLOW_PROXY_POOL=http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8001,http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8002,http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8003,http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8004,http://user-USERNAME-country-US:PASSWORD@dc.oxylabs.io:8005
 ```
+
+`EXPORTFLOW_PROXY_POOL` is optional, but recommended for search stability.
+No Nginx changes are required for proxy rotation.
 
 ## 4. Run As A Service
 

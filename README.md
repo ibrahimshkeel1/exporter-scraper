@@ -50,6 +50,12 @@ python "final scrapper.py" --job-config scraper/job_config.example.json --status
 - `--a-plus-score`: minimum score for A+ hunt success (default: `85`)
 - `--allow-no-email`: allow otherwise qualified leads without candidate-owned emails
 - `--allow-weak-buyer-evidence`: allow product-fit leads with weak buyer/importer/procurement evidence
+- `--proxy`: discovery proxy URL; repeat flag for a proxy pool
+- `--proxy-file`: file with one proxy URL per line
+
+Proxy pool can also be passed by environment variable:
+
+- `EXPORTFLOW_PROXY_POOL=http://user:pass@host:port,http://user:pass@host2:port`
 
 ## Output Fields
 
