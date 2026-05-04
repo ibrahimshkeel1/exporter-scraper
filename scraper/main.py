@@ -66,6 +66,7 @@ def apply_job_config(args, config):
         "a_plus_score": "a_plus_score",
         "allow_no_email": "allow_no_email",
         "allow_weak_buyer_evidence": "allow_weak_buyer_evidence",
+        "fill_until_complete": "fill_until_complete",
         "status_output": "status_output",
         "job_id": "job_id",
     }
@@ -138,6 +139,7 @@ async def run_scraper(
     output_format,
     test_mode,
     min_score,
+    fill_until_complete=False,
     audit_output=None,
     allow_no_email=False,
     allow_weak_buyer_evidence=False,
@@ -314,9 +316,26 @@ async def run_scraper(
     filled_pack = len(top_leads) >= limit
     if not filled_pack:
         message = "Could not fill the paid lead pack before the candidate hard cap."
+        if fill_until_complete:
+            emit_progress(
+                "failed",
+                message,
+                status_output=status_output,
+                job_id=job_id,
+                qualified_count=len(top_leads),
+                target_count=limit,
+                analyzed_count=len(scored_candidates),
+                output=output,
+                output_format=output_format,
+                audit_output=audit_output or "",
+                filled_pack=False,
+            )
+            raise RuntimeError(
+                f"{message} Qualified {len(top_leads)}/{limit} after analyzing {len(scored_candidates)} candidates."
+            )
         emit_progress(
-            "failed",
-            message,
+            "delivered",
+            "Scraper job completed with partial results.",
             status_output=status_output,
             job_id=job_id,
             qualified_count=len(top_leads),
@@ -326,10 +345,10 @@ async def run_scraper(
             output_format=output_format,
             audit_output=audit_output or "",
             filled_pack=False,
+            partial_fill=True,
+            warning=f"{message} Qualified {len(top_leads)}/{limit} after analyzing {len(scored_candidates)} candidates.",
         )
-        raise RuntimeError(
-            f"{message} Qualified {len(top_leads)}/{limit} after analyzing {len(scored_candidates)} candidates."
-        )
+        return
 
     emit_progress(
         "delivered",
@@ -651,6 +670,7 @@ if __name__ == "__main__":
                 output_format=args.format,
                 test_mode=args.test_mode,
                 min_score=args.min_score,
+                fill_until_complete=getattr(args, "fill_until_complete", False),
                 audit_output=args.audit_output,
                 allow_no_email=args.allow_no_email,
                 allow_weak_buyer_evidence=args.allow_weak_buyer_evidence,

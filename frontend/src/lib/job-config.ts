@@ -21,7 +21,7 @@ export function buildScraperJobConfig(
   const pack = getLeadPack(input.packId);
   const demoBypass = Boolean(options.demoBypass);
   const leadLimit = options.leadLimit ?? (demoBypass ? 1 : pack.leads);
-  const maxAnalyzed = demoBypass ? 80 : Math.max(1000, pack.leads * 300);
+  const maxAnalyzed = demoBypass ? 200 : Math.max(5000, pack.leads * 1000);
 
   const minScore = options.minScore ?? input.advanced?.minScore ?? (demoBypass ? 0 : preflight.recommendedMinScore || 75);
   const allowNoEmail = input.advanced?.allowNoEmail ?? true;
@@ -49,7 +49,7 @@ export function buildScraperJobConfig(
       limit: leadLimit,
       min_score: minScore,
       max_analyzed: maxAnalyzed,
-      fill_until_complete: true,
+      fill_until_complete: false,
       mode: demoBypass ? "demo" : "verified"
     },
     quality: {
