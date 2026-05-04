@@ -25,6 +25,8 @@ type WorkerLog = {
   source: string;
   status: string;
   time: string;
+  engine?: string;
+  lane?: string;
 };
 
 function logTime() {
@@ -37,24 +39,42 @@ function parseWorkerPayload(event: MessageEvent) {
     const source = typeof parsed.source === "string" ? parsed.source : "worker";
     const status = typeof parsed.status === "string" ? parsed.status : "terminal";
     const message = typeof parsed.message === "string" ? parsed.message : JSON.stringify(parsed);
-    return { source, status, message };
+    const engine = typeof parsed.engine === "string" ? parsed.engine : "";
+    const lane = typeof parsed.lane === "string" ? parsed.lane : "";
+    return { source, status, message, engine, lane };
   } catch {
-    return { source: "worker", status: "terminal", message: event.data };
+    return { source: "worker", status: "terminal", message: event.data, engine: "", lane: "" };
   }
 }
 
-function laneForSource(source: string) {
-  return source === "enrichment" || source === "scoring" ? "enrichment" : "discovery";
+type DiscoveryLane = "main" | "bing" | "duckduckgo" | "yahoo";
+
+function discoveryLaneForPayload(payload: { source: string; lane?: string; engine?: string }) {
+  if (payload.source === "enrichment" || payload.source === "scoring") return "enrichment";
+  const lane = (payload.lane || "").toLowerCase();
+  const engine = (payload.engine || "").toLowerCase();
+  if (lane === "bing" || engine === "bing") return "bing";
+  if (lane === "duckduckgo" || engine === "duckduckgo") return "duckduckgo";
+  if (lane === "yahoo" || engine === "yahoo") return "yahoo";
+  return "main";
 }
 
 export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProps) {
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
-  const [discoveryLogs, setDiscoveryLogs] = useState<WorkerLog[]>([]);
+  const [discoveryLogs, setDiscoveryLogs] = useState<Record<DiscoveryLane, WorkerLog[]>>({
+    main: [],
+    bing: [],
+    duckduckgo: [],
+    yahoo: [],
+  });
   const [enrichmentLogs, setEnrichmentLogs] = useState<WorkerLog[]>([]);
   const [state, setState] = useState<"connecting" | "live" | "retrying">("connecting");
-  const [copiedLane, setCopiedLane] = useState<"discovery" | "enrichment" | null>(null);
+  const [copiedLane, setCopiedLane] = useState<"main" | "bing" | "duckduckgo" | "yahoo" | "enrichment" | null>(null);
   const [supabase] = useState(() => createBrowserSupabase());
-  const discoveryRef = useRef<HTMLDivElement>(null);
+  const discoveryMainRef = useRef<HTMLDivElement>(null);
+  const discoveryBingRef = useRef<HTMLDivElement>(null);
+  const discoveryDuckRef = useRef<HTMLDivElement>(null);
+  const discoveryYahooRef = useRef<HTMLDivElement>(null);
   const enrichmentRef = useRef<HTMLDivElement>(null);
   const eventRef = useRef<HTMLDivElement>(null);
 
@@ -66,7 +86,7 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
 
   useEffect(() => {
     setEvents(initialEvents);
-    setDiscoveryLogs([]);
+    setDiscoveryLogs({ main: [], bing: [], duckduckgo: [], yahoo: [] });
     setEnrichmentLogs([]);
     setState("connecting");
   }, [jobId, initialEvents]);
@@ -99,11 +119,14 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
     let closed = false;
 
     const appendLog = (entry: WorkerLog) => {
-      const lane = laneForSource(entry.source);
+      const lane = discoveryLaneForPayload(entry);
       if (lane === "enrichment") {
         setEnrichmentLogs((current) => [...current, entry]);
       } else {
-        setDiscoveryLogs((current) => [...current, entry]);
+        setDiscoveryLogs((current) => ({
+          ...current,
+          [lane]: [...current[lane], entry],
+        }));
       }
     };
 
@@ -143,9 +166,10 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
   }, [jobId, supabase]);
 
   useEffect(() => {
-    if (discoveryRef.current) {
-      discoveryRef.current.scrollTop = discoveryRef.current.scrollHeight;
-    }
+    if (discoveryMainRef.current) discoveryMainRef.current.scrollTop = discoveryMainRef.current.scrollHeight;
+    if (discoveryBingRef.current) discoveryBingRef.current.scrollTop = discoveryBingRef.current.scrollHeight;
+    if (discoveryDuckRef.current) discoveryDuckRef.current.scrollTop = discoveryDuckRef.current.scrollHeight;
+    if (discoveryYahooRef.current) discoveryYahooRef.current.scrollTop = discoveryYahooRef.current.scrollHeight;
   }, [discoveryLogs]);
 
   useEffect(() => {
@@ -160,8 +184,8 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
     }
   }, [sortedEvents]);
 
-  async function copyLaneLogs(lane: "discovery" | "enrichment") {
-    const logs = lane === "discovery" ? discoveryLogs : enrichmentLogs;
+  async function copyLaneLogs(lane: "main" | "bing" | "duckduckgo" | "yahoo" | "enrichment") {
+    const logs = lane === "enrichment" ? enrichmentLogs : discoveryLogs[lane];
     if (logs.length === 0 || typeof navigator === "undefined" || !navigator.clipboard) return;
     const text = logs.map((log) => `[${log.time}] [${log.source}] ${log.message}`).join("\n");
     await navigator.clipboard.writeText(text);
@@ -188,30 +212,41 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
           </button>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 xl:grid-cols-[1.05fr_1.05fr_0.9fr]">
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-cyan-500/30 bg-black">
-            <header className="flex items-center justify-between border-b border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[11px] font-mono text-cyan-200">
-              <span>DISCOVERY / MAIN</span>
-              <div className="inline-flex items-center gap-2">
-                <span>{state.toUpperCase()}</span>
-                <button
-                  type="button"
-                  onClick={() => void copyLaneLogs("discovery")}
-                  className="inline-flex h-6 items-center gap-1 rounded border border-cyan-400/30 bg-cyan-500/10 px-2 text-[10px] hover:bg-cyan-500/20"
-                >
-                  {copiedLane === "discovery" ? <Check size={11} /> : <Copy size={11} />}
-                  Copy
-                </button>
-              </div>
-            </header>
-            <div ref={discoveryRef} className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-cyan-100/90">
-              {discoveryLogs.map((log, index) => (
-                <div key={`d-${index}`} className="whitespace-pre-wrap break-words">
-                  <span className="text-cyan-500/70">[{log.time}]</span> {log.message}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 xl:grid-cols-[1.1fr_1.05fr_0.9fr]">
+          <section className="grid min-h-0 grid-cols-1 gap-2 overflow-hidden rounded-lg border border-cyan-500/30 bg-black p-2">
+            {[
+              { key: "main", label: "DISCOVERY / MAIN", ref: discoveryMainRef },
+              { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
+              { key: "duckduckgo", label: "DISCOVERY / DUCKDUCKGO", ref: discoveryDuckRef },
+              { key: "yahoo", label: "DISCOVERY / YAHOO", ref: discoveryYahooRef },
+            ].map((laneRow) => (
+              <div key={laneRow.key} className="flex min-h-0 flex-col overflow-hidden rounded border border-cyan-500/20">
+                <header className="flex items-center justify-between border-b border-cyan-500/20 bg-cyan-500/10 px-2 py-1.5 text-[10px] font-mono text-cyan-200">
+                  <span>{laneRow.label}</span>
+                  <div className="inline-flex items-center gap-2">
+                    <span>{state.toUpperCase()}</span>
+                    <button
+                      type="button"
+                      onClick={() => void copyLaneLogs(laneRow.key as DiscoveryLane)}
+                      className="inline-flex h-5 items-center gap-1 rounded border border-cyan-400/30 bg-cyan-500/10 px-1.5 text-[9px] hover:bg-cyan-500/20"
+                    >
+                      {copiedLane === laneRow.key ? <Check size={10} /> : <Copy size={10} />}
+                      Copy
+                    </button>
+                  </div>
+                </header>
+                <div ref={laneRow.ref} className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-cyan-100/90">
+                  {(discoveryLogs[laneRow.key as DiscoveryLane] || []).map((log, index) => (
+                    <div key={`${laneRow.key}-${index}`} className="whitespace-pre-wrap break-words">
+                      <span className="text-cyan-500/70">[{log.time}]</span> {log.message}
+                    </div>
+                  ))}
+                  {(discoveryLogs[laneRow.key as DiscoveryLane] || []).length === 0 && (
+                    <div className="text-cyan-300/60">Waiting for {laneRow.key} lane...</div>
+                  )}
                 </div>
-              ))}
-              {discoveryLogs.length === 0 && <div className="text-cyan-300/60">Waiting for discovery lane...</div>}
-            </div>
+              </div>
+            ))}
           </section>
 
           <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-emerald-500/30 bg-black">

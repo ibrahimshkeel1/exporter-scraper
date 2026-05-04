@@ -241,14 +241,15 @@ def resolve_proxy_pool(proxy_pool=None, proxy_file=None):
 
 
 class RotatingDiscoveryBrowser:
-    def __init__(self, playwright, user_agent, proxy_pool=None):
+    def __init__(self, playwright, user_agent, proxy_pool=None, start_index=0):
         self.playwright = playwright
         self.user_agent = user_agent
         self.proxy_pool = list(proxy_pool or [])
-        self.proxy_index = 0
+        self.proxy_index = max(0, int(start_index or 0))
         self.browser = None
         self.context = None
         self.page = None
+        self.active_proxy_raw = ""
 
     async def start(self):
         await self._launch()
@@ -259,6 +260,7 @@ class RotatingDiscoveryBrowser:
         if self.proxy_pool:
             proxy = self.proxy_pool[self.proxy_index % len(self.proxy_pool)]
             launch_kwargs["proxy"] = proxy["playwright"]
+        self.active_proxy_raw = proxy["raw"] if proxy else ""
         self.browser = await self.playwright.chromium.launch(**launch_kwargs)
         self.context = await self.browser.new_context(user_agent=self.user_agent)
         self.page = await self.context.new_page()
@@ -287,6 +289,9 @@ class RotatingDiscoveryBrowser:
         if reason:
             print(f"Rotated discovery proxy due to: {reason}")
         return True
+
+    def active_proxy(self):
+        return self.active_proxy_raw
 
     async def close(self):
         try:
@@ -321,6 +326,22 @@ def _normalize_domain_value(value):
     if domain.startswith("www."):
         domain = domain[4:]
     return domain
+
+
+def partition_discovery_sources(sources):
+    groups = {
+        "main": [],
+        "bing": [],
+        "duckduckgo": [],
+        "yahoo": [],
+    }
+    for source in sources:
+        engine = (getattr(source, "search_engine", "") or "").strip().lower()
+        if engine in {"bing", "duckduckgo", "yahoo"}:
+            groups[engine].append(source)
+        else:
+            groups["main"].append(source)
+    return {key: value for key, value in groups.items() if value}
 
 
 def _recent_domains_file(output_path):
@@ -486,24 +507,46 @@ async def run_scraper(
     stop_event = asyncio.Event()
     state_lock = asyncio.Lock()
 
-    async def discovery_producer(discovery, page, chunk_size, on_engine_blocked=None):
+    async def discovery_producer(
+        producer_name,
+        discovery,
+        page,
+        chunk_size,
+        sources,
+        on_engine_blocked=None,
+    ):
         batch_index = 0
         discovered_count = 0
         try:
             emit_progress(
                 "discovering",
-                "Discovery started.",
+                f"Discovery lane started: {producer_name}.",
                 status_output=status_output,
                 job_id=job_id,
                 source="discovery",
+                engine=producer_name,
                 queue_maxsize=candidate_queue.maxsize,
+                source_count=len(sources),
             )
+            async def on_discovery_event(payload):
+                emit_progress(
+                    "discovering",
+                    str(payload.get("event", "discovery_event")),
+                    status_output=status_output,
+                    job_id=job_id,
+                    source="discovery",
+                    lane=producer_name,
+                    **payload,
+                )
+
             async for candidate_batch in discovery.run_discovery(
                 page,
                 region=region,
                 industry=industry,
                 chunk_size=chunk_size,
                 on_engine_blocked=on_engine_blocked,
+                on_discovery_event=on_discovery_event,
+                sources=sources,
             ):
                 if stop_event.is_set():
                     break
@@ -518,6 +561,7 @@ async def run_scraper(
                     status_output=status_output,
                     job_id=job_id,
                     source="discovery",
+                    engine=producer_name,
                     batch_index=batch_index,
                     batch_size=len(candidate_batch),
                     discovered_count=discovered_count,
@@ -530,14 +574,13 @@ async def run_scraper(
                 if stop_event.is_set():
                     break
         finally:
-            for _ in range(worker_count):
-                await candidate_queue.put(None)
             emit_progress(
                 "discovered",
-                "Discovery stream completed.",
+                f"Discovery lane completed: {producer_name}.",
                 status_output=status_output,
                 job_id=job_id,
                 source="discovery",
+                engine=producer_name,
                 discovered_count=discovered_count,
             )
 
@@ -651,20 +694,53 @@ async def run_scraper(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
-        discovery_browser = RotatingDiscoveryBrowser(
-            playwright=p,
-            user_agent=user_agent,
-            proxy_pool=resolved_proxies,
-        )
-        await discovery_browser.start()
         enrichment_browser = await p.chromium.launch(headless=True)
         enrichment_context = await enrichment_browser.new_context(user_agent=user_agent)
-
-        discovery = LeadDiscovery(
+        discovery_template = LeadDiscovery(
             limit=discovery_limit,
             search_terms=merged_search_terms,
             signal_map=signal_map,
         )
+        source_groups = partition_discovery_sources(discovery_template.generate_sources(region, industry))
+        active_discovery_groups = list(source_groups.items())
+        if not active_discovery_groups:
+            active_discovery_groups = [("main", [])]
+        lane_limit = max(limit, discovery_limit // max(1, len(active_discovery_groups)))
+
+        discovery_browsers = {}
+        for lane_index, (lane_name, _) in enumerate(active_discovery_groups):
+            lane_proxies = resolved_proxies
+            if lane_name == "main":
+                lane_proxies = []
+            lane_browser = RotatingDiscoveryBrowser(
+                playwright=p,
+                user_agent=user_agent,
+                proxy_pool=lane_proxies,
+                start_index=lane_index,
+            )
+            await lane_browser.start()
+            discovery_browsers[lane_name] = lane_browser
+            emit_progress(
+                "discovering",
+                "Discovery lane browser started.",
+                status_output=status_output,
+                job_id=job_id,
+                source="discovery",
+                lane=lane_name,
+                proxy_active=lane_browser.active_proxy(),
+                proxy_pool_size=len(lane_browser.proxy_pool),
+            )
+
+        emit_progress(
+            "planning",
+            "Discovery lanes initialized.",
+            status_output=status_output,
+            job_id=job_id,
+            source="discovery",
+            lane_count=len(active_discovery_groups),
+            lanes=[lane for lane, _ in active_discovery_groups],
+        )
+
         enrichment = LeadEnrichment(
             concurrency=worker_count,
             max_extra_pages=12,
@@ -684,42 +760,70 @@ async def run_scraper(
         }
 
         async with aiohttp.ClientSession(connector=connector, timeout=timeout, headers=headers) as session:
-            async def rotate_proxy_on_block(engine, source_url, reason):
-                if not resolved_proxies:
+            async def rotate_proxy_on_block(lane_name, engine, source_url, reason):
+                lane_browser = discovery_browsers.get(lane_name)
+                if not lane_browser:
                     return False
-                if len(resolved_proxies) <= 1:
+                if not lane_browser.proxy_pool or len(lane_browser.proxy_pool) <= 1:
                     return False
+                from_proxy = lane_browser.active_proxy()
+                rotated = await lane_browser.rotate(reason=f"{engine} block on {source_url}")
+                to_proxy = lane_browser.active_proxy()
                 emit_progress(
                     "discovering",
                     "Rotating discovery proxy after throttle/block signal.",
                     status_output=status_output,
                     job_id=job_id,
                     source="discovery",
+                    lane=lane_name,
                     engine=engine,
                     source_url=source_url,
                     reason=reason,
+                    proxy_before=from_proxy,
+                    proxy_after=to_proxy,
                 )
-                return await discovery_browser.rotate(reason=f"{engine} block on {source_url}")
+                return rotated
 
-            producer_task = asyncio.create_task(
-                discovery_producer(
-                    discovery,
-                    discovery_browser,
-                    batch_size,
-                    on_engine_blocked=rotate_proxy_on_block,
+            producer_tasks = []
+            for lane_name, lane_sources in active_discovery_groups:
+                lane_browser = discovery_browsers[lane_name]
+                lane_discovery = LeadDiscovery(
+                    limit=lane_limit,
+                    search_terms=merged_search_terms,
+                    signal_map=signal_map,
                 )
-            )
+                async def lane_rotate(engine, source_url, reason, lane_name=lane_name):
+                    return await rotate_proxy_on_block(lane_name, engine, source_url, reason)
+
+                producer_tasks.append(
+                    asyncio.create_task(
+                        discovery_producer(
+                            lane_name,
+                            lane_discovery,
+                            lane_browser,
+                            batch_size,
+                            lane_sources,
+                            on_engine_blocked=lane_rotate,
+                        )
+                    )
+                )
             worker_tasks = [
                 asyncio.create_task(enrichment_worker(enrichment, session, worker_id=index + 1))
                 for index in range(worker_count)
             ]
 
             try:
-                await producer_task
+                await asyncio.gather(*producer_tasks)
+                for _ in range(worker_count):
+                    await candidate_queue.put(None)
                 await candidate_queue.join()
                 await asyncio.gather(*worker_tasks)
             finally:
                 stop_event.set()
+                for producer_task in producer_tasks:
+                    if not producer_task.done():
+                        producer_task.cancel()
+                await asyncio.gather(*producer_tasks, return_exceptions=True)
                 for worker_task in worker_tasks:
                     if not worker_task.done():
                         worker_task.cancel()
@@ -727,7 +831,8 @@ async def run_scraper(
 
         await enrichment_context.close()
         await enrichment_browser.close()
-        await discovery_browser.close()
+        for lane_name, lane_browser in discovery_browsers.items():
+            await lane_browser.close()
 
     if fill_until_complete and len(top_leads) < limit and scored_candidates:
         for threshold in relaxed_score_thresholds(min_score)[1:]:

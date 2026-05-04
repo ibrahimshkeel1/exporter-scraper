@@ -1,5 +1,6 @@
 import base64
 import binascii
+import inspect
 import random
 import re
 import time
@@ -939,6 +940,17 @@ class LeadDiscovery:
         engine_state["blocked_until_ts"] = time.monotonic() + backoff * cooldown_multiplier
         return engine_state["failures"] >= 2
 
+    @staticmethod
+    async def _emit_discovery_event(callback, **payload):
+        if not callback:
+            return
+        try:
+            result = callback(payload)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as callback_exc:
+            print(f"Discovery event callback failed: {callback_exc}")
+
     async def run_discovery(
         self,
         page,
@@ -946,11 +958,14 @@ class LeadDiscovery:
         industry="clothing brands",
         chunk_size=60,
         on_engine_blocked=None,
+        on_discovery_event=None,
+        sources=None,
     ):
         print(
             f"Starting discovery for region: {region} | Industry: {industry} | Limit: {self.limit}"
         )
-        sources = self.generate_sources(region, industry)
+        if sources is None:
+            sources = self.generate_sources(region, industry)
 
         yielded_count = 0
         current_chunk = []
@@ -971,6 +986,14 @@ class LeadDiscovery:
                     source_engine = "yahoo"
             if source_engine in skipped_engines:
                 print(f"Skipping {source.name} due to repeated {source_engine} failures earlier in this run.")
+                await self._emit_discovery_event(
+                    on_discovery_event,
+                    event="engine_source_skipped",
+                    engine=source_engine or "",
+                    source_name=source.name,
+                    source_url=source.url,
+                    reason="repeated_failures",
+                )
                 continue
             if source_engine and source_engine in engine_state:
                 allowed = await self._wait_for_engine_window(page, source_engine, engine_state)
@@ -979,6 +1002,14 @@ class LeadDiscovery:
                     print(
                         f"Skipping remaining {source_engine} sources due to request budget/cooldown limits "
                         "for this run."
+                    )
+                    await self._emit_discovery_event(
+                        on_discovery_event,
+                        event="engine_source_skipped",
+                        engine=source_engine,
+                        source_name=source.name,
+                        source_url=source.url,
+                        reason="budget_or_cooldown",
                     )
                     continue
             if source.candidate_kind == "direct_url":
@@ -1024,6 +1055,14 @@ class LeadDiscovery:
                     yield batch
                 continue
             print(f"Visiting discovery source: {source.url}")
+            await self._emit_discovery_event(
+                on_discovery_event,
+                event="source_visit_started",
+                engine=source_engine or "",
+                source_name=source.name,
+                source_url=source.url,
+                discovery_method=source.discovery_method,
+            )
             found_in_source = 0
             try:
                 await page.goto(source.url, timeout=45000, wait_until="domcontentloaded")
@@ -1047,11 +1086,27 @@ class LeadDiscovery:
                             engine_state[source_engine]["blocked_until_ts"] = 0.0
                         skipped_engines.discard(source_engine)
                         print(f"Rotated proxy after blocked page for {source_engine}; continuing discovery.")
+                        await self._emit_discovery_event(
+                            on_discovery_event,
+                            event="proxy_rotated",
+                            engine=source_engine or "",
+                            source_name=source.name,
+                            source_url=source.url,
+                            reason="blocked_page",
+                        )
                     elif self._record_engine_failure(source_engine, engine_state):
                         skipped_engines.add(source_engine)
                         print(
                             f"{source_engine.title()} circuit breaker activated after repeated blocking pages; "
                             "continuing with remaining sources."
+                        )
+                        await self._emit_discovery_event(
+                            on_discovery_event,
+                            event="engine_circuit_breaker",
+                            engine=source_engine or "",
+                            source_name=source.name,
+                            source_url=source.url,
+                            reason="blocked_page",
                         )
                     continue
                 self._record_engine_success(source_engine, engine_state)
@@ -1095,15 +1150,40 @@ class LeadDiscovery:
                             engine_state[source_engine]["blocked_until_ts"] = 0.0
                         skipped_engines.discard(source_engine)
                         print(f"Rotated proxy after {source_engine} failure; continuing discovery.")
+                        await self._emit_discovery_event(
+                            on_discovery_event,
+                            event="proxy_rotated",
+                            engine=source_engine or "",
+                            source_name=source.name,
+                            source_url=source.url,
+                            reason="engine_failure",
+                        )
                     elif self._record_engine_failure(source_engine, engine_state):
                         skipped_engines.add(source_engine)
                         print(
                             f"{source_engine.title()} circuit breaker activated after repeated connection/rate-limit failures; "
                             "continuing with remaining sources."
                         )
+                        await self._emit_discovery_event(
+                            on_discovery_event,
+                            event="engine_circuit_breaker",
+                            engine=source_engine or "",
+                            source_name=source.name,
+                            source_url=source.url,
+                            reason=error_text[:180],
+                        )
 
             print(
                 f"Discovery progress: {yielded_count + len(current_chunk)} total candidates (+{found_in_source} from {source.name})"
+            )
+            await self._emit_discovery_event(
+                on_discovery_event,
+                event="source_visit_completed",
+                engine=source_engine or "",
+                source_name=source.name,
+                source_url=source.url,
+                found_count=found_in_source,
+                total_candidates=yielded_count + len(current_chunk),
             )
             if current_chunk and yielded_count < self.limit:
                 remaining = self.limit - yielded_count
