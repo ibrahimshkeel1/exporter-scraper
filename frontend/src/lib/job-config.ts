@@ -49,7 +49,7 @@ export function buildScraperJobConfig(
       limit: leadLimit,
       min_score: minScore,
       max_analyzed: maxAnalyzed,
-      fill_until_complete: false,
+      fill_until_complete: true,
       mode: demoBypass ? "demo" : "verified"
     },
     quality: {

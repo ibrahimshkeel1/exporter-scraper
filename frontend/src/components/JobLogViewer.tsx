@@ -3,6 +3,7 @@
 import { X, Terminal } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { createBrowserSupabase } from "../lib/supabase-client";
+import { JobReportCard } from "./JobReportCard";
 
 export type JobEvent = {
   id?: string;
@@ -42,6 +43,8 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
   const sortedEvents = [...events].sort(
     (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
   );
+  const latestReportEvent = [...sortedEvents].reverse().find((event) => event.status === "report_ready");
+  const latestReport = latestReportEvent?.metadata?.report;
 
   useEffect(() => {
     setEvents(initialEvents);
@@ -206,14 +209,22 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
           ref={scrollRef}
           className="p-4 overflow-y-auto font-mono text-sm leading-relaxed flex-1 space-y-1 bg-black scrollbar-thin scrollbar-thumb-[#333] scrollbar-track-transparent"
         >
+          {latestReport && (
+            <div className="mb-4 font-sans">
+              <JobReportCard report={latestReport} />
+            </div>
+          )}
+
           {/* Historical / Milestone Events */}
           {sortedEvents.map((evt, idx) => {
             const isError = evt.status === "failed" || evt.type === "error";
             const isSuccess = evt.status === "delivered" || evt.type === "success";
+            const isReport = evt.status === "report_ready";
             
             let colorClass = "text-white";
             if (isError) colorClass = "text-red-400";
             else if (isSuccess) colorClass = "text-green-400";
+            else if (isReport) colorClass = "text-cyan-300";
             else colorClass = "text-vercel-accent font-bold";
 
             const time = evt.created_at ? new Date(evt.created_at).toLocaleTimeString([], { hour12: false }) : "";

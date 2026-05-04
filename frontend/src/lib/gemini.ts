@@ -13,6 +13,36 @@ type PreflightInput = {
   conversation?: IntakeMessage[];
 };
 
+export type LeadJobReviewInput = {
+  jobId: string;
+  planName: string;
+  targetRegion: string;
+  refinedIndustry: string;
+  leadLimit: number;
+  minScore: number;
+  finalCsv: string;
+  auditCsv: string;
+  finalRowCount: number;
+  auditRowCount: number;
+  preflight?: Record<string, unknown>;
+};
+
+export type LeadJobReviewReport = {
+  headline: string;
+  executiveSummary: string;
+  outcome: string;
+  leadCount: number;
+  auditCount: number;
+  strongestPatterns: string[];
+  concerns: string[];
+  nextActions: string[];
+  qualityAssessment: string;
+  confidence: "low" | "medium" | "high";
+  recommendedFollowUpSearches: string[];
+  notableLeads: string[];
+  warnings: string[];
+};
+
 function unique(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
@@ -201,6 +231,64 @@ function parseGeminiJson(text: string): TargetingPreflight | null {
   }
 }
 
+function fallbackLeadJobReview(input: LeadJobReviewInput): LeadJobReviewReport {
+  const finalCount = Math.max(0, input.finalRowCount || 0);
+  const auditCount = Math.max(0, input.auditRowCount || 0);
+  const filled = finalCount >= input.leadLimit;
+
+  return {
+    headline: `${input.planName} review: ${finalCount}/${input.leadLimit} final leads`,
+    executiveSummary: `The run analyzed ${auditCount} candidates and exported ${finalCount} final leads for ${input.targetRegion}. Review the audit file for the full rejection story.`,
+    outcome: filled ? "filled" : "partial",
+    leadCount: finalCount,
+    auditCount,
+    strongestPatterns: [
+      "The final leads are the closest buyer-side matches from the run.",
+      "The audit file shows the reasons weaker candidates were skipped."
+    ],
+    concerns: filled ? [] : ["The run did not fully hit the requested pack size with the current search space."],
+    nextActions: [
+      "Review the audit CSV for the most common rejection reasons.",
+      "Broaden or narrow the brief based on the best-performing buyers.",
+      "Run a follow-up search if you want more volume."
+    ],
+    qualityAssessment: filled ? "The pack is complete." : "The pack is useful but short of the target.",
+    confidence: finalCount > 0 ? "medium" : "low",
+    recommendedFollowUpSearches: [
+      input.refinedIndustry,
+      `${input.refinedIndustry} wholesale buyers`,
+      `${input.refinedIndustry} supplier application`
+    ].filter(Boolean),
+    notableLeads: [],
+    warnings: ["Gemini was unavailable, so a local fallback review was used."]
+  };
+}
+
+function parseLeadJobReviewJson(text: string): LeadJobReviewReport | null {
+  try {
+    const cleaned = text.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+    const parsed = JSON.parse(cleaned);
+
+    return {
+      headline: String(parsed.headline ?? ""),
+      executiveSummary: String(parsed.executiveSummary ?? ""),
+      outcome: String(parsed.outcome ?? ""),
+      leadCount: Number(parsed.leadCount ?? 0),
+      auditCount: Number(parsed.auditCount ?? 0),
+      strongestPatterns: Array.isArray(parsed.strongestPatterns) ? parsed.strongestPatterns.map(String).slice(0, 8) : [],
+      concerns: Array.isArray(parsed.concerns) ? parsed.concerns.map(String).slice(0, 8) : [],
+      nextActions: Array.isArray(parsed.nextActions) ? parsed.nextActions.map(String).slice(0, 8) : [],
+      qualityAssessment: String(parsed.qualityAssessment ?? ""),
+      confidence: ["low", "medium", "high"].includes(parsed.confidence) ? parsed.confidence : "medium",
+      recommendedFollowUpSearches: Array.isArray(parsed.recommendedFollowUpSearches) ? parsed.recommendedFollowUpSearches.map(String).slice(0, 8) : [],
+      notableLeads: Array.isArray(parsed.notableLeads) ? parsed.notableLeads.map(String).slice(0, 8) : [],
+      warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map(String).slice(0, 6) : []
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function runTargetingPreflight(input: PreflightInput): Promise<TargetingPreflight> {
   const apiKey = process.env.GEMINI_API_KEY;
   const model = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
@@ -271,6 +359,87 @@ export async function runTargetingPreflight(input: PreflightInput): Promise<Targ
       ...fallbackPreflight(input),
       riskLevel: "medium",
       warnings: ["Gemini returned an incomplete lead brief; fallback targeting was used."]
+    };
+  }
+
+  return parsed;
+}
+
+export async function runLeadJobReview(input: LeadJobReviewInput): Promise<LeadJobReviewReport> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
+
+  if (!apiKey) {
+    return fallbackLeadJobReview(input);
+  }
+
+  const finalPreview = input.finalCsv.slice(-20000);
+  const auditPreview = input.auditCsv.slice(-20000);
+
+  const prompt = [
+    "You are an AI lead-quality reviewer for a lead-generation app.",
+    "Review the final CSV and audit CSV from this run and return JSON only.",
+    "Do not use markdown.",
+    "Schema keys: headline, executiveSummary, outcome, leadCount, auditCount, strongestPatterns, concerns, nextActions, qualityAssessment, confidence, recommendedFollowUpSearches, notableLeads, warnings.",
+    "Compare the final CSV against the audit CSV.",
+    "Explain what the final leads have in common and what the audit rows reveal about near-misses and rejection reasons.",
+    "If the run is partial, say that plainly.",
+    "Do not invent rows or names not present in the input.",
+    "Keep the response concise but useful for a customer reading their job summary.",
+    "",
+    `Job id: ${input.jobId}`,
+    `Plan: ${input.planName}`,
+    `Target region: ${input.targetRegion}`,
+    `Refined industry: ${input.refinedIndustry}`,
+    `Requested lead count: ${input.leadLimit}`,
+    `Minimum score used: ${input.minScore}`,
+    `Final CSV row count: ${input.finalRowCount}`,
+    `Audit CSV row count: ${input.auditRowCount}`,
+    "",
+    "Preflight context:",
+    JSON.stringify(input.preflight || {}, null, 2),
+    "",
+    "Final CSV preview:",
+    finalPreview || "No final CSV available.",
+    "",
+    "Audit CSV preview:",
+    auditPreview || "No audit CSV available."
+  ].join("\n");
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: "application/json"
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    return {
+      ...fallbackLeadJobReview(input),
+      warnings: [
+        response.status === 429
+          ? "Gemini is rate-limited, so a local review was used."
+          : `Gemini job review failed with HTTP ${response.status}; a local review was used.`
+      ]
+    };
+  }
+
+  const payload = await response.json();
+  const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const parsed = typeof text === "string" ? parseLeadJobReviewJson(text) : null;
+
+  if (!parsed || !parsed.headline || !parsed.executiveSummary) {
+    return {
+      ...fallbackLeadJobReview(input),
+      warnings: ["Gemini returned an incomplete job review; fallback review was used."]
     };
   }
 

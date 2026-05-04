@@ -131,6 +131,12 @@ def compute_discovery_limit(limit, test_mode=False, max_analyzed=None):
     return max(limit * 300, 1000)
 
 
+def relaxed_score_thresholds(min_score):
+    floor = max(35, int(min_score) if min_score is not None else 75)
+    thresholds = [floor, max(35, floor - 5), max(35, floor - 10), max(35, floor - 15), 35]
+    return [threshold for index, threshold in enumerate(thresholds) if threshold not in thresholds[:index]]
+
+
 async def run_scraper(
     region,
     industry,
@@ -189,6 +195,7 @@ async def run_scraper(
     enriched_candidates = []
     scored_candidates = []
     top_leads = []
+    effective_min_score = min_score
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
@@ -258,6 +265,28 @@ async def run_scraper(
                 if len(top_leads) >= limit:
                     break
 
+            if fill_until_complete and len(top_leads) < limit:
+                for threshold in relaxed_score_thresholds(min_score)[1:]:
+                    candidate_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=threshold)
+                    if len(candidate_leads) <= len(top_leads):
+                        continue
+                    top_leads = candidate_leads
+                    effective_min_score = threshold
+                    emit_progress(
+                        "scoring",
+                        "Relaxed quality threshold to fill the lead pack.",
+                        status_output=status_output,
+                        job_id=job_id,
+                        analyzed_count=len(scored_candidates),
+                        qualified_count=len(top_leads),
+                        target_count=limit,
+                        remaining_candidates=max(len(candidates) - len(scored_candidates), 0),
+                        min_score=threshold,
+                        effective_min_score=threshold,
+                    )
+                    if len(top_leads) >= limit:
+                        break
+
             emit_progress(
                 "enriched",
                 "Candidate enrichment completed.",
@@ -267,6 +296,7 @@ async def run_scraper(
                 qualified_count=len(top_leads),
                 target_count=limit,
                 candidate_count=len(candidates),
+                effective_min_score=effective_min_score,
             )
 
         await browser.close()
@@ -293,6 +323,7 @@ async def run_scraper(
         qualified_count=len(top_leads),
         target_count=limit,
         analyzed_count=len(scored_candidates),
+        effective_min_score=effective_min_score,
         output=output,
         output_format=output_format,
     )
@@ -318,8 +349,8 @@ async def run_scraper(
         message = "Could not fill the paid lead pack before the candidate hard cap."
         if fill_until_complete:
             emit_progress(
-                "failed",
-                message,
+                "delivered",
+                "Scraper job completed with relaxed fill results.",
                 status_output=status_output,
                 job_id=job_id,
                 qualified_count=len(top_leads),
@@ -329,10 +360,11 @@ async def run_scraper(
                 output_format=output_format,
                 audit_output=audit_output or "",
                 filled_pack=False,
+                effective_min_score=effective_min_score,
+                partial_fill=True,
+                warning=f"{message} Qualified {len(top_leads)}/{limit} after analyzing {len(scored_candidates)} candidates.",
             )
-            raise RuntimeError(
-                f"{message} Qualified {len(top_leads)}/{limit} after analyzing {len(scored_candidates)} candidates."
-            )
+            return
         emit_progress(
             "delivered",
             "Scraper job completed with partial results.",
@@ -341,6 +373,7 @@ async def run_scraper(
             qualified_count=len(top_leads),
             target_count=limit,
             analyzed_count=len(scored_candidates),
+            effective_min_score=effective_min_score,
             output=output,
             output_format=output_format,
             audit_output=audit_output or "",
@@ -358,6 +391,7 @@ async def run_scraper(
         qualified_count=len(top_leads),
         target_count=limit,
         analyzed_count=len(scored_candidates),
+        effective_min_score=effective_min_score,
         output=output,
         output_format=output_format,
         audit_output=audit_output or "",

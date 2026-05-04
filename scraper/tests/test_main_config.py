@@ -7,7 +7,7 @@ SCRAPER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SCRAPER_DIR not in sys.path:
     sys.path.insert(0, SCRAPER_DIR)
 
-from main import compute_discovery_limit
+from main import compute_discovery_limit, relaxed_score_thresholds
 
 
 class MainConfigTests(unittest.TestCase):
@@ -23,6 +23,10 @@ class MainConfigTests(unittest.TestCase):
     def test_default_limits_are_preserved_without_explicit_cap(self):
         self.assertEqual(compute_discovery_limit(limit=10, test_mode=True), 120)
         self.assertEqual(compute_discovery_limit(limit=10), 3000)
+
+    def test_relaxed_thresholds_step_down_toward_floor(self):
+        self.assertEqual(relaxed_score_thresholds(55), [55, 50, 45, 40, 35])
+        self.assertEqual(relaxed_score_thresholds(30), [35])
 
 
 if __name__ == "__main__":
