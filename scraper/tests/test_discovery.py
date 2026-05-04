@@ -61,7 +61,14 @@ class LeadDiscoveryTests(unittest.TestCase):
                 for index, source in enumerate(sources)
                 if source.name.startswith("bing-p1-apparel-importer-wholesaler-distributor")
             ),
-        )
+            )
+
+    def test_united_states_alias_maps_to_usa_sources(self):
+        sources = self.discovery.generate_sources("United States", "apparel")
+        names = [source.name for source in sources]
+
+        self.assertEqual(names[0], "seed-usa-buyer-intent-pages")
+        self.assertIn("seed-usa-apparel-buyers", names)
 
     def test_denim_seed_prefers_specific_product_over_generic_apparel(self):
         self.assertEqual(self.discovery._product_seed("Apparel & Textile - Denim & Jeans"), "denim")

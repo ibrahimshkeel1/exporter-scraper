@@ -30,6 +30,19 @@ def load_job_config(config_path):
         return json.load(file_handle)
 
 
+def normalize_region(region):
+    value = str(region or "").strip().lower()
+    if value in {"usa", "us", "u.s.", "u.s.a.", "united states", "united states of america", "america", "american"}:
+        return "USA"
+    if value in {"uk", "u.k.", "united kingdom", "britain", "great britain", "england"}:
+        return "UK"
+    if value in {"eu", "europe", "european union"}:
+        return "Europe"
+    if value in {"international", "global", "worldwide"}:
+        return "International"
+    return region
+
+
 def apply_job_config(args, config):
     """Map SaaS job JSON into the existing CLI argument shape."""
     targeting = config.get("targeting", {})
@@ -61,7 +74,7 @@ def apply_job_config(args, config):
             setattr(args, attribute, config[key])
 
     if targeting.get("region"):
-        args.region = targeting["region"]
+        args.region = normalize_region(targeting["region"])
     if targeting.get("refined_industry"):
         args.industry = targeting["refined_industry"]
     elif targeting.get("industry"):
@@ -134,6 +147,7 @@ async def run_scraper(
     search_terms=None,
     scoring_context=None,
 ):
+    region = normalize_region(region)
     print(
         f"Starting scraper | Region: {region} | Industry: {industry} | Limit: {limit} | Test mode: {test_mode}"
     )

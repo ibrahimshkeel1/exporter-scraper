@@ -29,6 +29,23 @@ function briefValue(value: unknown, fallback = "Not specified") {
   return fallback;
 }
 
+function normalizeRegion(value: string) {
+  const lower = value.trim().toLowerCase();
+  if (["usa", "us", "u.s.", "u.s.a.", "united states", "united states of america", "america", "american"].includes(lower)) {
+    return "USA";
+  }
+  if (["uk", "u.k.", "united kingdom", "britain", "great britain", "england"].includes(lower)) {
+    return "UK";
+  }
+  if (["eu", "europe", "european union"].includes(lower)) {
+    return "Europe";
+  }
+  if (["international", "global", "worldwide"].includes(lower)) {
+    return "International";
+  }
+  return value;
+}
+
 function finalBriefMessage(brief: TargetingPreflight) {
   return [
     "I have enough context to run the lead search.",
@@ -110,10 +127,7 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
 
       if (nextBrief.targetMarkets?.[0]) {
         const inferredMarket = nextBrief.targetMarkets[0];
-        const knownRegion = [...regions, "International"].find((region) =>
-          inferredMarket.toLowerCase().includes(region.toLowerCase())
-        );
-        setMarket(knownRegion || inferredMarket);
+        setMarket(normalizeRegion(inferredMarket));
       }
 
       setMessages((current) => [
@@ -174,7 +188,7 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
     const userMessages = messages.filter((item) => item.role === "user");
     const productCategory = brief.offerSummary || brief.refinedIndustry || userMessages.at(-1)?.content || "AI lead search";
     const buyerType = brief.buyerTypes?.[0] || brief.idealCustomerProfile || "Ideal customers";
-    const region = market || brief.targetMarkets?.[0] || "International";
+    const region = normalizeRegion(market || brief.targetMarkets?.[0] || "International");
 
     const response = await fetch("/api/jobs", {
       method: "POST",

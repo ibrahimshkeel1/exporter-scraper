@@ -335,7 +335,21 @@ class LeadDiscovery:
                 return term
         return industry.strip() or "apparel"
 
+    @staticmethod
+    def _canonical_region(region):
+        value = str(region or "").strip().lower()
+        if value in {"usa", "us", "u.s.", "u.s.a.", "united states", "united states of america", "america", "american"}:
+            return "USA"
+        if value in {"uk", "u.k.", "united kingdom", "britain", "great britain", "england"}:
+            return "UK"
+        if value in {"eu", "europe", "european union"}:
+            return "Europe"
+        if value in {"international", "global", "worldwide"}:
+            return "International"
+        return region
+
     def _buyer_search_queries(self, region, industry):
+        region = self._canonical_region(region)
         base = self._product_seed(industry)
         market = {
             "USA": "United States",
@@ -415,6 +429,7 @@ class LeadDiscovery:
         return sources
 
     def generate_sources(self, region, industry):
+        region = self._canonical_region(region)
         query = quote_plus(self._product_seed(industry))
         if region == "USA":
             buyer_intent_sources = [
@@ -610,6 +625,7 @@ class LeadDiscovery:
 
     @staticmethod
     def seed_urls(region, source_name="seed-usa-apparel-buyers"):
+        region = LeadDiscovery._canonical_region(region)
         if region == "International":
             if source_name.startswith("seed-usa"):
                 return LeadDiscovery.seed_urls("USA", source_name)
