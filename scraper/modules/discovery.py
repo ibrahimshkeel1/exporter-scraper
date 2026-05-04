@@ -484,7 +484,23 @@ class LeadDiscovery:
             ]
             return buyer_intent_sources + directory_sources + self._search_sources(region, industry)
         if region == "UK":
-            sources = [
+            buyer_intent_sources = [
+                DiscoverySource(
+                    name="seed-uk-buyer-intent-pages",
+                    url="seed://uk-buyer-intent-pages",
+                    selectors=(),
+                    discovery_method="curated_seed",
+                    candidate_kind="seed_list",
+                ),
+                DiscoverySource(
+                    name="seed-uk-apparel-buyers",
+                    url="seed://uk-apparel-buyers",
+                    selectors=(),
+                    discovery_method="curated_seed",
+                    candidate_kind="seed_list",
+                ),
+            ]
+            directory_sources = [
                 DiscoverySource(
                     name="yell-buyer-search",
                     url=f"https://www.yell.com/ucs/UcsSearchAction.do?keywords={query}+importer+wholesaler+distributor&location=UK",
@@ -494,7 +510,7 @@ class LeadDiscovery:
                     ),
                 ),
             ]
-            return sources + self._search_sources(region, industry)
+            return buyer_intent_sources + directory_sources + self._search_sources(region, industry)
         buyer_intent_sources = [
             DiscoverySource(
                 name="seed-europe-buyer-intent-pages",
@@ -569,6 +585,39 @@ class LeadDiscovery:
 
     @staticmethod
     def seed_urls(region, source_name="seed-usa-apparel-buyers"):
+        if region == "UK":
+            buyer_intent_urls = [
+                "https://www.nextplc.co.uk/suppliers",
+                "https://www.marksandspencer.com/c/suppliers",
+                "https://www.johnlewispartnership.co.uk/work-with-us/suppliers.html",
+                "https://corporate.primark.com/en-gb/our-products/suppliers",
+                "https://www.asosplc.com/fashion-with-integrity/our-supply-chain/",
+                "https://www.dunelm.com/info/about/suppliers",
+                "https://www.jdsports.co.uk/page/supplier-information/",
+                "https://www.sportsdirect.com/customerservices/otherinformation/suppliers",
+            ]
+            apparel_buyer_urls = [
+                "https://www.whisperingsmith.com/pages/contact-us",
+                "https://www.qclothing.co.uk/contact-us",
+                "https://www.parisian.co.uk/contact-us",
+                "https://www.citygoddess.co.uk/contact-us",
+                "https://www.europafashions.co.uk/contact-us",
+                "https://www.j5fashion.com/contact-us",
+                "https://www.catwalkwholesale.com/contact-us",
+                "https://www.influencefashion.co.uk/pages/contact-us",
+                "https://www.stylewise-direct.com/contact-us",
+                "https://www.fashion-book.com/contact-us",
+                "https://www.missyempire.com/pages/contact-us",
+                "https://www.boohoo.com/page/contact-us.html",
+                "https://www.prettylittlething.com/contact-us",
+                "https://www.riverisland.com/contact-us",
+                "https://www.newlook.com/uk/help/contact-us",
+            ]
+            if source_name == "seed-uk-buyer-intent-pages":
+                return buyer_intent_urls
+            if source_name == "seed-uk-apparel-buyers":
+                return apparel_buyer_urls
+            return []
         if region == "Europe" and source_name == "seed-europe-buyer-intent-pages":
             return [
                 "https://partnerportal.zalando.com/",

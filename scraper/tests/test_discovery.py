@@ -84,6 +84,15 @@ class LeadDiscoveryTests(unittest.TestCase):
 
         self.assertTrue(queries[0].startswith("socks importer USA"))
 
+    def test_uk_sources_include_curated_seeds_before_search(self):
+        sources = self.discovery.generate_sources("UK", "denim")
+        names = [source.name for source in sources]
+
+        self.assertEqual(names[0], "seed-uk-buyer-intent-pages")
+        self.assertEqual(names[1], "seed-uk-apparel-buyers")
+        self.assertLess(names.index("seed-uk-apparel-buyers"), names.index("yell-buyer-search"))
+        self.assertGreater(len(self.discovery.seed_urls("UK", "seed-uk-apparel-buyers")), 10)
+
     def test_europe_sources_include_buyer_intent_seeds(self):
         sources = self.discovery.generate_sources("Europe", "apparel")
 
