@@ -1,18 +1,29 @@
 import { getLeadPack } from "./pricing";
 import { LeadRequestInput, TargetingPreflight } from "./types";
 
+type BuildScraperJobConfigOptions = {
+  demoBypass?: boolean;
+  leadLimit?: number;
+  minScore?: number;
+};
+
 function buildWorkerOutputDir(jobId: string) {
   const baseDir = (process.env.WORKER_OUTPUT_BASE_DIR || "exports/worker-runs").replace(/\/+$/, "");
   return `${baseDir}/${jobId}/exports`;
 }
 
-export function buildScraperJobConfig(jobId: string, input: LeadRequestInput, preflight: TargetingPreflight) {
+export function buildScraperJobConfig(
+  jobId: string,
+  input: LeadRequestInput,
+  preflight: TargetingPreflight,
+  options: BuildScraperJobConfigOptions = {}
+) {
   const pack = getLeadPack(input.packId);
-  const demoBypass = Boolean(input.adminBypassCode);
-  const leadLimit = demoBypass ? 1 : pack.leads;
+  const demoBypass = Boolean(options.demoBypass);
+  const leadLimit = options.leadLimit ?? (demoBypass ? 1 : pack.leads);
   const maxAnalyzed = demoBypass ? 80 : Math.max(1000, pack.leads * 300);
 
-  const minScore = input.advanced?.minScore ?? (demoBypass ? 0 : preflight.recommendedMinScore || 75);
+  const minScore = options.minScore ?? input.advanced?.minScore ?? (demoBypass ? 0 : preflight.recommendedMinScore || 75);
   const allowNoEmail = input.advanced?.allowNoEmail ?? demoBypass;
   const allowWeakBuyerEvidence = input.advanced?.allowWeakBuyerEvidence ?? demoBypass;
 

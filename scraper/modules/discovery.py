@@ -315,17 +315,18 @@ class LeadDiscovery:
     def _product_seed(self, industry):
         lowered = (industry or "").lower()
         product_terms = (
+            "denim",
+            "jeans",
             "home textile",
             "activewear",
             "sportswear",
             "streetwear",
-            "apparel",
-            "clothing",
             "garment",
-            "textile",
             "fabric",
             "fashion",
-            "denim",
+            "apparel",
+            "clothing",
+            "textile",
             "towel",
             "leather",
         )
@@ -382,7 +383,9 @@ class LeadDiscovery:
             slug = self._slug(query)
             encoded = quote_plus(query)
             bing_pages = (1, 11, 21, 31, 41) if region != "Europe" else (1, 11, 21)
-            duckduckgo_pages = (0, 30, 60) if region != "Europe" else ()
+            # DuckDuckGo's HTML endpoint frequently stalls under Playwright on
+            # the VPS, which blocks discovery before curated sources run.
+            duckduckgo_pages = ()
             for page_number, first in enumerate(bing_pages, start=1):
                 sources.append(
                     DiscoverySource(
@@ -479,7 +482,7 @@ class LeadDiscovery:
                     candidate_kind="seed_list",
                 ),
             ]
-            return buyer_intent_sources + self._search_sources(region, industry) + directory_sources
+            return buyer_intent_sources + directory_sources + self._search_sources(region, industry)
         if region == "UK":
             sources = [
                 DiscoverySource(

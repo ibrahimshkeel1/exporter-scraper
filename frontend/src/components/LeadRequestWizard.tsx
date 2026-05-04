@@ -88,6 +88,13 @@ export function LeadRequestWizard({ onJobCreated }: WizardProps) {
         notes,
         exportFormat,
         adminBypassCode: adminBypassCode || undefined,
+        advanced: showAdvanced
+          ? {
+              allowNoEmail,
+              allowWeakBuyerEvidence,
+              minScore
+            }
+          : undefined,
         preflight
       })
     });

@@ -86,7 +86,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertError?.message ?? "Could not create job." }, { status: 500 });
   }
 
-  const jobConfig = buildScraperJobConfig(inserted.id, body, preflight);
+  const jobConfig = buildScraperJobConfig(inserted.id, body, preflight, {
+    demoBypass: bypassed,
+    leadLimit,
+    minScore
+  });
   const { data: updated, error: updateError } = await supabase
     .from("lead_jobs")
     .update({ job_config: jobConfig })

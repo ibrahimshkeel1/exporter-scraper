@@ -54,6 +54,21 @@ class LeadDiscoveryTests(unittest.TestCase):
             [source.name for source in sources].index("seed-usa-buyer-intent-pages"),
             [source.name for source in sources].index("seed-usa-apparel-buyers"),
         )
+        self.assertLess(
+            [source.name for source in sources].index("seed-usa-apparel-buyers"),
+            next(
+                index
+                for index, source in enumerate(sources)
+                if source.name.startswith("bing-p1-apparel-importer-wholesaler-distributor")
+            ),
+        )
+
+    def test_denim_seed_prefers_specific_product_over_generic_apparel(self):
+        self.assertEqual(self.discovery._product_seed("Apparel & Textile - Denim & Jeans"), "denim")
+
+    def test_search_sources_skip_duckduckgo_to_avoid_vps_timeouts(self):
+        sources = self.discovery._search_sources("USA", "denim")
+        self.assertFalse(any(source.name.startswith("duckduckgo") for source in sources))
 
     def test_seed_urls_are_source_specific(self):
         buyer_intent_urls = self.discovery.seed_urls("USA", "seed-usa-buyer-intent-pages")
