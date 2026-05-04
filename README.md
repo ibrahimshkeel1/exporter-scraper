@@ -79,7 +79,7 @@ npm install
 npm run dev
 ```
 
-Copy `frontend/.env.example` to `frontend/.env.local`, fill Supabase, Gemini, n8n, and admin values, then run the Supabase schema in `supabase/schema.sql`.
+Copy `frontend/.env.example` to `frontend/.env.local`, fill Supabase, Gemini, n8n, admin, and `WORKER_API_URL` values, then run the Supabase schema in `supabase/schema.sql`.
 
 See `docs/saas-implementation.md` for the n8n/VPS handoff and `docs/vps-worker-deploy.md` for upload/restart commands.
 

@@ -26,6 +26,7 @@ N8N_WEBHOOK_SECRET=
 ADMIN_PASSWORD=
 ADMIN_BYPASS_CODE=
 WORKER_OUTPUT_BASE_DIR=exports/worker-runs
+WORKER_API_URL=https://your-worker-domain.example
 ```
 
 Set these on the VPS/n8n host:

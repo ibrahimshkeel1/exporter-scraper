@@ -18,6 +18,8 @@ node_modules/
 .next/
 *.tsbuildinfo
 logs/
+!frontend/src/app/api/jobs/*/logs/
+!frontend/src/app/api/jobs/*/logs/route.ts
 
 # Playwright
 test-results/

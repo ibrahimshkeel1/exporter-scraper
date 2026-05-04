@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Terminal, Wifi, WifiOff } from "lucide-react";
+import { X, Terminal } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { createBrowserSupabase } from "../lib/supabase-client";
 
@@ -19,17 +19,35 @@ type JobLogViewerProps = {
   onClose: () => void;
 };
 
+type WorkerLog = {
+  message: string;
+  time: string;
+  source: "worker" | "system";
+};
+
+type WorkerSseState = "connecting" | "live" | "reconnecting";
+
+function logTime() {
+  return new Date().toLocaleTimeString([], { hour12: false });
+}
+
 export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProps) {
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
-  const [terminalLogs, setTerminalLogs] = useState<{message: string, time: string}[]>([]);
-  const [isLive, setIsLive] = useState(false);
+  const [terminalLogs, setTerminalLogs] = useState<WorkerLog[]>([]);
+  const [workerSseState, setWorkerSseState] = useState<WorkerSseState>("connecting");
+  const [supabase] = useState(() => createBrowserSupabase());
   const scrollRef = useRef<HTMLDivElement>(null);
-  const supabase = createBrowserSupabase();
 
   // Combine and sort Supabase events
   const sortedEvents = [...events].sort(
     (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
   );
+
+  useEffect(() => {
+    setEvents(initialEvents);
+    setTerminalLogs([]);
+    setWorkerSseState("connecting");
+  }, [jobId, initialEvents]);
 
   useEffect(() => {
     if (!jobId) return;
@@ -55,54 +73,75 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
       )
       .subscribe();
 
-    // 2. Subscribe to Raw Terminal Noise via SSE
-    // Use worker.cristalinawater.com or similar if set, otherwise fallback to a default
-    // We assume the user has configured Nginx to proxy /api/logs to the worker
-    const rawWorkerUrl = process.env.NEXT_PUBLIC_WORKER_URL || "https://worker.cristalinawater.com";
-    const workerUrl = rawWorkerUrl.endsWith("/") ? rawWorkerUrl.slice(0, -1) : rawWorkerUrl;
-    const sseUrl = `${workerUrl}/api/logs/${jobId}`;
+    // 2. Subscribe to raw worker stdout via the same-origin Next proxy.
+    const sseUrl = `/api/jobs/${encodeURIComponent(jobId)}/logs`;
     
     let eventSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
+
+    const appendLog = (message: string, source: WorkerLog["source"] = "worker", dedupe = false) => {
+      if (!message) return;
+      setTerminalLogs((prev) => {
+        const isDuplicate = source === "system"
+          ? prev.some((log) => log.source === source && log.message === message)
+          : prev[prev.length - 1]?.message === message;
+        if (dedupe && isDuplicate) return prev;
+        return [
+          ...prev,
+          {
+            message,
+            time: logTime(),
+            source
+          }
+        ];
+      });
+    };
+
+    const handleSseMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        const message = typeof data.message === "string" ? data.message : JSON.stringify(data);
+        appendLog(message, data.source === "system" ? "system" : "worker", true);
+      } catch {
+        appendLog(event.data, "worker", true);
+      }
+    };
     
     const connectSSE = () => {
+      if (closed) return;
       if (eventSource) eventSource.close();
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
       
       eventSource = new EventSource(sseUrl);
+      setWorkerSseState((current) => (current === "live" ? "live" : "connecting"));
       
       eventSource.onopen = () => {
-        setIsLive(true);
-        console.log("SSE connected to worker logs");
+        setWorkerSseState("live");
       };
       
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.message) {
-            setTerminalLogs((prev) => [
-              ...prev, 
-              { 
-                message: data.message, 
-                time: new Date().toLocaleTimeString([], { hour12: false }) 
-              }
-            ]);
-          }
-        } catch (e) {
-          console.error("Failed to parse SSE data", e);
-        }
-      };
+      eventSource.onmessage = handleSseMessage;
+      eventSource.addEventListener("worker_status", handleSseMessage);
       
       eventSource.onerror = (e) => {
-        setIsLive(false);
+        if (closed) return;
+        setWorkerSseState("reconnecting");
+        appendLog("Worker log stream disconnected; retrying in 5s.", "system", true);
         console.error("SSE error, reconnecting in 5s...", e);
         eventSource?.close();
-        setTimeout(connectSSE, 5000);
+        reconnectTimer = setTimeout(connectSSE, 5000);
       };
     };
 
     connectSSE();
 
     return () => {
+      closed = true;
       supabase.removeChannel(channel);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (eventSource) eventSource.close();
     };
   }, [jobId, supabase]);
@@ -113,6 +152,27 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [sortedEvents, terminalLogs]);
+
+  const connectionMeta = {
+    live: {
+      label: "LIVE",
+      container: "bg-green-500/10 border-green-500/20",
+      dot: "bg-green-500 animate-pulse",
+      text: "text-green-400"
+    },
+    connecting: {
+      label: "CONNECTING",
+      container: "bg-amber-500/10 border-amber-500/20",
+      dot: "bg-amber-500 animate-pulse",
+      text: "text-amber-400"
+    },
+    reconnecting: {
+      label: "RETRYING",
+      container: "bg-red-500/10 border-red-500/20",
+      dot: "bg-red-500",
+      text: "text-red-400"
+    }
+  }[workerSseState];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
@@ -133,10 +193,10 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
             LIVE_LOGS: {jobId.slice(0, 8)}...
           </div>
           <div className="w-24 flex justify-end">
-            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${isLive ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20"}`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
-              <span className={`text-[10px] font-mono ${isLive ? "text-green-400" : "text-red-400"}`}>
-                {isLive ? "LIVE" : "OFFLINE"}
+            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${connectionMeta.container}`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${connectionMeta.dot}`} />
+              <span className={`text-[10px] font-mono ${connectionMeta.text}`}>
+                {connectionMeta.label}
               </span>
             </div>
           </div>
@@ -172,15 +232,15 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
           {terminalLogs.map((log, idx) => (
             <div key={idx} className="flex gap-4 group">
               <span className="text-[#444] shrink-0 select-none">[{log.time}]</span>
-              <span className="text-[#ccc] whitespace-pre-wrap break-all font-light">
+              <span className={`${log.source === "system" ? "text-amber-300/80 italic" : "text-[#ccc] font-light"} whitespace-pre-wrap break-all`}>
                 {log.message}
               </span>
             </div>
           ))}
 
-          {terminalLogs.length === 0 && !isLive && (
+          {terminalLogs.length === 0 && (
             <div className="text-amber-500/80 animate-pulse py-2">
-              Waiting for worker output...
+              {workerSseState === "live" ? "Connected; waiting for worker output..." : "Connecting to worker output..."}
             </div>
           )}
           
@@ -189,7 +249,7 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
 
         <div className="px-4 py-2 bg-[#111] border-t border-[#333] text-[10px] text-[#555] flex justify-between">
           <span>SUPABASE_REALTIME: ENABLED</span>
-          <span>WORKER_SSE: {isLive ? "ACTIVE" : "RECONNECTING"}</span>
+          <span>WORKER_SSE: {connectionMeta.label}</span>
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@ import mimetypes
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -367,12 +368,57 @@ async def health(_request):
     return _json_response({"ok": True, "service": "exportflow-worker"})
 
 
+async def _write_sse(response, payload=None, event=None, comment=None):
+    if comment is not None:
+        await response.write(f": {comment}\n\n".encode("utf-8"))
+        return
+
+    prefix = f"event: {event}\n" if event else ""
+    data = json.dumps(payload or {}, ensure_ascii=True)
+    await response.write(f"{prefix}data: {data}\n\n".encode("utf-8"))
+
+
+async def _wait_for_log_file(response, log_path, timeout=60):
+    started_at = time.monotonic()
+    last_heartbeat = 0
+    notified = False
+
+    while not log_path.exists():
+        now = time.monotonic()
+        if not notified:
+            await _write_sse(
+                response,
+                {
+                    "message": "Worker log file is not available yet; waiting for stdout.log.",
+                    "source": "system",
+                },
+                event="worker_status",
+            )
+            notified = True
+            last_heartbeat = now
+        elif now - last_heartbeat >= 15:
+            await _write_sse(response, comment="waiting for stdout.log")
+            last_heartbeat = now
+
+        if now - started_at >= timeout:
+            await _write_sse(
+                response,
+                {
+                    "message": "Worker log file is still unavailable; client will reconnect.",
+                    "source": "system",
+                },
+                event="worker_status",
+            )
+            return False
+
+        await asyncio.sleep(1)
+
+    return True
+
+
 async def stream_logs(request):
     job_id = request.match_info.get("job_id")
     log_path = RUNS_DIR / job_id / "stdout.log"
-
-    if not log_path.exists():
-        return web.Response(text="Log file not found", status=404)
 
     response = web.StreamResponse(
         status=200,
@@ -382,29 +428,36 @@ async def stream_logs(request):
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
             'Access-Control-Allow-Origin': '*',
+            'X-Accel-Buffering': 'no',
         },
     )
     await response.prepare(request)
 
     try:
+        if not await _wait_for_log_file(response, log_path):
+            return response
+
         with log_path.open("r", encoding="utf-8", errors="replace") as file_handle:
+            last_heartbeat = time.monotonic()
             # Send current content
             while True:
                 line = file_handle.readline()
                 if not line:
                     break
-                event_data = json.dumps({"message": line.strip()})
-                await response.write(f"data: {event_data}\n\n".encode('utf-8'))
+                await _write_sse(response, {"message": line.rstrip("\n")})
 
             # Tail for new content
             while True:
                 line = file_handle.readline()
                 if not line:
-                    # Check if process is done? For now just sleep
+                    now = time.monotonic()
+                    if now - last_heartbeat >= 15:
+                        await _write_sse(response, comment="keepalive")
+                        last_heartbeat = now
                     await asyncio.sleep(0.5)
                     continue
-                event_data = json.dumps({"message": line.strip()})
-                await response.write(f"data: {event_data}\n\n".encode('utf-8'))
+                last_heartbeat = time.monotonic()
+                await _write_sse(response, {"message": line.rstrip("\n")})
     except ConnectionResetError:
         pass
     except Exception as exc:

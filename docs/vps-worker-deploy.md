@@ -102,3 +102,19 @@ The worker writes each job under:
 ```text
 /srv/exportflow/exports/worker-runs/<job_id>/
 ```
+
+## 6. Frontend Log Streaming
+
+The frontend streams worker stdout through its own API route:
+
+```text
+GET /api/jobs/<job_id>/logs
+```
+
+Set this frontend environment variable to the worker base URL that the frontend server can reach:
+
+```env
+WORKER_API_URL=https://your-worker-domain.example
+```
+
+Use `http://127.0.0.1:8787` only when the frontend server and worker run on the same machine. If the frontend is deployed on Vercel, this must be a public HTTPS worker/Nginx URL, not localhost.

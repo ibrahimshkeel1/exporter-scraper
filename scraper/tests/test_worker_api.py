@@ -54,15 +54,16 @@ class WorkerApiTests(unittest.TestCase):
 
         self.assertEqual(worker_api._count_rows(xlsx_path), 2)
 
-    def test_lead_export_files_only_returns_job_leads(self):
-        expected = self.TEST_DIR / "_tmp_worker_job_leads.csv"
-        expected.write_text("email\none@example.com\n", encoding="utf-8")
-        (self.TEST_DIR / "_tmp_worker_job_audit.csv").write_text("email\n", encoding="utf-8")
+    def test_lead_export_files_returns_job_leads_and_audit_files(self):
+        expected_leads = self.TEST_DIR / "_tmp_worker_job_leads.csv"
+        expected_audit = self.TEST_DIR / "_tmp_worker_job_audit.csv"
+        expected_leads.write_text("email\none@example.com\n", encoding="utf-8")
+        expected_audit.write_text("email\n", encoding="utf-8")
         (self.TEST_DIR / "_tmp_worker_other_leads.csv").write_text("email\n", encoding="utf-8")
 
         files = worker_api._lead_export_files({"delivery": {"output_dir": str(self.TEST_DIR)}}, "_tmp_worker_job")
 
-        self.assertEqual(files, [expected])
+        self.assertEqual(files, [expected_audit, expected_leads])
 
     def test_lead_export_files_resolves_relative_output_dir_from_project_root(self):
         relative_dir = PROJECT_ROOT / "_tmp_worker_relative"
