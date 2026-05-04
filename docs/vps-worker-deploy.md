@@ -12,8 +12,14 @@ rsync -av --delete \
   --exclude "frontend/node_modules" \
   --exclude "frontend/.next" \
   --exclude "exports" \
+  --exclude "supabase" \
+  --exclude "worker.env" \
   ./ root@YOUR_VPS_IP:/srv/exportflow/
 ```
+
+`worker.env` is a production-only secret file. Keep it on the VPS and exclude it from
+`rsync --delete`; otherwise a local deploy can remove `/srv/exportflow/worker.env`
+and systemd will fail with `Failed to load environment files`.
 
 If you do not have `rsync`, use:
 
