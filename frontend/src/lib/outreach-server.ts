@@ -3,9 +3,13 @@ import { createAdminSupabase } from "./supabase-admin";
 import { OutreachLeadInput, normalizeOutreachLead } from "./outreach";
 
 export function verifyOutreachWebhook(request: NextRequest) {
-  const expected = process.env.N8N_WEBHOOK_SECRET;
+  const expected = outreachWebhookSecret();
   if (!expected) return true;
   return request.headers.get("x-exportflow-secret") === expected;
+}
+
+function outreachWebhookSecret() {
+  return process.env.N8N_OUTREACH_WEBHOOK_SECRET || process.env.N8N_WEBHOOK_SECRET || "";
 }
 
 export function getPublicAppUrl() {
@@ -21,7 +25,7 @@ export async function postN8nWebhook(url: string | undefined, payload: Record<st
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(process.env.N8N_WEBHOOK_SECRET ? { "x-exportflow-secret": process.env.N8N_WEBHOOK_SECRET } : {})
+      ...(outreachWebhookSecret() ? { "x-exportflow-secret": outreachWebhookSecret() } : {})
     },
     body: JSON.stringify(payload)
   });

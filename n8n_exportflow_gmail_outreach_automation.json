@@ -36,7 +36,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body || $input.first().json || {};\nconst appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nconst campaignId = body.campaign_id || body.campaignId;\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nif (!campaignId) throw new Error('campaign_id is required.');\nreturn [{ json: { appUrl, campaign_id: campaignId, secret: $env.N8N_WEBHOOK_SECRET || '', gemini_key: $env.GEMINI_API_KEY || '', gemini_model: $env.GEMINI_MODEL || 'gemini-3-flash-preview' } }];"
+        "jsCode": "const body = $input.first().json.body || $input.first().json || {};\nconst appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nconst campaignId = body.campaign_id || body.campaignId;\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nif (!campaignId) throw new Error('campaign_id is required.');\nreturn [{ json: { appUrl, campaign_id: campaignId, secret: $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || '', gemini_key: $env.GEMINI_API_KEY || '', gemini_model: $env.GEMINI_MODEL || 'gemini-3-flash-preview' } }];"
       },
       "id": "2b932a40-375b-48ec-a4b6-45e3e5bb8a9d",
       "name": "Prepare Generate Request",
@@ -195,7 +195,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body || $input.first().json || {};\nconst appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nconst campaignId = body.campaign_id || body.campaignId;\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nif (!campaignId) throw new Error('campaign_id is required.');\nreturn [{ json: { appUrl, campaign_id: campaignId, secret: $env.N8N_WEBHOOK_SECRET || '' } }];"
+        "jsCode": "const body = $input.first().json.body || $input.first().json || {};\nconst appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nconst campaignId = body.campaign_id || body.campaignId;\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nif (!campaignId) throw new Error('campaign_id is required.');\nreturn [{ json: { appUrl, campaign_id: campaignId, secret: $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || '' } }];"
       },
       "id": "65334139-725f-4c34-8be2-47ed6638870c",
       "name": "Prepare Launch Request",
@@ -284,7 +284,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{ json: { appUrl, secret: $env.N8N_WEBHOOK_SECRET || '', gemini_key: $env.GEMINI_API_KEY || '', gemini_model: $env.GEMINI_MODEL || 'gemini-3-flash-preview', batch_limit: Number($env.EXPORTFLOW_SEND_BATCH_LIMIT || 5), test_mode: String($env.EXPORTFLOW_TEST_MODE || 'true').toLowerCase() !== 'false', test_recipient: $env.EXPORTFLOW_TEST_RECIPIENT || 'ibrahimshkeel1@gmail.com' } }];"
+        "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{ json: { appUrl, secret: $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || '', gemini_key: $env.GEMINI_API_KEY || '', gemini_model: $env.GEMINI_MODEL || 'gemini-3-flash-preview', batch_limit: Number($env.EXPORTFLOW_SEND_BATCH_LIMIT || 5), test_mode: String($env.EXPORTFLOW_TEST_MODE || 'true').toLowerCase() !== 'false', test_recipient: $env.EXPORTFLOW_TEST_RECIPIENT || 'ibrahimshkeel1@gmail.com' } }];"
       },
       "id": "a180e493-f72a-4474-8bd3-010e7e4d8e1b",
       "name": "Prepare Due Messages Request",
@@ -498,7 +498,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{\n  json: {\n    appUrl,\n    secret: $env.N8N_WEBHOOK_SECRET || '',\n    step: 'followup_1',\n    after_minutes: Number($env.EXPORTFLOW_FOLLOWUP_1_MINUTES || 10),\n    from_status: 'initial_sent',\n    to_status: 'followup_1_pending'\n  }\n}];"
+        "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{\n  json: {\n    appUrl,\n    secret: $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || '',\n    step: 'followup_1',\n    after_minutes: Number($env.EXPORTFLOW_FOLLOWUP_1_MINUTES || 10),\n    from_status: 'initial_sent',\n    to_status: 'followup_1_pending'\n  }\n}];"
       },
       "id": "c39b2429-8741-4e90-9358-37a87807443b",
       "name": "Prepare Follow Up 1 Queue Request",
@@ -571,7 +571,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{\n  json: {\n    appUrl,\n    secret: $env.N8N_WEBHOOK_SECRET || '',\n    step: 'followup_2',\n    after_minutes: Number($env.EXPORTFLOW_FOLLOWUP_2_MINUTES || 20),\n    from_status: 'followup_1_sent',\n    to_status: 'followup_2_pending'\n  }\n}];"
+        "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{\n  json: {\n    appUrl,\n    secret: $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || '',\n    step: 'followup_2',\n    after_minutes: Number($env.EXPORTFLOW_FOLLOWUP_2_MINUTES || 20),\n    from_status: 'followup_1_sent',\n    to_status: 'followup_2_pending'\n  }\n}];"
       },
       "id": "0269837d-0045-4bea-a579-2331a454f900",
       "name": "Prepare Follow Up 2 Queue Request",
@@ -644,7 +644,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{ json: { appUrl, secret: $env.N8N_WEBHOOK_SECRET || '', rebuilt_at: new Date().toISOString() } }];"
+        "jsCode": "const appUrl = String($env.EXPORTFLOW_APP_URL || '').replace(/\\/+$/, '');\nif (!appUrl) throw new Error('Missing EXPORTFLOW_APP_URL in n8n environment.');\nreturn [{ json: { appUrl, secret: $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || '', rebuilt_at: new Date().toISOString() } }];"
       },
       "id": "7d1fd0e2-4bd1-40ec-98cf-acb95b87316e",
       "name": "Prepare Stats Request",

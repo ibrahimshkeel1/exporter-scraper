@@ -66,7 +66,7 @@ Set these in `frontend/.env.local`:
 N8N_OUTREACH_GENERATE_WEBHOOK_URL=https://YOUR_N8N_DOMAIN/webhook/exportflow-outreach-generate
 N8N_OUTREACH_LAUNCH_WEBHOOK_URL=https://YOUR_N8N_DOMAIN/webhook/exportflow-outreach-launch
 N8N_OUTREACH_SEND_WEBHOOK_URL=https://YOUR_N8N_DOMAIN/webhook/exportflow-outreach-send-due
-N8N_WEBHOOK_SECRET=same-secret-as-n8n
+N8N_OUTREACH_WEBHOOK_SECRET=same-secret-as-n8n-outreach
 OUTREACH_TEST_MODE=true
 OUTREACH_TEST_RECIPIENT=ibrahimshkeel1@gmail.com
 OUTREACH_TEST_GMAIL_FROM_EMAIL=your-test-gmail@gmail.com
@@ -78,7 +78,7 @@ Set these in n8n:
 
 ```env
 EXPORTFLOW_APP_URL=http://localhost:3000
-N8N_WEBHOOK_SECRET=same-secret-as-frontend
+N8N_OUTREACH_WEBHOOK_SECRET=same-secret-as-frontend-outreach
 GEMINI_API_KEY=your-gemini-key
 GEMINI_MODEL=gemini-3-flash-preview
 EXPORTFLOW_TEST_MODE=true
