@@ -75,8 +75,8 @@ function SideNav({
         </Link>
       </nav>
 
-      <div className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-3">
-        <AuthPanel />
+      <div className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-2">
+        <AuthPanel compact />
       </div>
     </div>
   );

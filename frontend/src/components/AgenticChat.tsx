@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, CheckCircle2, Download, Loader2, Send, Sparkles, Terminal, UserRound } from "lucide-react";
+import { Bot, CheckCircle2, Check, Copy, Download, Loader2, Send, Sparkles, Terminal, UserRound } from "lucide-react";
 import { leadPacks } from "../lib/pricing";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 import { TargetingPreflight } from "../lib/types";
@@ -79,6 +79,7 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
   const [discoveryLogs, setDiscoveryLogs] = useState<WorkerLog[]>([]);
   const [enrichmentLogs, setEnrichmentLogs] = useState<WorkerLog[]>([]);
   const [state, setState] = useState<"connecting" | "live" | "retrying">("connecting");
+  const [copiedLane, setCopiedLane] = useState<"discovery" | "enrichment" | null>(null);
   const discoveryRef = useRef<HTMLDivElement>(null);
   const enrichmentRef = useRef<HTMLDivElement>(null);
 
@@ -150,15 +151,34 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
     }
   }, [enrichmentLogs]);
 
+  async function copyLaneLogs(lane: "discovery" | "enrichment") {
+    const logs = lane === "discovery" ? discoveryLogs : enrichmentLogs;
+    if (logs.length === 0 || typeof navigator === "undefined" || !navigator.clipboard) return;
+    const text = logs.map((log) => `[${log.time}] [${log.source}] ${log.message}`).join("\n");
+    await navigator.clipboard.writeText(text);
+    setCopiedLane(lane);
+    setTimeout(() => setCopiedLane((current) => (current === lane ? null : current)), 1200);
+  }
+
   return (
-    <div className="mt-3 grid min-h-[320px] grid-cols-1 gap-3 xl:grid-cols-2">
-      <section className="flex min-h-[220px] flex-col overflow-hidden rounded-xl border border-cyan-500/30 bg-black">
+    <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+      <section className="flex h-56 min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-500/30 bg-black">
         <div className="flex items-center justify-between border-b border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[11px] font-mono text-cyan-200">
           <span className="inline-flex items-center gap-1.5">
             <Terminal size={12} />
             DISCOVERY / MAIN
           </span>
-          <span>{state.toUpperCase()}</span>
+          <div className="inline-flex items-center gap-2">
+            <span>{state.toUpperCase()}</span>
+            <button
+              type="button"
+              onClick={() => void copyLaneLogs("discovery")}
+              className="inline-flex h-6 items-center gap-1 rounded border border-cyan-400/30 bg-cyan-500/10 px-2 text-[10px] hover:bg-cyan-500/20"
+            >
+              {copiedLane === "discovery" ? <Check size={11} /> : <Copy size={11} />}
+              Copy
+            </button>
+          </div>
         </div>
         <div ref={discoveryRef} className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-cyan-100/90">
           {discoveryLogs.map((log, index) => (
@@ -169,13 +189,23 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
           {discoveryLogs.length === 0 && <div className="text-cyan-300/60">Waiting for discovery logs...</div>}
         </div>
       </section>
-      <section className="flex min-h-[220px] flex-col overflow-hidden rounded-xl border border-emerald-500/30 bg-black">
+      <section className="flex h-56 min-h-0 flex-col overflow-hidden rounded-xl border border-emerald-500/30 bg-black">
         <div className="flex items-center justify-between border-b border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] font-mono text-emerald-200">
           <span className="inline-flex items-center gap-1.5">
             <Terminal size={12} />
             ENRICH / SCORE
           </span>
-          <span>{state.toUpperCase()}</span>
+          <div className="inline-flex items-center gap-2">
+            <span>{state.toUpperCase()}</span>
+            <button
+              type="button"
+              onClick={() => void copyLaneLogs("enrichment")}
+              className="inline-flex h-6 items-center gap-1 rounded border border-emerald-400/30 bg-emerald-500/10 px-2 text-[10px] hover:bg-emerald-500/20"
+            >
+              {copiedLane === "enrichment" ? <Check size={11} /> : <Copy size={11} />}
+              Copy
+            </button>
+          </div>
         </div>
         <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-emerald-100/90">
           {enrichmentLogs.map((log, index) => (
@@ -186,6 +216,71 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
           {enrichmentLogs.length === 0 && <div className="text-emerald-300/60">Waiting for enrichment logs...</div>}
         </div>
       </section>
+    </div>
+  );
+}
+
+function ReportDownloads({
+  jobId,
+  supabase,
+}: {
+  jobId: string;
+  supabase: ReturnType<typeof createBrowserSupabase> | null;
+}) {
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
+
+  async function openExport(format: "csv" | "xlsx") {
+    if (!supabase) return;
+    setDownloadError(null);
+    setDownloadingFormat(format);
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) {
+      setDownloadError("Sign in required for download.");
+      setDownloadingFormat(null);
+      return;
+    }
+
+    const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/exports?format=${format}&mode=url`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const payload = await response.json();
+    setDownloadingFormat(null);
+    if (!response.ok || !payload.url) {
+      setDownloadError(payload.error || "Could not fetch download URL.");
+      return;
+    }
+
+    window.open(payload.url, "_blank", "noopener,noreferrer");
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void openExport("csv")}
+          disabled={downloadingFormat !== null}
+          className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+        >
+          <Download size={14} />
+          Leads CSV
+        </button>
+        <button
+          type="button"
+          onClick={() => void openExport("xlsx")}
+          disabled={downloadingFormat !== null}
+          className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-vercel-text hover:bg-white/10 disabled:opacity-50"
+        >
+          <Download size={14} />
+          Audit XLSX
+        </button>
+      </div>
+      {downloadError && <p className="text-xs text-amber-300">{downloadError}</p>}
     </div>
   );
 }
@@ -458,24 +553,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
               {message.type === "report" && Boolean(message.payload?.report) && (
                 <div className="space-y-3">
                   <JobReportCard report={message.payload.report as any} />
-                  <div className="flex flex-wrap gap-2">
-                    <a
-                      className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300 hover:bg-emerald-500/20"
-                      href={`/api/jobs/${String(message.payload.jobId)}/exports?format=csv`}
-                      target="_blank"
-                    >
-                      <Download size={14} />
-                      Leads CSV
-                    </a>
-                    <a
-                      className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-vercel-text hover:bg-white/10"
-                      href={`/api/jobs/${String(message.payload.jobId)}/exports?format=xlsx`}
-                      target="_blank"
-                    >
-                      <Download size={14} />
-                      Audit XLSX
-                    </a>
-                  </div>
+                  <ReportDownloads jobId={String(message.payload.jobId)} supabase={supabase} />
                 </div>
               )}
             </div>
@@ -503,7 +581,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
       <footer className="border-t border-white/10 bg-black/35 px-4 py-4 sm:px-6">
         <form className="mx-auto flex max-w-5xl gap-3" onSubmit={appendUserMessage}>
           <textarea
-            className="h-24 flex-1 resize-none rounded-xl border border-white/10 bg-[#121920] px-4 py-3 text-sm text-vercel-text outline-none transition focus:border-cyan-300/40"
+            className="h-14 flex-1 resize-none rounded-xl border border-white/10 bg-[#121920] px-4 py-3 text-sm text-vercel-text outline-none transition focus:border-cyan-300/40"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -516,7 +594,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
             disabled={isThinking}
           />
           <button
-            className="inline-flex h-24 w-20 items-center justify-center rounded-xl bg-white text-black transition hover:bg-cyan-100 disabled:opacity-50"
+            className="inline-flex h-14 w-14 items-center justify-center rounded-xl bg-white text-black transition hover:bg-cyan-100 disabled:opacity-50"
             type="submit"
             disabled={isThinking || !draft.trim()}
           >

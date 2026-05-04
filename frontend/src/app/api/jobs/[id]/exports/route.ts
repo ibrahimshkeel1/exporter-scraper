@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runLeadJobReview } from "../../../../../lib/gemini";
+import { getUserFromRequest } from "../../../../../lib/api-auth";
+import { ensureJobReport } from "../../../../../lib/job-report";
 import { createAdminSupabase } from "../../../../../lib/supabase-admin";
 
 type RouteContext = {
@@ -26,12 +27,6 @@ function verifyWebhook(request: NextRequest) {
   return request.headers.get("x-exportflow-secret") === expected;
 }
 
-function countCsvRows(text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) return 0;
-  return Math.max(0, trimmed.split(/\r?\n/).length - 1);
-}
-
 function pickLeadFile(rows: LeadExportRow[]) {
   return rows.find((row) => {
     const path = row.storage_path || "";
@@ -47,21 +42,76 @@ function pickAuditFile(rows: LeadExportRow[]) {
   });
 }
 
-async function fetchExportText(supabase: ReturnType<typeof createAdminSupabase>, row: LeadExportRow | undefined) {
-  if (!row) return "";
-  if (row.public_url) {
-    const response = await fetch(row.public_url);
-    if (!response.ok) return "";
-    return response.text();
+function pickByFormat(rows: LeadExportRow[], format: string) {
+  const normalized = format.toLowerCase();
+  if (normalized === "audit") {
+    return pickAuditFile(rows);
   }
-  if (!row.storage_path) return "";
+  if (normalized === "leads") {
+    return pickLeadFile(rows);
+  }
+  const matches = rows.filter((row) => (row.format || "").toLowerCase() === normalized);
+  if (matches.length === 0) return null;
+  if (normalized === "csv") {
+    return matches.find((row) => !/(^|\/|_)audit(\.|_|$)/i.test(row.storage_path || "")) || matches[0];
+  }
+  return matches[0];
+}
 
-  const { data, error } = await supabase.storage.from("lead-exports").createSignedUrl(row.storage_path, 15 * 60);
-  if (error || !data?.signedUrl) return "";
+export async function GET(request: NextRequest, context: RouteContext) {
+  const { user, error } = await getUserFromRequest(request);
+  if (!user) {
+    return NextResponse.json({ error }, { status: 401 });
+  }
 
-  const response = await fetch(data.signedUrl);
-  if (!response.ok) return "";
-  return response.text();
+  const { id } = await context.params;
+  const supabase = createAdminSupabase();
+  const format = request.nextUrl.searchParams.get("format") || "csv";
+  const mode = request.nextUrl.searchParams.get("mode") || "redirect";
+
+  const { data: job, error: jobError } = await supabase
+    .from("lead_jobs")
+    .select("id,user_id,lead_exports(*)")
+    .eq("id", id)
+    .single();
+
+  if (jobError || !job || job.user_id !== user.id) {
+    return NextResponse.json({ error: "Job not found." }, { status: 404 });
+  }
+
+  const rows = (job.lead_exports || []) as LeadExportRow[];
+  if (rows.length === 0) {
+    return NextResponse.json({ error: "No exports available yet." }, { status: 404 });
+  }
+
+  const selected = pickByFormat(rows, format);
+  if (!selected) {
+    return NextResponse.json({ error: `No export found for format '${format}'.` }, { status: 404 });
+  }
+
+  if (selected.public_url) {
+    if (mode === "url") {
+      return NextResponse.json({ url: selected.public_url });
+    }
+    return NextResponse.redirect(selected.public_url, { status: 302 });
+  }
+
+  if (!selected.storage_path) {
+    return NextResponse.json({ error: "Export file path is missing." }, { status: 404 });
+  }
+
+  const { data: signed, error: signError } = await supabase.storage
+    .from("lead-exports")
+    .createSignedUrl(selected.storage_path, 60 * 60);
+  if (signError || !signed?.signedUrl) {
+    return NextResponse.json({ error: signError?.message || "Could not generate download URL." }, { status: 500 });
+  }
+
+  if (mode === "url") {
+    return NextResponse.json({ url: signed.signedUrl });
+  }
+
+  return NextResponse.redirect(signed.signedUrl, { status: 302 });
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -116,67 +166,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: eventError.message }, { status: 500 });
   }
 
-  const { data: job } = await supabase
-    .from("lead_jobs")
-    .select("id, plan_name, target_region, refined_industry, lead_limit, min_score, preflight, job_config")
-    .eq("id", id)
-    .single();
-
-  const leadFile = pickLeadFile(rows as LeadExportRow[]);
-  const auditFile = pickAuditFile(rows as LeadExportRow[]);
-
-  let reportWarning: string | null = null;
-  if (job) {
-    try {
-      const [finalCsv, auditCsv] = await Promise.all([
-        fetchExportText(supabase, leadFile),
-        fetchExportText(supabase, auditFile)
-      ]);
-
-      if (finalCsv || auditCsv) {
-        const report = await runLeadJobReview({
-          jobId: id,
-          planName: String(job.plan_name ?? "Lead pack"),
-          targetRegion: String(job.target_region ?? "International"),
-          refinedIndustry: String(job.refined_industry ?? ""),
-          leadLimit: Number(job.lead_limit ?? 0),
-          minScore: Number(job.min_score ?? 0),
-          finalCsv,
-          auditCsv,
-          finalRowCount: countCsvRows(finalCsv),
-          auditRowCount: countCsvRows(auditCsv),
-          preflight: (job.preflight ?? {}) as Record<string, unknown>
-        });
-
-        await supabase.from("job_events").insert({
-          job_id: id,
-          status: "report_ready",
-          message: report.executiveSummary,
-          metadata: {
-            report,
-            lead_file: leadFile?.storage_path ?? leadFile?.public_url ?? null,
-            audit_file: auditFile?.storage_path ?? auditFile?.public_url ?? null
-          }
-        });
-      } else {
-        reportWarning = "Export report skipped because the final CSV or audit CSV could not be read.";
-        await supabase.from("job_events").insert({
-          job_id: id,
-          status: "report_ready",
-          message: reportWarning,
-          metadata: { warning: reportWarning }
-        });
-      }
-    } catch (reportError) {
-      reportWarning = reportError instanceof Error ? reportError.message : "Unknown report generation error.";
-      await supabase.from("job_events").insert({
-        job_id: id,
-        status: "report_error",
-        message: reportWarning,
-        metadata: { error: reportWarning }
-      });
-    }
-  }
+  const reportResult = await ensureJobReport(id, rows as LeadExportRow[]);
+  const reportWarning = reportResult.warning;
 
   return NextResponse.json({ ok: true, reportWarning });
 }

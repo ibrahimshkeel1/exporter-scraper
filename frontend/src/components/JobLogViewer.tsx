@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Terminal, X } from "lucide-react";
+import { Check, Copy, Terminal, X } from "lucide-react";
 import { createBrowserSupabase } from "../lib/supabase-client";
 import { JobReportCard } from "./JobReportCard";
 
@@ -52,6 +52,7 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
   const [discoveryLogs, setDiscoveryLogs] = useState<WorkerLog[]>([]);
   const [enrichmentLogs, setEnrichmentLogs] = useState<WorkerLog[]>([]);
   const [state, setState] = useState<"connecting" | "live" | "retrying">("connecting");
+  const [copiedLane, setCopiedLane] = useState<"discovery" | "enrichment" | null>(null);
   const [supabase] = useState(() => createBrowserSupabase());
   const discoveryRef = useRef<HTMLDivElement>(null);
   const enrichmentRef = useRef<HTMLDivElement>(null);
@@ -159,6 +160,15 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
     }
   }, [sortedEvents]);
 
+  async function copyLaneLogs(lane: "discovery" | "enrichment") {
+    const logs = lane === "discovery" ? discoveryLogs : enrichmentLogs;
+    if (logs.length === 0 || typeof navigator === "undefined" || !navigator.clipboard) return;
+    const text = logs.map((log) => `[${log.time}] [${log.source}] ${log.message}`).join("\n");
+    await navigator.clipboard.writeText(text);
+    setCopiedLane(lane);
+    setTimeout(() => setCopiedLane((current) => (current === lane ? null : current)), 1200);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
@@ -182,7 +192,17 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
           <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-cyan-500/30 bg-black">
             <header className="flex items-center justify-between border-b border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[11px] font-mono text-cyan-200">
               <span>DISCOVERY / MAIN</span>
-              <span>{state.toUpperCase()}</span>
+              <div className="inline-flex items-center gap-2">
+                <span>{state.toUpperCase()}</span>
+                <button
+                  type="button"
+                  onClick={() => void copyLaneLogs("discovery")}
+                  className="inline-flex h-6 items-center gap-1 rounded border border-cyan-400/30 bg-cyan-500/10 px-2 text-[10px] hover:bg-cyan-500/20"
+                >
+                  {copiedLane === "discovery" ? <Check size={11} /> : <Copy size={11} />}
+                  Copy
+                </button>
+              </div>
             </header>
             <div ref={discoveryRef} className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-cyan-100/90">
               {discoveryLogs.map((log, index) => (
@@ -197,7 +217,17 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
           <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-emerald-500/30 bg-black">
             <header className="flex items-center justify-between border-b border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] font-mono text-emerald-200">
               <span>ENRICH / SCORE</span>
-              <span>{state.toUpperCase()}</span>
+              <div className="inline-flex items-center gap-2">
+                <span>{state.toUpperCase()}</span>
+                <button
+                  type="button"
+                  onClick={() => void copyLaneLogs("enrichment")}
+                  className="inline-flex h-6 items-center gap-1 rounded border border-emerald-400/30 bg-emerald-500/10 px-2 text-[10px] hover:bg-emerald-500/20"
+                >
+                  {copiedLane === "enrichment" ? <Check size={11} /> : <Copy size={11} />}
+                  Copy
+                </button>
+              </div>
             </header>
             <div ref={enrichmentRef} className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-emerald-100/90">
               {enrichmentLogs.map((log, index) => (

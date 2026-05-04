@@ -19,6 +19,7 @@ export function JobTable({ refreshSignal }: JobTableProps) {
   const [jobs, setJobs] = useState<LeadJob[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [reportJobId, setReportJobId] = useState<string | null>(null);
   const [activeLogs, setActiveLogs] = useState<JobEvent[] | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
@@ -70,6 +71,31 @@ export function JobTable({ refreshSignal }: JobTableProps) {
       return;
     }
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
+  async function requestReport(jobId: string) {
+    if (!supabase) return;
+    setReportJobId(jobId);
+    setMessage("");
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      setMessage("Sign in to generate a report.");
+      setReportJobId(null);
+      return;
+    }
+
+    const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/report`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const payload = await response.json();
+    setReportJobId(null);
+    if (!response.ok) {
+      setMessage(payload.error || "Could not generate report.");
+      return;
+    }
+    await loadJobs();
   }
 
   useEffect(() => {
@@ -155,6 +181,17 @@ export function JobTable({ refreshSignal }: JobTableProps) {
                     ) : (
                       <span className="text-xs text-vercel-muted italic">Waiting for delivery</span>
                     )}
+                    {job.status === "delivered" &&
+                      !(((job as any).job_events || []) as JobEvent[]).some((event) => event.status === "report_ready") && (
+                        <button
+                          type="button"
+                          onClick={() => void requestReport(job.id)}
+                          disabled={reportJobId === job.id}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-60"
+                        >
+                          {reportJobId === job.id ? "Generating..." : "Generate Analysis"}
+                        </button>
+                      )}
                     
                     <button 
                       onClick={() => {
