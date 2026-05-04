@@ -42,10 +42,15 @@ function SideBar({ mode, compact, onClose }: { mode: WorkspaceMode; compact?: bo
       <div className="ide-panel min-h-0 flex-1 overflow-y-auto p-2">
         <div className="space-y-1 font-mono text-xs">
           <p className="text-[#8b949e]">workspace</p>
-          <p className={`${mode === "dashboard" ? "text-[#00ffff]" : "text-[#c9d1d9]"}`}>- agentic-lead-search.tsx</p>
-          <p className={`${mode === "admin" ? "text-[#00ffff]" : "text-[#c9d1d9]"}`}>- operator-console.tsx</p>
-          <p className="text-[#8b949e]">- job-events.log</p>
-          <p className="text-[#8b949e]">- delivery-report.json</p>
+          <p className="text-[#8b949e]">- frontend/</p>
+          <p className={`${mode === "dashboard" ? "text-[#00ffff]" : "text-[#c9d1d9]"}`}>  - agentic-lead-search.tsx</p>
+          <p className={`${mode === "admin" ? "text-[#00ffff]" : "text-[#c9d1d9]"}`}>  - operator-console.tsx</p>
+          <p className="text-[#8b949e]">- exports/</p>
+          <p className="text-[#8b949e]">  - *_leads.csv</p>
+          <p className="text-[#8b949e]">  - *_audit.xlsx</p>
+          <p className="text-[#8b949e]">- events/</p>
+          <p className="text-[#8b949e]">  - stdout.log</p>
+          <p className="text-[#8b949e]">  - report.json</p>
         </div>
       </div>
       {!compact && <div className="mt-3"><AuthPanel compact /></div>}
@@ -108,7 +113,7 @@ export function WorkspaceShell({ mode, title, subtitle, children }: WorkspaceShe
             </div>
           </header>
 
-          <main className="min-h-0 flex-1 overflow-auto bg-[#0d1117] p-3">{children}</main>
+          <main className="min-h-0 flex-1 overflow-hidden bg-[#0d1117] p-3">{children}</main>
 
           <footer className="flex h-[22px] items-center justify-between border-t border-[#30363d] bg-[#161b22] px-2 text-[11px] text-[#8b949e]">
             <span>WS: exportflow</span>

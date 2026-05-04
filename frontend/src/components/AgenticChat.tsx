@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Check, Copy, Download, Loader2, Send, Sparkles, Terminal } from "lucide-react";
+import { CheckCircle2, Check, Copy, Download, Loader2, Send, Sparkles, Terminal, ChevronDown, ChevronUp } from "lucide-react";
 import { leadPacks } from "../lib/pricing";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 import { TargetingPreflight } from "../lib/types";
@@ -372,6 +372,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
   const [draft, setDraft] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [showLiveLanes, setShowLiveLanes] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const reportRequestedRef = useRef<Set<string>>(new Set());
 
@@ -474,7 +475,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
     const channel = supabase
       .channel("chat-job-events")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_events" }, (payload) => {
-        const evt = payload.new as { status: string; job_id: string; metadata?: Record<string, unknown> };
+        const evt = payload.new as { status: string; job_id: string; message?: string; metadata?: Record<string, unknown> };
         if (!runningJobs.includes(evt.job_id)) return;
         if (evt.status !== "report_ready" && evt.status !== "delivered" && evt.status !== "failed") return;
 
@@ -529,13 +530,28 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
           ) {
             return current;
           }
+          const alreadyDelivered = current.some(
+            (item) =>
+              (item.type === "text" && item.payload?.kind === "delivery_notice" && item.payload?.jobId === evt.job_id) ||
+              (item.type === "report" && item.payload?.jobId === evt.job_id)
+          );
+          if (alreadyDelivered) {
+            return current;
+          }
+          const failedMessage = String(evt.message || "");
+          const looksLikeDeliveryFailure =
+            failedMessage.toLowerCase().includes("delivery failed") ||
+            failedMessage.toLowerCase().includes("export delivery failed") ||
+            failedMessage.toLowerCase().includes("upload failed");
           return [
             ...current,
             {
               id: crypto.randomUUID(),
               role: "assistant",
               type: "text",
-              content: "Job failed. Open live logs and check proxy/source health.",
+              content: looksLikeDeliveryFailure
+                ? "Job run completed but export delivery failed. Open logs and retry delivery/upload."
+                : "Job failed. Open live logs and check proxy/source health.",
               payload: { kind: "failed_notice", jobId: evt.job_id },
               created_at: new Date().toISOString(),
             },
@@ -642,10 +658,22 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
           <p className="text-[10px] uppercase tracking-[0.18em] text-[#8b949e]">Agentic Lead Search</p>
           <h2 className="text-sm font-semibold text-vercel-text">Live discovery + enrichment workspace</h2>
         </div>
-        <span className="ide-status">{sessionLoaded ? "session synced" : "loading session"}</span>
+        <div className="inline-flex items-center gap-2">
+          {activeTerminalJobId && (
+            <button
+              type="button"
+              onClick={() => setShowLiveLanes((value) => !value)}
+              className="ide-btn inline-flex h-7 items-center gap-1 px-2 text-[10px] uppercase tracking-[0.1em]"
+            >
+              {showLiveLanes ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+              {showLiveLanes ? "Collapse Lanes" : "Expand Lanes"}
+            </button>
+          )}
+          <span className="ide-status">{sessionLoaded ? "session synced" : "loading session"}</span>
+        </div>
       </header>
 
-      <div className={`min-h-0 flex-1 ${activeTerminalJobId ? "grid grid-rows-[minmax(0,1fr)_minmax(0,52%)]" : ""}`}>
+      <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
         <div ref={scrollRef} className="min-h-0 space-y-3 overflow-y-auto p-3">
           {visibleMessages.map((message) => (
             <div key={message.id}>
@@ -703,8 +731,8 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
           )}
         </div>
 
-        {activeTerminalJobId && (
-          <div className="min-h-0 border-t border-[#30363d] bg-[#0d1117] p-2">
+        {activeTerminalJobId && showLiveLanes && (
+          <div className="min-h-[240px] max-h-[52vh] shrink-0 overflow-hidden border-t border-[#30363d] bg-[#0d1117] p-2">
             <p className="mb-2 text-[11px] uppercase tracking-[0.15em] text-[#8b949e]">
               Live worker lanes for {activeTerminalJobId.slice(0, 8)}
             </p>
