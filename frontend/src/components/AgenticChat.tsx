@@ -199,8 +199,8 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
   }
 
   return (
-    <div className="grid min-h-0 grid-cols-1 gap-2 xl:grid-cols-3 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
-      <section className="ide-terminal grid min-h-0 grid-cols-1 gap-2 p-2 xl:col-span-3 xl:grid-cols-3">
+    <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-hidden xl:grid-cols-3 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+      <section className="ide-terminal grid min-h-0 grid-cols-1 gap-2 overflow-hidden p-2 xl:col-span-3 xl:grid-cols-3">
         {[
           { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
           { key: "duckduckgo", label: "DISCOVERY / DUCKDUCKGO", ref: discoveryDuckRef },
@@ -674,7 +674,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
       </header>
 
       <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
-        <div ref={scrollRef} className="min-h-0 space-y-3 overflow-y-auto p-3">
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
           {visibleMessages.map((message) => (
             <div key={message.id}>
               {message.type === "text" && (
@@ -733,10 +733,10 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
 
         {activeTerminalJobId && showLiveLanes && (
           <div className="min-h-[240px] max-h-[52vh] shrink-0 overflow-hidden border-t border-[#30363d] bg-[#0d1117] p-2">
-            <p className="mb-2 text-[11px] uppercase tracking-[0.15em] text-[#8b949e]">
+            <p className="mb-2 shrink-0 text-[11px] uppercase tracking-[0.15em] text-[#8b949e]">
               Live worker lanes for {activeTerminalJobId.slice(0, 8)}
             </p>
-            <div className="h-[calc(100%-1.25rem)] min-h-0">
+            <div className="min-h-0 h-[calc(100%-1.25rem)] overflow-hidden">
               <DualLiveTerminal jobId={activeTerminalJobId} />
             </div>
           </div>

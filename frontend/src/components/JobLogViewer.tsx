@@ -226,7 +226,7 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
           </button>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 xl:grid-cols-3 xl:grid-rows-[minmax(18rem,1.2fr)_minmax(18rem,1fr)]">
+        <div className="grid h-full min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 xl:grid-cols-3 xl:grid-rows-[minmax(18rem,1.2fr)_minmax(18rem,1fr)]">
           <section className="ide-terminal grid min-h-0 grid-cols-1 gap-2 overflow-hidden p-2 xl:col-span-3 xl:grid-cols-3 xl:row-span-1">
             {[
               { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
