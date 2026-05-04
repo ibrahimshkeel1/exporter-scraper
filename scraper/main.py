@@ -203,101 +203,86 @@ async def run_scraper(
         )
         page = await context.new_page()
 
-        emit_progress(
-            "discovering",
-            "Discovering candidate buyer websites.",
-            status_output=status_output,
-            job_id=job_id,
-            discovery_limit=discovery_limit,
-        )
-        candidates = await discovery.run_discovery(page, region=region, industry=industry)
-        emit_progress(
-            "discovered",
-            "Discovery completed.",
-            status_output=status_output,
-            job_id=job_id,
-            candidate_count=len(candidates),
-        )
-
-        if candidates:
-            scoring = LeadScoring(
-                require_email=not allow_no_email,
-                require_buyer_evidence=not allow_weak_buyer_evidence,
-                scoring_context=scoring_context,
-            )
-            enrichment = LeadEnrichment(
-                concurrency=4,
-                max_extra_pages=12,
-                browser_context=context,
-            )
-            batch_size = 60 if test_mode else max(80, min(160, limit * 12))
-            total_batches = (len(candidates) + batch_size - 1) // batch_size
-
-            for batch_index, start in enumerate(range(0, len(candidates), batch_size), start=1):
-                batch = candidates[start : start + batch_size]
-                emit_progress(
-                    "enriching",
-                    "Enriching candidate batch to fill paid lead pack.",
-                    status_output=status_output,
-                    job_id=job_id,
-                    batch_index=batch_index,
-                    total_batches=total_batches,
-                    batch_size=len(batch),
-                    analyzed_count=len(scored_candidates),
-                    qualified_count=len(top_leads),
-                    target_count=limit,
+        candidates = []
+        batch_size = 60 if test_mode else max(80, min(160, limit * 12))
+        
+        async for candidate_batch in discovery.run_discovery(page, region=region, industry=industry, chunk_size=batch_size):
+            candidates.extend(candidate_batch)
+            
+            if not enriched_candidates:
+                # Initialize these only once we actually find candidates
+                scoring = LeadScoring(
+                    require_email=not allow_no_email,
+                    require_buyer_evidence=not allow_weak_buyer_evidence,
+                    scoring_context=scoring_context,
                 )
-                enriched_batch = await enrichment.run_enrichment(batch)
-                enriched_candidates.extend(enriched_batch)
-                scored_candidates.extend(scoring.evaluate_candidate(candidate) for candidate in enriched_batch)
-                top_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
+                enrichment = LeadEnrichment(
+                    concurrency=4,
+                    max_extra_pages=12,
+                    browser_context=context,
+                )
+
+            emit_progress(
+                "enriching",
+                "Enriching candidate batch to fill paid lead pack.",
+                status_output=status_output,
+                job_id=job_id,
+                batch_index=len(enriched_candidates) // batch_size + 1,
+                batch_size=len(candidate_batch),
+                analyzed_count=len(scored_candidates),
+                qualified_count=len(top_leads),
+                target_count=limit,
+            )
+            enriched_batch = await enrichment.run_enrichment(candidate_batch)
+            enriched_candidates.extend(enriched_batch)
+            scored_candidates.extend(scoring.evaluate_candidate(candidate) for candidate in enriched_batch)
+            top_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
+            
+            emit_progress(
+                "scoring",
+                "Lead pack fill progress.",
+                status_output=status_output,
+                job_id=job_id,
+                analyzed_count=len(scored_candidates),
+                qualified_count=len(top_leads),
+                target_count=limit,
+                min_score=min_score,
+            )
+            if len(top_leads) >= limit:
+                break
+
+        if fill_until_complete and len(top_leads) < limit and scored_candidates:
+            for threshold in relaxed_score_thresholds(min_score)[1:]:
+                candidate_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=threshold)
+                if len(candidate_leads) <= len(top_leads):
+                    continue
+                top_leads = candidate_leads
+                effective_min_score = threshold
                 emit_progress(
                     "scoring",
-                    "Lead pack fill progress.",
+                    "Relaxed quality threshold to fill the lead pack.",
                     status_output=status_output,
                     job_id=job_id,
                     analyzed_count=len(scored_candidates),
                     qualified_count=len(top_leads),
                     target_count=limit,
-                    remaining_candidates=max(len(candidates) - len(scored_candidates), 0),
-                    min_score=min_score,
+                    min_score=threshold,
+                    effective_min_score=threshold,
                 )
                 if len(top_leads) >= limit:
                     break
 
-            if fill_until_complete and len(top_leads) < limit:
-                for threshold in relaxed_score_thresholds(min_score)[1:]:
-                    candidate_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=threshold)
-                    if len(candidate_leads) <= len(top_leads):
-                        continue
-                    top_leads = candidate_leads
-                    effective_min_score = threshold
-                    emit_progress(
-                        "scoring",
-                        "Relaxed quality threshold to fill the lead pack.",
-                        status_output=status_output,
-                        job_id=job_id,
-                        analyzed_count=len(scored_candidates),
-                        qualified_count=len(top_leads),
-                        target_count=limit,
-                        remaining_candidates=max(len(candidates) - len(scored_candidates), 0),
-                        min_score=threshold,
-                        effective_min_score=threshold,
-                    )
-                    if len(top_leads) >= limit:
-                        break
-
-            emit_progress(
-                "enriched",
-                "Candidate enrichment completed.",
-                status_output=status_output,
-                job_id=job_id,
-                enriched_count=len(enriched_candidates),
-                qualified_count=len(top_leads),
-                target_count=limit,
-                candidate_count=len(candidates),
-                effective_min_score=effective_min_score,
-            )
+        emit_progress(
+            "enriched",
+            "Candidate enrichment completed.",
+            status_output=status_output,
+            job_id=job_id,
+            enriched_count=len(enriched_candidates),
+            qualified_count=len(top_leads),
+            target_count=limit,
+            candidate_count=len(candidates),
+            effective_min_score=effective_min_score,
+        )
 
         await browser.close()
 

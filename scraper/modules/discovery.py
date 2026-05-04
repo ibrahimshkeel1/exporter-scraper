@@ -582,15 +582,17 @@ class LeadDiscovery:
         ]
         return buyer_intent_sources + sources + self._search_sources(region, industry)
 
-    async def run_discovery(self, page, region, industry="clothing brands"):
+    async def run_discovery(self, page, region, industry="clothing brands", chunk_size=60):
         print(
             f"Starting discovery for region: {region} | Industry: {industry} | Limit: {self.limit}"
         )
         sources = self.generate_sources(region, industry)
 
-        candidates = []
+        yielded_count = 0
+        current_chunk = []
+
         for source in sources:
-            if len(candidates) >= self.limit:
+            if yielded_count >= self.limit:
                 break
             if source.candidate_kind == "seed_list":
                 found_in_source = 0
@@ -598,12 +600,16 @@ class LeadDiscovery:
                     candidate = self._candidate_from_url(seed_url, source, region, industry)
                     if not candidate:
                         continue
-                    candidates.append(candidate)
+                    current_chunk.append(candidate)
                     found_in_source += 1
-                    if len(candidates) >= self.limit:
-                        break
+                    if len(current_chunk) >= chunk_size:
+                        yield current_chunk
+                        yielded_count += len(current_chunk)
+                        current_chunk = []
+                        if yielded_count >= self.limit:
+                            break
                 print(
-                    f"Discovery progress: {len(candidates)} total candidates (+{found_in_source} from {source.name})"
+                    f"Discovery progress: {yielded_count + len(current_chunk)} total candidates (+{found_in_source} from {source.name})"
                 )
                 continue
             print(f"Visiting discovery source: {source.url}")
@@ -620,18 +626,23 @@ class LeadDiscovery:
                     if not candidate:
                         continue
 
-                    candidates.append(candidate)
+                    current_chunk.append(candidate)
                     found_in_source += 1
-                    if len(candidates) >= self.limit:
-                        break
+                    if len(current_chunk) >= chunk_size:
+                        yield current_chunk
+                        yielded_count += len(current_chunk)
+                        current_chunk = []
+                        if yielded_count >= self.limit:
+                            break
             except Exception as exc:
                 print(f"Error visiting {source.url}: {exc}")
 
             print(
-                f"Discovery progress: {len(candidates)} total candidates (+{found_in_source} from {source.name})"
+                f"Discovery progress: {yielded_count + len(current_chunk)} total candidates (+{found_in_source} from {source.name})"
             )
 
-        return candidates[: self.limit]
+        if current_chunk and yielded_count < self.limit:
+            yield current_chunk
 
     @staticmethod
     def seed_urls(region, source_name="seed-usa-apparel-buyers"):
