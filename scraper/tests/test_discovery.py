@@ -73,9 +73,10 @@ class LeadDiscoveryTests(unittest.TestCase):
     def test_denim_seed_prefers_specific_product_over_generic_apparel(self):
         self.assertEqual(self.discovery._product_seed("Apparel & Textile - Denim & Jeans"), "denim")
 
-    def test_search_sources_skip_duckduckgo_to_avoid_vps_timeouts(self):
+    def test_search_sources_include_non_bing_engines(self):
         sources = self.discovery._search_sources("USA", "denim")
-        self.assertFalse(any(source.name.startswith("duckduckgo") for source in sources))
+        self.assertTrue(any(source.name.startswith("duckduckgo-p1-") for source in sources))
+        self.assertTrue(any(source.name.startswith("yahoo-p1-") for source in sources))
 
     def test_seed_urls_are_source_specific(self):
         buyer_intent_urls = self.discovery.seed_urls("USA", "seed-usa-buyer-intent-pages")
@@ -124,9 +125,10 @@ class LeadDiscoveryTests(unittest.TestCase):
         queries = self.discovery._buyer_search_queries("USA", "architecture projects")
         query_text = " ".join(queries).lower()
 
-        self.assertTrue(names[0].startswith("bing-p1-architecture-projects"))
+        self.assertEqual(names[0], "seed-usa-retail-restaurant-industrial-growth")
+        self.assertIn("yellowpages-usa-business-search", names)
         self.assertFalse(any("fashion" in name or "apparel" in name for name in names))
-        self.assertFalse(any("yellowpages" in url for url in urls))
+        self.assertTrue(any("yellowpages" in url for url in urls))
         self.assertNotIn("private label clothing", query_text)
         self.assertNotIn("wholesaler", query_text)
         self.assertIn("projects contact email", query_text)
@@ -145,8 +147,9 @@ class LeadDiscoveryTests(unittest.TestCase):
         sources = self.discovery._search_sources("UK", "architecture planning")
         names = [source.name for source in sources]
         self.assertTrue(any(name.startswith("bing-p1-") for name in names))
-        self.assertTrue(any(name.startswith("bing-p2-") for name in names))
-        self.assertFalse(any(name.startswith("bing-p3-") for name in names))
+        self.assertFalse(any(name.startswith("bing-p2-") for name in names))
+        self.assertTrue(any(name.startswith("duckduckgo-p1-") for name in names))
+        self.assertTrue(any(name.startswith("yahoo-p1-") for name in names))
 
     def test_signal_map_adds_signal_sources(self):
         signal_map = {

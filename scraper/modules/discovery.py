@@ -18,6 +18,7 @@ class DiscoverySource:
     signal_detected: str = ""
     signal_confidence: float = 0.0
     why_now: str = ""
+    search_engine: str = ""
 
 
 class LeadDiscovery:
@@ -46,6 +47,7 @@ class LeadDiscovery:
         "google.",
         "bing.",
         "duckduckgo.",
+        "yahoo.",
         "microsoft.",
         "youtube.",
         "wikipedia.",
@@ -302,6 +304,8 @@ class LeadDiscovery:
         signals = self.signal_map.get("signals", []) if isinstance(self.signal_map, dict) else []
         if not signals:
             return []
+        is_architecture = self._is_architecture_industry(industry)
+        query_budget = 2 if is_architecture else 1
         sources = []
         for signal_index, signal in enumerate(signals, start=1):
             signal_name = str(signal.get("signal", "")).strip()
@@ -323,22 +327,56 @@ class LeadDiscovery:
                         why_now=why_now,
                     )
                 )
-            for query in queries[:4]:
+            for query_index, query in enumerate(queries[:query_budget], start=1):
                 encoded = quote_plus(query)
-                for page_number, first in enumerate((1, 11), start=1):
+                name_suffix = signal_slug if query_index == 1 else f"{signal_slug}-q{query_index}"
+                sources.append(
+                    DiscoverySource(
+                        name=f"signal-bing-p1-{name_suffix}",
+                        url=f"https://www.bing.com/search?q={encoded}&first=1",
+                        selectors=(
+                            "li.b_algo h2 a[href]",
+                            "ol#b_results a[href]",
+                            "a[href*='http']",
+                        ),
+                        discovery_method="signal_search",
+                        signal_detected=signal_name,
+                        signal_confidence=confidence,
+                        why_now=why_now,
+                        search_engine="bing",
+                    )
+                )
+                sources.append(
+                    DiscoverySource(
+                        name=f"signal-duckduckgo-p1-{name_suffix}",
+                        url=f"https://lite.duckduckgo.com/lite/?q={encoded}",
+                        selectors=(
+                            "a.result-link[href]",
+                            "a[href*='uddg=']",
+                            "a[href*='http']",
+                        ),
+                        discovery_method="signal_search",
+                        signal_detected=signal_name,
+                        signal_confidence=confidence,
+                        why_now=why_now,
+                        search_engine="duckduckgo",
+                    )
+                )
+                if query_index == 1:
                     sources.append(
                         DiscoverySource(
-                            name=f"signal-bing-p{page_number}-{signal_slug}",
-                            url=f"https://www.bing.com/search?q={encoded}&first={first}",
+                            name=f"signal-yahoo-p1-{signal_slug}",
+                            url=f"https://search.yahoo.com/search?p={encoded}",
                             selectors=(
-                                "li.b_algo h2 a[href]",
-                                "ol#b_results a[href]",
+                                "div#web h3.title a[href]",
+                                "h3.title a[href]",
                                 "a[href*='http']",
                             ),
                             discovery_method="signal_search",
                             signal_detected=signal_name,
                             signal_confidence=confidence,
                             why_now=why_now,
+                            search_engine="yahoo",
                         )
                     )
         return sources
@@ -579,49 +617,54 @@ class LeadDiscovery:
         sources = []
         is_apparel = self._is_apparel_industry(industry)
         is_architecture = self._is_architecture_industry(industry)
-        for query in self._buyer_search_queries(region, industry):
+        queries = self._buyer_search_queries(region, industry)
+        if is_architecture:
+            queries = queries[:8]
+        elif is_apparel:
+            queries = queries[:10]
+        else:
+            queries = queries[:8]
+        for query_index, query in enumerate(queries, start=1):
             slug = self._slug(query)
             encoded = quote_plus(query)
-            if is_apparel:
-                if region in {"Europe", "International"}:
-                    bing_pages = (1, 11, 21)
-                else:
-                    bing_pages = (1, 11, 21, 31, 41)
-            elif is_architecture:
-                # Architecture searches trigger anti-bot controls quickly on Bing,
-                # so keep pages shallow and rely on more query variety.
-                bing_pages = (1, 11)
-            elif region in {"Europe", "International"}:
-                bing_pages = (1, 11, 21)
-            else:
-                bing_pages = (1, 11, 21)
-            # DuckDuckGo's HTML endpoint frequently stalls under Playwright on
-            # the VPS, which blocks discovery before curated sources run.
-            duckduckgo_pages = ()
-            for page_number, first in enumerate(bing_pages, start=1):
-                sources.append(
-                    DiscoverySource(
-                        name=f"bing-p{page_number}-{slug}",
-                        url=f"https://www.bing.com/search?q={encoded}&first={first}",
-                        selectors=(
-                            "li.b_algo h2 a[href]",
-                            "ol#b_results a[href]",
-                            "a[href*='http']",
-                        ),
-                        discovery_method="search",
-                    )
+            sources.append(
+                DiscoverySource(
+                    name=f"bing-p1-{slug}",
+                    url=f"https://www.bing.com/search?q={encoded}&first=1",
+                    selectors=(
+                        "li.b_algo h2 a[href]",
+                        "ol#b_results a[href]",
+                        "a[href*='http']",
+                    ),
+                    discovery_method="search",
+                    search_engine="bing",
                 )
-            for page_number, offset in enumerate(duckduckgo_pages, start=1):
+            )
+            sources.append(
+                DiscoverySource(
+                    name=f"duckduckgo-p1-{slug}",
+                    url=f"https://lite.duckduckgo.com/lite/?q={encoded}",
+                    selectors=(
+                        "a.result-link[href]",
+                        "a[href*='uddg=']",
+                        "a[href*='http']",
+                    ),
+                    discovery_method="search",
+                    search_engine="duckduckgo",
+                )
+            )
+            if query_index <= 4:
                 sources.append(
                     DiscoverySource(
-                        name=f"duckduckgo-p{page_number}-{slug}",
-                        url=f"https://duckduckgo.com/html/?q={encoded}&s={offset}",
+                        name=f"yahoo-p1-{slug}",
+                        url=f"https://search.yahoo.com/search?p={encoded}",
                         selectors=(
-                            "a.result__a[href]",
-                            "a[href*='uddg=']",
+                            "div#web h3.title a[href]",
+                            "h3.title a[href]",
                             "a[href*='http']",
                         ),
                         discovery_method="search",
+                        search_engine="yahoo",
                     )
                 )
         return sources
@@ -633,7 +676,25 @@ class LeadDiscovery:
         is_apparel = self._is_apparel_industry(industry)
         if region == "USA":
             if not is_apparel:
-                return signal_sources + self._search_sources(region, industry)
+                architecture_seed_sources = []
+                if self._is_architecture_industry(industry):
+                    architecture_seed_sources = [
+                        DiscoverySource(
+                            name="seed-usa-retail-restaurant-industrial-growth",
+                            url="seed://usa-retail-restaurant-industrial-growth",
+                            selectors=(),
+                            discovery_method="curated_seed",
+                            candidate_kind="seed_list",
+                        ),
+                    ]
+                directory_sources = [
+                    DiscoverySource(
+                        name="yellowpages-usa-business-search",
+                        url=f"https://www.yellowpages.com/search?search_terms={query}+companies&geo_location_terms=USA",
+                        selectors=("a.track-visit-website", "a[data-analytics='website']"),
+                    ),
+                ]
+                return architecture_seed_sources + signal_sources + directory_sources + self._search_sources(region, industry)
             buyer_intent_sources = [
                 DiscoverySource(
                     name="seed-usa-buyer-intent-pages",
@@ -809,15 +870,23 @@ class LeadDiscovery:
 
         yielded_count = 0
         current_chunk = []
-        bing_failures = 0
-        skip_bing = False
+        engine_failures = {"bing": 0, "duckduckgo": 0, "yahoo": 0}
+        skipped_engines = set()
 
         for source in sources:
             if yielded_count >= self.limit:
                 break
             source_name_lower = source.name.lower()
-            if skip_bing and "bing-" in source_name_lower:
-                print(f"Skipping {source.name} due to repeated Bing failures earlier in this run.")
+            source_engine = source.search_engine
+            if not source_engine:
+                if "bing-" in source_name_lower:
+                    source_engine = "bing"
+                elif "duckduckgo-" in source_name_lower:
+                    source_engine = "duckduckgo"
+                elif "yahoo-" in source_name_lower:
+                    source_engine = "yahoo"
+            if source_engine in skipped_engines:
+                print(f"Skipping {source.name} due to repeated {source_engine} failures earlier in this run.")
                 continue
             if source.candidate_kind == "direct_url":
                 candidate = self._candidate_from_url(source.url, source, region, industry)
@@ -865,8 +934,8 @@ class LeadDiscovery:
             found_in_source = 0
             try:
                 await page.goto(source.url, timeout=45000, wait_until="domcontentloaded")
-                if "bing-" in source_name_lower:
-                    bing_failures = 0
+                if source_engine in engine_failures:
+                    engine_failures[source_engine] = 0
                 await page.wait_for_timeout(random.randint(1500, 3000))
                 links = await self._extract_links_from_source(page, source)
                 for raw_href in links:
@@ -888,16 +957,24 @@ class LeadDiscovery:
             except Exception as exc:
                 print(f"Error visiting {source.url}: {exc}")
                 error_text = str(exc).lower()
-                if "bing-" in source_name_lower and any(
+                if source_engine in engine_failures and any(
                     marker in error_text
-                    for marker in ("err_connection_closed", "too many requests", "429", "rate")
+                    for marker in (
+                        "err_connection_closed",
+                        "err_timed_out",
+                        "timeout",
+                        "too many requests",
+                        "429",
+                        "rate",
+                        "blocked",
+                    )
                 ):
-                    bing_failures += 1
-                    if bing_failures >= 3:
-                        skip_bing = True
+                    engine_failures[source_engine] += 1
+                    if engine_failures[source_engine] >= 3:
+                        skipped_engines.add(source_engine)
                         print(
-                            "Bing circuit breaker activated after repeated connection/rate-limit failures; "
-                            "continuing with non-Bing sources."
+                            f"{source_engine.title()} circuit breaker activated after repeated connection/rate-limit failures; "
+                            "continuing with remaining sources."
                         )
 
             print(
@@ -1045,6 +1122,53 @@ class LeadDiscovery:
             ]
         if region != "USA":
             return []
+        if source_name == "seed-usa-retail-restaurant-industrial-growth":
+            return [
+                "https://www.chipotle.com/contact-us",
+                "https://www.shakeshack.com/contact-us",
+                "https://www.sweetgreen.com/contact",
+                "https://cava.com/contact-us",
+                "https://www.panerabread.com/en-us/contact.html",
+                "https://www.modpizza.com/contact/",
+                "https://www.jersey-mikes.com/contact-us",
+                "https://www.fiveguys.com/contact-us",
+                "https://www.dominos.com/en/pages/content/customer-service/",
+                "https://www.pizzahut.com/index.php?contactus=true",
+                "https://www.papajohns.com/company/contact-us/",
+                "https://www.olivegarden.com/contact-us",
+                "https://www.chilis.com/contact",
+                "https://www.outback.com/contact",
+                "https://www.ihop.com/en/contact-us",
+                "https://www.dennys.com/contact-us",
+                "https://www.cheesecakefactory.com/contact-us",
+                "https://www.redlobster.com/contact-us",
+                "https://www.bjsrestaurants.com/contact-us",
+                "https://www.californiapizzakitchen.com/contact-us",
+                "https://www.target.com/c/contact-us/-/N-hn3j4",
+                "https://www.costco.com/customer-service.html",
+                "https://www.bestbuy.com/contact-us",
+                "https://www.homedepot.com/c/customer_service",
+                "https://www.lowes.com/l/contact-us",
+                "https://www.ikea.com/us/en/customer-service/contact-us/",
+                "https://www.wayfair.com/help/article/contact_us",
+                "https://www.williams-sonoma.com/customer-service/contact-us.html",
+                "https://www.crateandbarrel.com/customer-service/contact-us/",
+                "https://www.containerstore.com/contactus",
+                "https://www.dickssportinggoods.com/s/contact-us",
+                "https://www.rei.com/help",
+                "https://www.academy.com/help/contact-us",
+                "https://www.flooranddecor.com/contact-us.html",
+                "https://www.uline.com/CustomerService/ContactUs",
+                "https://www.grainger.com/content/contact-us",
+                "https://www.fastenal.com/en/22/contact-us",
+                "https://www.mscdirect.com/contactus",
+                "https://www.cintas.com/company/contact-us/",
+                "https://www.univar.com/contact-us",
+                "https://www.prologis.com/contact-us",
+                "https://www.hines.com/contact",
+                "https://www.jll.com/en-us/contact-us",
+                "https://www.cbre.com/about-us/contact-us",
+            ]
         buyer_intent_urls = [
             "https://www.ssactivewear.com/contact",
             "https://www.alphabroder.com/pages/contact-us",
