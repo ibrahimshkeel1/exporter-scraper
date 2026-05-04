@@ -1,17 +1,19 @@
 @import "tailwindcss";
 
 @theme {
-  --color-vercel-bg: #000000;
-  --color-vercel-panel: #111111;
-  --color-vercel-border: #333333;
-  --color-vercel-text: #ededed;
-  --color-vercel-muted: #888888;
+  --color-vercel-bg: #070a10;
+  --color-vercel-panel: #111826;
+  --color-vercel-border: #2a3342;
+  --color-vercel-text: #eaf1ff;
+  --color-vercel-muted: #95a1b5;
   --color-vercel-accent: #ffffff;
   --color-vercel-accent-hover: #cccccc;
   --color-vercel-success: #0070f3;
   --color-vercel-error: #e00;
+  --color-soft-cyan: #85d6ff;
+  --color-soft-emerald: #7be9be;
   
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Geist", "Sora", "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
@@ -22,6 +24,11 @@
 
 body {
   font-family: var(--font-sans);
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 700px at 8% -10%, rgba(83, 165, 255, 0.2), transparent 55%),
+    radial-gradient(900px 520px at 94% -15%, rgba(62, 226, 168, 0.18), transparent 52%),
+    linear-gradient(180deg, #070a10 0%, #090f19 45%, #070b12 100%);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -35,4 +42,78 @@ body {
 *:focus-visible {
   outline: 2px solid var(--color-vercel-accent);
   outline-offset: 2px;
+}
+
+.soft-panel {
+  border: 1px solid rgba(158, 177, 201, 0.2);
+  background:
+    linear-gradient(180deg, rgba(18, 27, 43, 0.95), rgba(8, 12, 20, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(205, 222, 255, 0.08),
+    0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.soft-terminal {
+  border: 1px solid rgba(131, 161, 196, 0.2);
+  border-radius: 1rem;
+  background:
+    linear-gradient(180deg, rgba(8, 13, 24, 0.92), rgba(6, 10, 18, 0.95));
+  box-shadow:
+    inset 0 1px 0 rgba(205, 222, 255, 0.06),
+    0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.soft-btn {
+  border: 1px solid rgba(167, 186, 212, 0.24);
+  border-radius: 0.82rem;
+  transition: all 180ms ease;
+}
+
+.soft-btn:hover {
+  transform: translateY(-1px);
+}
+
+.soft-btn-primary {
+  border-color: rgba(140, 213, 255, 0.5);
+  background: linear-gradient(180deg, rgba(210, 244, 255, 0.95), rgba(150, 222, 255, 0.9));
+  color: #05121d;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 10px 24px rgba(72, 160, 209, 0.35);
+}
+
+.soft-btn-primary:hover {
+  background: linear-gradient(180deg, rgba(229, 249, 255, 0.95), rgba(165, 230, 255, 0.92));
+}
+
+.soft-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-vercel-text);
+}
+
+.soft-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.soft-input {
+  border: 1px solid rgba(145, 173, 205, 0.26);
+  background: linear-gradient(180deg, rgba(13, 21, 36, 0.92), rgba(9, 15, 27, 0.94));
+  color: var(--color-vercel-text);
+  box-shadow: inset 0 1px 0 rgba(217, 231, 255, 0.08);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.soft-input:focus {
+  border-color: rgba(133, 214, 255, 0.56);
+  box-shadow:
+    inset 0 1px 0 rgba(217, 231, 255, 0.1),
+    0 0 0 3px rgba(133, 214, 255, 0.18);
+}
+
+.soft-pill {
+  border: 1px solid rgba(145, 173, 205, 0.24);
+  border-radius: 999px;
+  padding: 0.24rem 0.7rem;
+  color: #b8c6dc;
+  background: rgba(9, 15, 27, 0.55);
 }

@@ -27,6 +27,9 @@ type WorkerLog = {
   time: string;
   engine?: string;
   lane?: string;
+  proxyBefore?: string;
+  proxyAfter?: string;
+  reason?: string;
 };
 
 const initialMessages: AgenticMessage[] = [
@@ -69,13 +72,16 @@ function parseWorkerPayload(event: MessageEvent) {
     const message = typeof parsed.message === "string" ? parsed.message : JSON.stringify(parsed);
     const engine = typeof parsed.engine === "string" ? parsed.engine : "";
     const lane = typeof parsed.lane === "string" ? parsed.lane : "";
-    return { message, source, status, engine, lane };
+    const proxyBefore = typeof parsed.proxy_before === "string" ? parsed.proxy_before : "";
+    const proxyAfter = typeof parsed.proxy_after === "string" ? parsed.proxy_after : "";
+    const reason = typeof parsed.reason === "string" ? parsed.reason : "";
+    return { message, source, status, engine, lane, proxyBefore, proxyAfter, reason };
   } catch {
-    return { message: event.data, source: "worker", status: "terminal", engine: "", lane: "" };
+    return { message: event.data, source: "worker", status: "terminal", engine: "", lane: "", proxyBefore: "", proxyAfter: "", reason: "" };
   }
 }
 
-type DiscoveryLane = "main" | "bing" | "duckduckgo" | "yahoo";
+type DiscoveryLane = "bing" | "duckduckgo" | "yahoo";
 
 function discoveryLaneForPayload(payload: { source: string; lane?: string; engine?: string }) {
   if (payload.source === "enrichment" || payload.source === "scoring") return "enrichment";
@@ -84,20 +90,18 @@ function discoveryLaneForPayload(payload: { source: string; lane?: string; engin
   if (lane === "bing" || engine === "bing") return "bing";
   if (lane === "duckduckgo" || engine === "duckduckgo") return "duckduckgo";
   if (lane === "yahoo" || engine === "yahoo") return "yahoo";
-  return "main";
+  return "enrichment";
 }
 
 function DualLiveTerminal({ jobId }: { jobId: string }) {
   const [discoveryLogs, setDiscoveryLogs] = useState<Record<DiscoveryLane, WorkerLog[]>>({
-    main: [],
     bing: [],
     duckduckgo: [],
     yahoo: [],
   });
   const [enrichmentLogs, setEnrichmentLogs] = useState<WorkerLog[]>([]);
   const [state, setState] = useState<"connecting" | "live" | "retrying">("connecting");
-  const [copiedLane, setCopiedLane] = useState<"main" | "bing" | "duckduckgo" | "yahoo" | "enrichment" | null>(null);
-  const discoveryMainRef = useRef<HTMLDivElement>(null);
+  const [copiedLane, setCopiedLane] = useState<"bing" | "duckduckgo" | "yahoo" | "enrichment" | null>(null);
   const discoveryBingRef = useRef<HTMLDivElement>(null);
   const discoveryDuckRef = useRef<HTMLDivElement>(null);
   const discoveryYahooRef = useRef<HTMLDivElement>(null);
@@ -110,7 +114,7 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
 
-    setDiscoveryLogs({ main: [], bing: [], duckduckgo: [], yahoo: [] });
+    setDiscoveryLogs({ bing: [], duckduckgo: [], yahoo: [] });
     setEnrichmentLogs([]);
     setState("connecting");
 
@@ -134,6 +138,11 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
         source: payload.source,
         status: payload.status,
         time: logTime(),
+        lane: payload.lane,
+        engine: payload.engine,
+        proxyBefore: payload.proxyBefore,
+        proxyAfter: payload.proxyAfter,
+        reason: payload.reason,
       });
     };
 
@@ -163,7 +172,6 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
   }, [jobId]);
 
   useEffect(() => {
-    if (discoveryMainRef.current) discoveryMainRef.current.scrollTop = discoveryMainRef.current.scrollHeight;
     if (discoveryBingRef.current) discoveryBingRef.current.scrollTop = discoveryBingRef.current.scrollHeight;
     if (discoveryDuckRef.current) discoveryDuckRef.current.scrollTop = discoveryDuckRef.current.scrollHeight;
     if (discoveryYahooRef.current) discoveryYahooRef.current.scrollTop = discoveryYahooRef.current.scrollHeight;
@@ -175,26 +183,31 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
     }
   }, [enrichmentLogs]);
 
-  async function copyLaneLogs(lane: "main" | "bing" | "duckduckgo" | "yahoo" | "enrichment") {
+  async function copyLaneLogs(lane: "bing" | "duckduckgo" | "yahoo" | "enrichment") {
     const logs = lane === "enrichment" ? enrichmentLogs : discoveryLogs[lane];
     if (logs.length === 0 || typeof navigator === "undefined" || !navigator.clipboard) return;
-    const text = logs.map((log) => `[${log.time}] [${log.source}] ${log.message}`).join("\n");
+    const text = logs
+      .map((log) => {
+        const proxyRotation =
+          log.proxyBefore && log.proxyAfter ? ` | proxy ${log.proxyBefore} -> ${log.proxyAfter}` : "";
+        return `[${log.time}] [${log.source}] ${log.message}${proxyRotation}`;
+      })
+      .join("\n");
     await navigator.clipboard.writeText(text);
     setCopiedLane(lane);
     setTimeout(() => setCopiedLane((current) => (current === lane ? null : current)), 1200);
   }
 
   return (
-    <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
-      <section className="grid h-[22rem] min-h-0 grid-cols-1 gap-2 overflow-hidden rounded-xl border border-cyan-500/30 bg-black p-2">
+    <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3 xl:grid-rows-[minmax(11rem,0.9fr)_minmax(18rem,2.1fr)]">
+      <section className="soft-terminal grid h-[20rem] min-h-0 grid-cols-1 grid-rows-3 gap-2 overflow-hidden p-2 xl:col-span-3 xl:h-auto">
         {[
-          { key: "main", label: "DISCOVERY / MAIN", ref: discoveryMainRef },
           { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
           { key: "duckduckgo", label: "DISCOVERY / DUCKDUCKGO", ref: discoveryDuckRef },
           { key: "yahoo", label: "DISCOVERY / YAHOO", ref: discoveryYahooRef },
         ].map((laneRow) => (
-          <div key={laneRow.key} className="flex min-h-0 flex-col overflow-hidden rounded border border-cyan-500/20">
-            <div className="flex items-center justify-between border-b border-cyan-500/20 bg-cyan-500/10 px-2 py-1.5 text-[10px] font-mono text-cyan-200">
+          <div key={laneRow.key} className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-300/20 bg-black/45">
+            <div className="flex items-center justify-between border-b border-cyan-300/15 bg-cyan-400/10 px-3 py-2 text-[10px] font-mono text-cyan-100">
               <span className="inline-flex items-center gap-1.5">
                 <Terminal size={11} />
                 {laneRow.label}
@@ -204,28 +217,33 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
                 <button
                   type="button"
                   onClick={() => void copyLaneLogs(laneRow.key as DiscoveryLane)}
-                  className="inline-flex h-5 items-center gap-1 rounded border border-cyan-400/30 bg-cyan-500/10 px-1.5 text-[9px] hover:bg-cyan-500/20"
+                  className="soft-btn soft-btn-ghost inline-flex h-5 items-center gap-1 px-1.5 text-[9px]"
                 >
                   {copiedLane === laneRow.key ? <Check size={10} /> : <Copy size={10} />}
                   Copy
                 </button>
               </div>
             </div>
-            <div ref={laneRow.ref} className="flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-cyan-100/90">
+            <div ref={laneRow.ref} className="flex-1 overflow-y-auto p-2.5 font-mono text-[11px] leading-5 text-cyan-100/85">
               {(discoveryLogs[laneRow.key as DiscoveryLane] || []).map((log, index) => (
                 <div key={`${laneRow.key}-${index}`} className="whitespace-pre-wrap break-words">
-                  <span className="text-cyan-500/70">[{log.time}]</span> {log.message}
+                  <span className="text-cyan-300/55">[{log.time}]</span> {log.message}
+                  {log.proxyBefore && log.proxyAfter && (
+                    <div className="text-[10px] text-cyan-200/70">
+                      proxy rotated: {log.proxyBefore} → {log.proxyAfter}
+                    </div>
+                  )}
                 </div>
               ))}
               {(discoveryLogs[laneRow.key as DiscoveryLane] || []).length === 0 && (
-                <div className="text-cyan-300/60">Waiting for {laneRow.key} logs...</div>
+                <div className="text-cyan-200/55">Waiting for {laneRow.key} logs...</div>
               )}
             </div>
           </div>
         ))}
       </section>
-      <section className="flex h-[22rem] min-h-0 flex-col overflow-hidden rounded-xl border border-emerald-500/30 bg-black">
-        <div className="flex items-center justify-between border-b border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] font-mono text-emerald-200">
+      <section className="soft-terminal flex h-[22rem] min-h-0 flex-col overflow-hidden xl:col-span-3 xl:h-auto">
+        <div className="flex items-center justify-between border-b border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-[11px] font-mono text-emerald-100">
           <span className="inline-flex items-center gap-1.5">
             <Terminal size={12} />
             ENRICH / SCORE
@@ -235,20 +253,25 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
               <button
                 type="button"
                 onClick={() => void copyLaneLogs("enrichment")}
-              className="inline-flex h-6 items-center gap-1 rounded border border-emerald-400/30 bg-emerald-500/10 px-2 text-[10px] hover:bg-emerald-500/20"
+              className="soft-btn soft-btn-ghost inline-flex h-6 items-center gap-1 px-2 text-[10px]"
             >
               {copiedLane === "enrichment" ? <Check size={11} /> : <Copy size={11} />}
               Copy
             </button>
           </div>
         </div>
-        <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-emerald-100/90">
+        <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-emerald-100/85">
           {enrichmentLogs.map((log, index) => (
             <div key={`e-${index}`} className="whitespace-pre-wrap break-words">
-              <span className="text-emerald-500/70">[{log.time}]</span> {log.message}
+              <span className="text-emerald-300/55">[{log.time}]</span> {log.message}
+              {log.proxyBefore && log.proxyAfter && (
+                <div className="text-[11px] text-emerald-200/70">
+                  proxy rotated: {log.proxyBefore} → {log.proxyAfter}
+                </div>
+              )}
             </div>
           ))}
-          {enrichmentLogs.length === 0 && <div className="text-emerald-300/60">Waiting for enrichment logs...</div>}
+          {enrichmentLogs.length === 0 && <div className="text-emerald-200/55">Waiting for enrichment logs...</div>}
         </div>
       </section>
     </div>
@@ -258,9 +281,11 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
 function ReportDownloads({
   jobId,
   supabase,
+  report,
 }: {
   jobId: string;
   supabase: ReturnType<typeof createBrowserSupabase> | null;
+  report?: Record<string, unknown> | null;
 }) {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
@@ -293,14 +318,35 @@ function ReportDownloads({
     window.open(payload.url, "_blank", "noopener,noreferrer");
   }
 
+  function downloadReportJson() {
+    if (!report || typeof window === "undefined") return;
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${jobId}_ai_report.json`;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
+        {report && (
+          <button
+            type="button"
+            onClick={downloadReportJson}
+            className="soft-btn soft-btn-ghost inline-flex items-center gap-2 px-4 py-2 text-sm"
+          >
+            <Download size={14} />
+            AI Report
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void openExport("csv")}
           disabled={downloadingFormat !== null}
-          className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+          className="soft-btn soft-btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50"
         >
           <Download size={14} />
           Leads CSV
@@ -309,7 +355,7 @@ function ReportDownloads({
           type="button"
           onClick={() => void openExport("xlsx")}
           disabled={downloadingFormat !== null}
-          className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-vercel-text hover:bg-white/10 disabled:opacity-50"
+          className="soft-btn soft-btn-ghost inline-flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50"
         >
           <Download size={14} />
           Audit XLSX
@@ -327,6 +373,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
   const [isThinking, setIsThinking] = useState(false);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const reportRequestedRef = useRef<Set<string>>(new Set());
 
   async function resetConversation() {
     setMessages(initialMessages);
@@ -407,12 +454,33 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
     const runningJobs = messages.filter((item) => item.type === "terminal").map((item) => String(item.payload?.jobId || ""));
     if (runningJobs.length === 0) return;
 
+    async function autoGenerateReport(jobId: string) {
+      if (!supabase) return;
+      if (reportRequestedRef.current.has(jobId)) return;
+      reportRequestedRef.current.add(jobId);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      await fetch(`/api/jobs/${encodeURIComponent(jobId)}/report`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+
     const channel = supabase
       .channel("chat-job-events")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_events" }, (payload) => {
         const evt = payload.new as { status: string; job_id: string; metadata?: Record<string, unknown> };
         if (!runningJobs.includes(evt.job_id)) return;
         if (evt.status !== "report_ready" && evt.status !== "delivered" && evt.status !== "failed") return;
+
+        if (evt.status === "delivered") {
+          void autoGenerateReport(evt.job_id);
+        }
 
         setMessages((current) => {
           if (evt.status === "report_ready" && evt.metadata?.report) {
@@ -428,13 +496,47 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
               },
             ];
           }
+          if (evt.status === "delivered") {
+            if (
+              current.some(
+                (item) =>
+                  item.type === "text" &&
+                  item.payload?.kind === "delivery_notice" &&
+                  item.payload?.jobId === evt.job_id
+              )
+            ) {
+              return current;
+            }
+            return [
+              ...current,
+              {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                type: "text",
+                content: "Delivery complete. I’m generating the AI quality report now.",
+                payload: { kind: "delivery_notice", jobId: evt.job_id },
+                created_at: new Date().toISOString(),
+              },
+            ];
+          }
+          if (
+            current.some(
+              (item) =>
+                item.type === "text" &&
+                item.payload?.kind === "failed_notice" &&
+                item.payload?.jobId === evt.job_id
+            )
+          ) {
+            return current;
+          }
           return [
             ...current,
             {
               id: crypto.randomUUID(),
               role: "assistant",
               type: "text",
-              content: `Job ${evt.status}. Check dashboard downloads for outputs.`,
+              content: "Job failed. Open live logs and check proxy/source health.",
+              payload: { kind: "failed_notice", jobId: evt.job_id },
               created_at: new Date().toISOString(),
             },
           ];
@@ -527,13 +629,13 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col rounded-2xl border border-white/10 bg-[#090d12] shadow-2xl">
-      <header className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6">
+    <section className="soft-panel flex h-full min-h-0 flex-col rounded-3xl">
+      <header className="flex items-center justify-between border-b border-white/10 px-5 py-4 sm:px-6">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-300/80">Agentic Lead Search</p>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-200/70">Agentic Lead Search</p>
           <h2 className="text-lg font-semibold text-vercel-text">Live discovery + enrichment workspace</h2>
         </div>
-        <span className="text-xs text-vercel-muted">{sessionLoaded ? "Session synced" : "Loading session..."}</span>
+        <span className="soft-pill text-[11px]">{sessionLoaded ? "Session synced" : "Loading session..."}</span>
       </header>
 
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
@@ -550,7 +652,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
                   className={`whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${
                     message.role === "user"
                       ? "bg-white text-black"
-                      : "border border-white/10 bg-black/40 text-vercel-text"
+                      : "border border-white/10 bg-black/35 text-vercel-text shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
                   }`}
                 >
                   {message.content}
@@ -579,7 +681,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
               )}
 
               {message.type === "terminal" && typeof message.payload?.jobId === "string" && (
-                <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                <div className="rounded-2xl border border-white/10 bg-black/25 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
                   <p className="text-xs text-vercel-muted">Live worker logs for `{message.payload.jobId.slice(0, 8)}...`</p>
                   <DualLiveTerminal jobId={message.payload.jobId} />
                 </div>
@@ -588,7 +690,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
               {message.type === "report" && Boolean(message.payload?.report) && (
                 <div className="space-y-3">
                   <JobReportCard report={message.payload.report as any} />
-                  <ReportDownloads jobId={String(message.payload.jobId)} supabase={supabase} />
+                  <ReportDownloads jobId={String(message.payload.jobId)} supabase={supabase} report={message.payload.report as Record<string, unknown>} />
                 </div>
               )}
             </div>
@@ -613,10 +715,10 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
         )}
       </div>
 
-      <footer className="border-t border-white/10 bg-black/35 px-4 py-4 sm:px-6">
+      <footer className="border-t border-white/10 bg-black/25 px-4 py-4 sm:px-6">
         <form className="mx-auto flex max-w-5xl gap-3" onSubmit={appendUserMessage}>
           <textarea
-            className="h-14 flex-1 resize-none rounded-xl border border-white/10 bg-[#121920] px-4 py-3 text-sm text-vercel-text outline-none transition focus:border-cyan-300/40"
+            className="soft-input h-14 flex-1 resize-none rounded-xl px-4 py-3 text-sm"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -629,7 +731,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
             disabled={isThinking}
           />
           <button
-            className="inline-flex h-14 w-14 items-center justify-center rounded-xl bg-white text-black transition hover:bg-cyan-100 disabled:opacity-50"
+            className="soft-btn soft-btn-primary inline-flex h-14 w-14 items-center justify-center rounded-xl disabled:opacity-50"
             type="submit"
             disabled={isThinking || !draft.trim()}
           >
@@ -710,7 +812,7 @@ function ConfigWidget({
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-5">
+    <div className="space-y-4 rounded-2xl border border-emerald-300/20 bg-emerald-300/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
       <div className="flex items-center gap-2 text-emerald-300">
         <CheckCircle2 size={18} />
         <h3 className="font-semibold">Brief ready to run</h3>
@@ -733,8 +835,8 @@ function ConfigWidget({
               key={pack.id}
               type="button"
               onClick={() => setPackId(pack.id)}
-              className={`rounded-lg px-2 py-2 text-xs transition ${
-                pack.id === packId ? "bg-white text-black" : "border border-white/10 bg-black/40 text-vercel-muted hover:text-white"
+              className={`soft-btn rounded-lg px-2 py-2 text-xs transition ${
+                pack.id === packId ? "soft-btn-primary" : "soft-btn-ghost text-vercel-muted hover:text-white"
               }`}
             >
               {pack.leads} leads
@@ -745,7 +847,7 @@ function ConfigWidget({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <label className="flex max-w-[240px] flex-col gap-1 text-xs text-vercel-text">
             <span className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Min Quality Score: {minScore}</span>
-            <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-cyan-300" />
+            <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-cyan-200" />
           </label>
           <label className="flex items-center gap-2 text-xs text-vercel-text">
             <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} className="rounded border-white/20" />
@@ -757,7 +859,7 @@ function ConfigWidget({
       <button
         onClick={createJob}
         disabled={submitting}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-300 disabled:opacity-50"
+        className="soft-btn soft-btn-primary inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
       >
         {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
         Run this search

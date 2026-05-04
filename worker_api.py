@@ -171,7 +171,12 @@ async def _publish_status_event(job_id, event, status_callback=None):
     
     # Don't update the overall job status for every single terminal log line
     if status != "terminal":
-        await _update_job_status(job_id, mapped_status, message if mapped_status == "failed" else None)
+        await _update_job_status(
+            job_id,
+            mapped_status,
+            message if mapped_status == "failed" else None,
+            protect_delivered=(mapped_status == "failed"),
+        )
 
 
 async def _forward_status_events(status_output_path, job_id, payload, process):
@@ -261,13 +266,16 @@ async def _add_job_event(job_id, status, message, metadata=None):
     )
 
 
-async def _update_job_status(job_id, status, error_message=None, clear_error=False):
+async def _update_job_status(job_id, status, error_message=None, clear_error=False, protect_delivered=False):
     payload = {"status": status}
     if error_message is not None or clear_error:
         payload["error_message"] = error_message
+    path = f"/rest/v1/lead_jobs?id=eq.{quote(job_id, safe='')}"
+    if protect_delivered and status == "failed":
+        path += "&status=neq.delivered"
     await _supabase_rest_request(
         "PATCH",
-        f"/rest/v1/lead_jobs?id=eq.{quote(job_id, safe='')}",
+        path,
         payload,
     )
 
@@ -285,11 +293,14 @@ async def _register_exports(job_id, exports):
     await _supabase_rest_request("DELETE", f"/rest/v1/lead_exports?job_id=eq.{quote(job_id, safe='')}")
     await _supabase_rest_request("POST", "/rest/v1/lead_exports", rows)
     await _update_job_status(job_id, "delivered", clear_error=True)
-    await _add_job_event(job_id, "delivered", "Lead export files uploaded to Supabase Storage.", {"exports": rows})
+    try:
+        await _add_job_event(job_id, "delivered", "Lead export files uploaded to Supabase Storage.", {"exports": rows})
+    except Exception as exc:
+        print(f"[worker] delivered event insert failed for job {job_id}: {exc}", flush=True)
 
 
 async def _mark_failed(job_id, message, metadata=None):
-    await _update_job_status(job_id, "failed", message)
+    await _update_job_status(job_id, "failed", message, protect_delivered=True)
     await _add_job_event(job_id, "failed", message, metadata or {})
 
 
