@@ -179,7 +179,9 @@ export function JobTable({ refreshSignal }: JobTableProps) {
                         })}
                       </div>
                     ) : (
-                      <span className="text-xs text-vercel-muted italic">Waiting for delivery</span>
+                      <span className="text-xs text-vercel-muted italic">
+                        {job.status === "failed" ? "Delivery failed (check logs)." : "Waiting for delivery"}
+                      </span>
                     )}
                     {job.status === "delivered" &&
                       !(((job as any).job_events || []) as JobEvent[]).some((event) => event.status === "report_ready") && (

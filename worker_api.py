@@ -312,8 +312,14 @@ async def _deliver_exports(job_id, job_config, payload):
 
     export_callback = payload.get("export_callback")
     if export_callback:
-        await _post_callback(export_callback, {"job_id": job_id, "exports": exports})
-        return
+        try:
+            await _post_callback(export_callback, {"job_id": job_id, "exports": exports})
+            return
+        except Exception as exc:
+            print(
+                f"[worker] export callback failed for job {job_id}; falling back to direct Supabase registration: {exc}",
+                flush=True,
+            )
 
     await _register_exports(job_id, exports)
 

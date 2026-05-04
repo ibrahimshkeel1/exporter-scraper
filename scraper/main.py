@@ -44,6 +44,16 @@ def normalize_region(region):
     return region
 
 
+def parse_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def apply_job_config(args, config):
     """Map SaaS job JSON into the existing CLI argument shape."""
     targeting = config.get("targeting", {})
@@ -71,9 +81,17 @@ def apply_job_config(args, config):
         "status_output": "status_output",
         "job_id": "job_id",
     }
+    bool_keys = {
+        "test_mode",
+        "hunt_first_a_plus",
+        "allow_no_email",
+        "allow_weak_buyer_evidence",
+        "fill_until_complete",
+    }
     for key, attribute in flat_mappings.items():
         if key in config and config[key] is not None:
-            setattr(args, attribute, config[key])
+            value = parse_bool(config[key]) if key in bool_keys else config[key]
+            setattr(args, attribute, value)
 
     if targeting.get("region"):
         args.region = normalize_region(targeting["region"])
@@ -92,6 +110,8 @@ def apply_job_config(args, config):
         args.min_score = int(lead_pack["min_score"])
     if lead_pack.get("max_analyzed") is not None:
         args.max_analyzed = int(lead_pack["max_analyzed"])
+    if lead_pack.get("fill_until_complete") is not None:
+        args.fill_until_complete = parse_bool(lead_pack["fill_until_complete"])
     if lead_pack.get("mode") == "a_plus":
         args.hunt_first_a_plus = True
         args.a_plus_score = max(args.a_plus_score, 85)
@@ -108,9 +128,9 @@ def apply_job_config(args, config):
         args.audit_output = str(Path(delivery["output_dir"]) / f"{args.job_id}_audit.csv")
 
     if quality.get("allow_no_email") is not None:
-        args.allow_no_email = bool(quality["allow_no_email"])
+        args.allow_no_email = parse_bool(quality["allow_no_email"])
     if quality.get("allow_weak_buyer_evidence") is not None:
-        args.allow_weak_buyer_evidence = bool(quality["allow_weak_buyer_evidence"])
+        args.allow_weak_buyer_evidence = parse_bool(quality["allow_weak_buyer_evidence"])
     if quality.get("a_plus_score") is not None:
         args.a_plus_score = int(quality["a_plus_score"])
     if config.get("scoring_context") is not None:
@@ -204,6 +224,7 @@ async def run_scraper(
     enriched_candidates = []
     scored_candidates = []
     top_leads = []
+    seen_enriched_domains = set()
 
     scoring = LeadScoring(
         require_email=not allow_no_email,
@@ -309,6 +330,29 @@ async def run_scraper(
                 candidate_queue.task_done()
                 continue
 
+            candidate_domain = (enriched.get("domain") or "").strip().lower()
+            if candidate_domain.startswith("www."):
+                candidate_domain = candidate_domain[4:]
+            duplicate_domain = False
+            if candidate_domain:
+                async with state_lock:
+                    if candidate_domain in seen_enriched_domains:
+                        duplicate_domain = True
+                    else:
+                        seen_enriched_domains.add(candidate_domain)
+            if duplicate_domain:
+                emit_progress(
+                    "enriching",
+                    "Duplicate domain skipped after enrichment.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    source="enrichment",
+                    worker_id=worker_id,
+                    domain=candidate_domain,
+                )
+                candidate_queue.task_done()
+                continue
+
             scored = scoring.evaluate_candidate(enriched)
             async with state_lock:
                 enriched_candidates.append(enriched)
@@ -366,7 +410,7 @@ async def run_scraper(
             browser_context=context,
             browser_fallback_concurrency=max(1, worker_count // 2),
         )
-        batch_size = 60 if test_mode else max(80, min(160, limit * 12))
+        batch_size = 8 if test_mode else max(12, min(40, limit * 2))
 
         connector = aiohttp.TCPConnector(limit_per_host=max(2, worker_count), ttl_dns_cache=300)
         timeout = aiohttp.ClientTimeout(total=enrichment.request_timeout)

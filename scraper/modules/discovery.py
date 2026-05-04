@@ -356,6 +356,23 @@ class LeadDiscovery:
         return any(term in lowered for term in apparel_terms)
 
     @staticmethod
+    def _is_architecture_industry(industry):
+        lowered = (industry or "").lower()
+        architecture_terms = (
+            "architect",
+            "architecture",
+            "commercial design",
+            "design-build",
+            "fit out",
+            "fit-out",
+            "interior design",
+            "landscape design",
+            "master planning",
+            "urban design",
+        )
+        return any(term in lowered for term in architecture_terms)
+
+    @staticmethod
     def _canonical_region(region):
         value = str(region or "").strip().lower()
         if value in {"usa", "us", "u.s.", "u.s.a.", "united states", "united states of america", "america", "american"}:
@@ -368,25 +385,47 @@ class LeadDiscovery:
             return "International"
         return region
 
+    @staticmethod
+    def _target_markets(region):
+        if region == "USA":
+            return ["United States"]
+        if region == "UK":
+            return ["United Kingdom"]
+        if region == "Europe":
+            return ["Europe"]
+        if region == "International":
+            return [
+                "United States",
+                "United Kingdom",
+                "Canada",
+                "Australia",
+                "UAE",
+                "Germany",
+            ]
+        return [region]
+
     def _buyer_search_queries(self, region, industry):
         region = self._canonical_region(region)
         base = self._product_seed(industry)
-        market = {
-            "USA": "United States",
-            "UK": "United Kingdom",
-            "Europe": "Europe",
-        }.get(region, region)
+        markets = self._target_markets(region)
+        market = markets[0]
         supplied_queries = []
         is_apparel = self._is_apparel_industry(industry)
+        is_architecture = self._is_architecture_industry(industry)
         for term in self.search_terms:
             normalized = term.strip()
             if not normalized:
                 continue
-            if region.lower() not in normalized.lower() and market.lower() not in normalized.lower():
+            normalized_lower = normalized.lower()
+            mentions_market = any(target.lower() in normalized_lower for target in markets)
+            if not mentions_market and region.lower() not in normalized_lower:
                 normalized = f"{normalized} {market}"
             if is_apparel:
                 normalized = f"{normalized} -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter"
             supplied_queries.append(f"{normalized} contact email")
+            if region == "International" and not mentions_market:
+                for extra_market in markets[1:4]:
+                    supplied_queries.append(f"{term.strip()} {extra_market} contact email")
 
         if is_apparel:
             default_queries = [
@@ -422,6 +461,17 @@ class LeadDiscovery:
                 f'"{base}" "{market}" partnerships contact',
                 f'"{base}" "{market}" decision maker contact',
             ]
+            if is_architecture:
+                default_queries.extend(
+                    [
+                        f'"{base}" "{market}" commercial real estate developer contact',
+                        f'"{base}" "{market}" hospitality project design consultant contact',
+                        f'"{base}" "{market}" office fit out request for proposal',
+                        f'"{base}" "{market}" architecture tender procurement contact',
+                        f'"{base}" "{market}" interior design firm project inquiry',
+                        f'"{base}" "{market}" mixed use development architect contact',
+                    ]
+                )
         if region == "Europe":
             for country in ("Germany", "France", "Netherlands", "Italy", "Spain", "Poland", "Sweden"):
                 if is_apparel:
@@ -440,6 +490,30 @@ class LeadDiscovery:
                             f'"{base}" "{country}" procurement vendor contact',
                         ]
                     )
+        elif region == "International":
+            for country in markets[1:]:
+                if is_apparel:
+                    default_queries.extend(
+                        [
+                            f'{base} importer wholesaler distributor "{country}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                            f'{base} retailer "supplier portal" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
+                        ]
+                    )
+                elif is_architecture:
+                    default_queries.extend(
+                        [
+                            f'"{base}" "{country}" architecture project request proposal',
+                            f'"{base}" "{country}" property developer design consultancy contact',
+                            f'"{base}" "{country}" commercial interior design project contact',
+                        ]
+                    )
+                else:
+                    default_queries.extend(
+                        [
+                            f'"{base}" "{country}" projects contact email',
+                            f'"{base}" "{country}" procurement vendor contact',
+                        ]
+                    )
 
         return list(dict.fromkeys(supplied_queries + default_queries))
 
@@ -448,7 +522,10 @@ class LeadDiscovery:
         for query in self._buyer_search_queries(region, industry):
             slug = self._slug(query)
             encoded = quote_plus(query)
-            bing_pages = (1, 11, 21, 31, 41) if region != "Europe" else (1, 11, 21)
+            if region in {"Europe", "International"}:
+                bing_pages = (1, 11, 21)
+            else:
+                bing_pages = (1, 11, 21, 31, 41)
             # DuckDuckGo's HTML endpoint frequently stalls under Playwright on
             # the VPS, which blocks discovery before curated sources run.
             duckduckgo_pages = ()
@@ -662,6 +739,12 @@ class LeadDiscovery:
                 print(
                     f"Discovery progress: {yielded_count + len(current_chunk)} total candidates (+{found_in_source} from {source.name})"
                 )
+                if current_chunk and yielded_count < self.limit:
+                    remaining = self.limit - yielded_count
+                    batch = current_chunk[:remaining]
+                    current_chunk = current_chunk[remaining:]
+                    yielded_count += len(batch)
+                    yield batch
                 continue
             print(f"Visiting discovery source: {source.url}")
             found_in_source = 0
@@ -691,9 +774,16 @@ class LeadDiscovery:
             print(
                 f"Discovery progress: {yielded_count + len(current_chunk)} total candidates (+{found_in_source} from {source.name})"
             )
+            if current_chunk and yielded_count < self.limit:
+                remaining = self.limit - yielded_count
+                batch = current_chunk[:remaining]
+                current_chunk = current_chunk[remaining:]
+                yielded_count += len(batch)
+                yield batch
 
         if current_chunk and yielded_count < self.limit:
-            yield current_chunk
+            remaining = self.limit - yielded_count
+            yield current_chunk[:remaining]
 
     @staticmethod
     def seed_urls(region, source_name="seed-usa-apparel-buyers"):

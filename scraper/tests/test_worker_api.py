@@ -2,6 +2,7 @@ import json
 import shutil
 import sys
 import unittest
+import asyncio
 from pathlib import Path
 
 
@@ -42,7 +43,10 @@ class WorkerApiTests(unittest.TestCase):
         self.assertEqual(worker_api._count_rows(json_path), 1)
 
     def test_count_rows_supports_xlsx_exports(self):
-        from openpyxl import Workbook
+        try:
+            from openpyxl import Workbook
+        except ModuleNotFoundError:
+            self.skipTest("openpyxl is not installed in this environment")
 
         xlsx_path = self.TEST_DIR / "_tmp_worker_job_leads.xlsx"
         workbook = Workbook()
@@ -82,6 +86,44 @@ class WorkerApiTests(unittest.TestCase):
         self.assertEqual(prepared["job_id"], "job-123")
         self.assertEqual(prepared["delivery"]["output_dir"], str(run_dir / "exports"))
         self.assertTrue((run_dir / "exports").exists())
+
+    def test_deliver_exports_falls_back_to_supabase_register_when_callback_fails(self):
+        leads_file = self.TEST_DIR / "_tmp_worker_job_leads.csv"
+        leads_file.write_text("email\none@example.com\n", encoding="utf-8")
+
+        captured = {}
+        original_post_callback = worker_api._post_callback
+        original_register_exports = worker_api._register_exports
+        original_upload_to_supabase = worker_api._upload_to_supabase
+        try:
+            async def fake_post_callback(_url, _payload):
+                raise RuntimeError("callback unavailable")
+
+            async def fake_register_exports(job_id, exports):
+                captured["job_id"] = job_id
+                captured["exports"] = exports
+
+            async def fake_upload_to_supabase(_file_path, _storage_path):
+                return None
+
+            worker_api._post_callback = fake_post_callback
+            worker_api._register_exports = fake_register_exports
+            worker_api._upload_to_supabase = fake_upload_to_supabase
+
+            asyncio.run(
+                worker_api._deliver_exports(
+                    "_tmp_worker_job",
+                    {"delivery": {"output_dir": str(self.TEST_DIR)}},
+                    {"export_callback": "https://example.invalid/exports"},
+                )
+            )
+        finally:
+            worker_api._post_callback = original_post_callback
+            worker_api._register_exports = original_register_exports
+            worker_api._upload_to_supabase = original_upload_to_supabase
+
+        self.assertEqual(captured.get("job_id"), "_tmp_worker_job")
+        self.assertEqual(len(captured.get("exports", [])), 1)
 
 
 if __name__ == "__main__":

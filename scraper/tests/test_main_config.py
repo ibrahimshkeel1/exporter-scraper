@@ -1,16 +1,40 @@
 import os
 import sys
 import unittest
+from types import SimpleNamespace
 
 
 SCRAPER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SCRAPER_DIR not in sys.path:
     sys.path.insert(0, SCRAPER_DIR)
 
-from main import compute_discovery_limit, relaxed_score_thresholds
+from main import apply_job_config, compute_discovery_limit, relaxed_score_thresholds
 
 
 class MainConfigTests(unittest.TestCase):
+    def _base_args(self):
+        return SimpleNamespace(
+            region="USA",
+            industry="apparel",
+            limit=10,
+            min_score=75,
+            output="buyer_leads.csv",
+            audit_output=None,
+            format="csv",
+            test_mode=False,
+            max_analyzed=None,
+            search_terms=[],
+            hunt_first_a_plus=False,
+            hunt_max_analyzed=150,
+            a_plus_score=85,
+            allow_no_email=False,
+            allow_weak_buyer_evidence=False,
+            fill_until_complete=False,
+            status_output=None,
+            job_id=None,
+            scoring_context=None,
+        )
+
     def test_max_analyzed_caps_normal_discovery(self):
         self.assertEqual(compute_discovery_limit(limit=10, max_analyzed=25), 25)
 
@@ -27,6 +51,23 @@ class MainConfigTests(unittest.TestCase):
     def test_relaxed_thresholds_step_down_toward_floor(self):
         self.assertEqual(relaxed_score_thresholds(55), [55, 50, 45, 40, 35])
         self.assertEqual(relaxed_score_thresholds(30), [35])
+
+    def test_apply_job_config_reads_fill_until_complete_and_string_bools(self):
+        args = self._base_args()
+        configured = apply_job_config(
+            args,
+            {
+                "lead_pack": {"fill_until_complete": "true"},
+                "quality": {
+                    "allow_no_email": "false",
+                    "allow_weak_buyer_evidence": "1",
+                },
+            },
+        )
+
+        self.assertTrue(configured.fill_until_complete)
+        self.assertFalse(configured.allow_no_email)
+        self.assertTrue(configured.allow_weak_buyer_evidence)
 
 
 if __name__ == "__main__":
