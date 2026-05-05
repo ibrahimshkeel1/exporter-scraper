@@ -1,16 +1,17 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Check, Copy, Download, Loader2, Send, Sparkles, Terminal, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, Check, Copy, Download, Loader2, Mail, Send, Sparkles, Terminal, ChevronDown, ChevronUp } from "lucide-react";
 import { leadPacks } from "../lib/pricing";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 import { TargetingPreflight } from "../lib/types";
+import { parsePastedLeads } from "../lib/outreach";
 import { JobReportCard } from "./JobReportCard";
 
 export type AgenticMessage = {
   id: string;
   role: "assistant" | "user";
-  type: "text" | "config" | "terminal" | "report";
+  type: "text" | "config" | "terminal" | "report" | "outreach";
   content?: string;
   payload?: any;
   created_at: string;
@@ -508,17 +509,37 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
             ) {
               return current;
             }
-            return [
-              ...current,
+            const newMessages: AgenticMessage[] = [
               {
                 id: crypto.randomUUID(),
                 role: "assistant",
                 type: "text",
-                content: "Delivery complete. I’m generating the AI quality report now.",
+                content: "Delivery complete. I'm generating the AI quality report now.",
                 payload: { kind: "delivery_notice", jobId: evt.job_id },
                 created_at: new Date().toISOString(),
               },
             ];
+            if (!current.some((item) => item.type === "outreach" && item.payload?.jobId === evt.job_id)) {
+              newMessages.push({
+                id: crypto.randomUUID(),
+                role: "assistant",
+                type: "text",
+                content: "Want to run an email outreach funnel on these leads? Type 'start outreach' or open the Outreach tab.",
+                payload: { kind: "outreach_suggestion", jobId: evt.job_id },
+                created_at: new Date().toISOString(),
+              });
+            }
+            return [...current, ...newMessages];
+          }
+          if (
+            current.some(
+              (item) =>
+                item.type === "text" &&
+                item.payload?.kind === "failed_notice" &&
+                item.payload?.jobId === evt.job_id
+            )
+          ) {
+            return current;
           }
           if (
             current.some(
@@ -564,16 +585,44 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
     };
   }, [supabase, messages]);
 
+  function detectOutreachIntent(text: string) {
+    const lower = text.toLowerCase();
+    const keywords = ["email campaign", "outreach", "email funnel", "send emails", "cold email", "followup", "follow up"];
+    return keywords.some((kw) => lower.includes(kw));
+  }
+
   async function analyzeConversation(nextMessages: AgenticMessage[]) {
     setIsThinking(true);
     try {
       const lastJobArtifactIndex = nextMessages.reduce((lastIndex, message, index) => {
-        return ["config", "terminal", "report"].includes(message.type) ? index : lastIndex;
+        return ["config", "terminal", "report", "outreach"].includes(message.type) ? index : lastIndex;
       }, -1);
       const activeThread = nextMessages.slice(lastJobArtifactIndex + 1);
       const conversation = activeThread
         .filter((message) => message.type === "text")
         .map((message) => ({ role: message.role, content: message.content || "" }));
+
+      const lastUserText = conversation.filter((m) => m.role === "user").at(-1)?.content || "";
+      if (detectOutreachIntent(lastUserText)) {
+        const preflightBrief = nextMessages.find((m) => m.type === "config" && m.payload?.brief)?.payload?.brief as TargetingPreflight | undefined;
+        const prefill: Record<string, string> = {};
+        if (preflightBrief) {
+          prefill.business_plan = preflightBrief.offerSummary || "";
+          prefill.target_buyer = preflightBrief.idealCustomerProfile || "";
+        }
+        setMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            type: "outreach",
+            payload: { prefill },
+            created_at: new Date().toISOString(),
+          },
+        ]);
+        return;
+      }
+
       const response = await fetch("/api/preflight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -718,6 +767,15 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
                 <div className="mt-2 space-y-2">
                   <JobReportCard report={message.payload.report as any} />
                   <ReportDownloads jobId={String(message.payload.jobId)} supabase={supabase} report={message.payload.report as Record<string, unknown>} />
+                </div>
+              )}
+
+              {message.type === "outreach" && (
+                <div className="mt-2">
+                  <OutreachLauncherWidget
+                    prefill={message.payload?.prefill as Record<string, string> | undefined}
+                    supabase={supabase}
+                  />
                 </div>
               )}
             </div>
@@ -891,6 +949,123 @@ function ConfigWidget({
       >
         {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
         Run this search
+      </button>
+    </div>
+  );
+}
+
+function OutreachLauncherWidget({
+  prefill,
+  supabase,
+}: {
+  prefill?: Record<string, string>;
+  supabase: ReturnType<typeof createBrowserSupabase> | null;
+}) {
+  const [businessPlan, setBusinessPlan] = useState(prefill?.business_plan || "");
+  const [offer, setOffer] = useState("");
+  const [targetBuyer, setTargetBuyer] = useState(prefill?.target_buyer || "");
+  const [tone, setTone] = useState("professional");
+  const [cta, setCta] = useState("Reply if this is relevant and I can send details.");
+  const [signature, setSignature] = useState("Best,\nExportFlow");
+  const [senderName, setSenderName] = useState("ExportFlow");
+  const [senderEmail, setSenderEmail] = useState("");
+  const [pastedLeads, setPastedLeads] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function createCampaign() {
+    if (!supabase) return;
+    const leads = pastedLeads.trim() ? parsePastedLeads(pastedLeads) : [];
+    if (leads.length === 0) {
+      setMessage("Add at least one lead (paste emails below).");
+      return;
+    }
+    setLoading(true);
+    setMessage("");
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setMessage("Sign in first.");
+        setLoading(false);
+        return;
+      }
+      const response = await fetch("/api/outreach/campaigns", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          business_plan: businessPlan,
+          offer,
+          target_buyer: targetBuyer,
+          tone,
+          cta,
+          signature,
+          sender_name: senderName,
+          sender_email: senderEmail,
+          leads,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not create campaign.");
+      setMessage("Campaign created! Open the Outreach tab to generate templates and send.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not create campaign.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="ide-panel space-y-3 p-4">
+      <div className="flex items-center gap-2 text-[#00ffff]">
+        <Mail size={16} />
+        <h3 className="font-semibold">Quick outreach campaign</h3>
+      </div>
+      {message && <p className="text-xs text-amber-300">{message}</p>}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <label className="block space-y-1 text-xs text-[#8b949e]">
+          <span>Business plan</span>
+          <input className="ide-input h-9 w-full px-2 text-sm" value={businessPlan} onChange={(e) => setBusinessPlan(e.target.value)} placeholder="What you do" />
+        </label>
+        <label className="block space-y-1 text-xs text-[#8b949e]">
+          <span>Offer</span>
+          <input className="ide-input h-9 w-full px-2 text-sm" value={offer} onChange={(e) => setOffer(e.target.value)} placeholder="Your offer" />
+        </label>
+        <label className="block space-y-1 text-xs text-[#8b949e]">
+          <span>Target buyer</span>
+          <input className="ide-input h-9 w-full px-2 text-sm" value={targetBuyer} onChange={(e) => setTargetBuyer(e.target.value)} placeholder="Who to reach" />
+        </label>
+        <label className="block space-y-1 text-xs text-[#8b949e]">
+          <span>Tone</span>
+          <select className="ide-input h-9 w-full px-2 text-sm" value={tone} onChange={(e) => setTone(e.target.value)}>
+            {["professional", "direct", "warm", "premium", "bold", "convincing"].map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="block space-y-1 text-xs text-[#8b949e]">
+        <span>Pasted leads (name, company, email, website — one per line)</span>
+        <textarea
+          className="ide-input h-24 w-full resize-none px-2 py-2 font-mono text-xs"
+          value={pastedLeads}
+          onChange={(e) => setPastedLeads(e.target.value)}
+          placeholder="Acme Textiles, Sarah Khan, sarah@example.com, https://example.com"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={() => void createCampaign()}
+        disabled={loading}
+        className="ide-btn ide-btn-primary inline-flex w-full items-center justify-center gap-2 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+      >
+        {loading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+        Create campaign
       </button>
     </div>
   );

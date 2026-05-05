@@ -2,10 +2,10 @@
 
 import { ReactNode, useState } from "react";
 import Link from "next/link";
-import { LayoutDashboard, Menu, PanelLeftClose, PanelLeftOpen, Plus, Settings, ShieldClose, X } from "lucide-react";
+import { LayoutDashboard, Mail, Menu, PanelLeftClose, PanelLeftOpen, Plus, Settings, ShieldClose, X } from "lucide-react";
 import { AuthPanel } from "./AuthPanel";
 
-type WorkspaceMode = "dashboard" | "admin";
+type WorkspaceMode = "dashboard" | "outreach" | "admin";
 
 type WorkspaceShellProps = {
   mode: WorkspaceMode;
@@ -17,6 +17,7 @@ type WorkspaceShellProps = {
 function navItems() {
   return [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, mode: "dashboard" as const },
+    { href: "/outreach", label: "Outreach", icon: Mail, mode: "outreach" as const },
     { href: "/admin", label: "Admin", icon: ShieldClose, mode: "admin" as const },
     { href: "/dashboard", label: "Settings", icon: Settings, mode: "settings" as const },
   ];
@@ -44,6 +45,7 @@ function SideBar({ mode, compact, onClose }: { mode: WorkspaceMode; compact?: bo
           <p className="text-[#8b949e]">workspace</p>
           <p className="text-[#8b949e]">- frontend/</p>
           <p className={`${mode === "dashboard" ? "text-[#00ffff]" : "text-[#c9d1d9]"}`}>  - agentic-lead-search.tsx</p>
+          <p className={`${mode === "outreach" ? "text-[#00ffff]" : "text-[#c9d1d9]"}`}>  - outreach-funnel.tsx</p>
           <p className={`${mode === "admin" ? "text-[#00ffff]" : "text-[#c9d1d9]"}`}>  - operator-console.tsx</p>
           <p className="text-[#8b949e]">- exports/</p>
           <p className="text-[#8b949e]">  - *_leads.csv</p>
