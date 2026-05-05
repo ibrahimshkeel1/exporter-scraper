@@ -22,6 +22,10 @@
     "allow_weak_buyer_evidence": false,
     "a_plus_score": 85
   },
+  "network": {
+    "proxy_pool": [],
+    "proxy_file": "scraper/proxies.oxylabs.example.txt"
+  },
   "delivery": {
     "format": "all",
     "output_dir": "exports"

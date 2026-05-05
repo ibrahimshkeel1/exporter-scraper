@@ -6,7 +6,7 @@ SCRAPER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SCRAPER_DIR not in sys.path:
     sys.path.insert(0, SCRAPER_DIR)
 
-from modules.discovery import LeadDiscovery
+from modules.discovery import DiscoverySource, LeadDiscovery
 
 
 class LeadDiscoveryTests(unittest.TestCase):
@@ -73,9 +73,10 @@ class LeadDiscoveryTests(unittest.TestCase):
     def test_denim_seed_prefers_specific_product_over_generic_apparel(self):
         self.assertEqual(self.discovery._product_seed("Apparel & Textile - Denim & Jeans"), "denim")
 
-    def test_search_sources_skip_duckduckgo_to_avoid_vps_timeouts(self):
+    def test_search_sources_include_non_bing_engines(self):
         sources = self.discovery._search_sources("USA", "denim")
-        self.assertFalse(any(source.name.startswith("duckduckgo") for source in sources))
+        self.assertTrue(any(source.name.startswith("duckduckgo-p1-") for source in sources))
+        self.assertTrue(any(source.name.startswith("yahoo-p1-") for source in sources))
 
     def test_seed_urls_are_source_specific(self):
         buyer_intent_urls = self.discovery.seed_urls("USA", "seed-usa-buyer-intent-pages")
@@ -124,12 +125,68 @@ class LeadDiscoveryTests(unittest.TestCase):
         queries = self.discovery._buyer_search_queries("USA", "architecture projects")
         query_text = " ".join(queries).lower()
 
-        self.assertTrue(names[0].startswith("bing-p1-architecture-projects"))
+        self.assertIn("yellowpages-usa-business-search", names)
         self.assertFalse(any("fashion" in name or "apparel" in name for name in names))
-        self.assertFalse(any("yellowpages" in url for url in urls))
+        self.assertTrue(any("yellowpages" in url for url in urls))
         self.assertNotIn("private label clothing", query_text)
         self.assertNotIn("wholesaler", query_text)
         self.assertIn("projects contact email", query_text)
+
+    def test_uk_architecture_sources_include_non_bing_fallbacks(self):
+        sources = self.discovery.generate_sources("UK", "architecture planning")
+        names = [source.name for source in sources]
+        self.assertIn("yell-uk-business-search", names)
+        self.assertLess(
+            names.index("yell-uk-business-search"),
+            next(index for index, name in enumerate(names) if name.startswith("bing-p1-")),
+        )
+
+    def test_architecture_search_sources_limit_bing_pages(self):
+        sources = self.discovery._search_sources("UK", "architecture planning")
+        names = [source.name for source in sources]
+        self.assertTrue(any(name.startswith("bing-p1-") for name in names))
+        self.assertFalse(any(name.startswith("bing-p2-") for name in names))
+        self.assertTrue(any(name.startswith("duckduckgo-p1-") for name in names))
+        self.assertTrue(any(name.startswith("yahoo-p1-") for name in names))
+
+    def test_signal_map_adds_signal_sources(self):
+        signal_map = {
+            "signals": [
+                {
+                    "signal": "fit-out-rfp",
+                    "confidence": 0.9,
+                    "why_now": "RFP activity indicates immediate buying intent.",
+                    "queries": ["architecture UK fit out rfp"],
+                    "source_urls": ["https://example.com/contact"],
+                }
+            ]
+        }
+        discovery = LeadDiscovery(limit=10, signal_map=signal_map)
+        sources = discovery.generate_sources("UK", "architecture planning")
+        names = [source.name for source in sources]
+        self.assertIn("signal-seed-fit-out-rfp", names)
+        self.assertTrue(any(name.startswith("signal-bing-p1-fit-out-rfp") for name in names))
+
+    def test_signal_fields_are_carried_to_candidates(self):
+        signaled_source = DiscoverySource(
+            name="signal-seed-test",
+            url="https://example.com/contact",
+            selectors=(),
+            discovery_method="signal_seed",
+            candidate_kind="direct_url",
+            signal_detected="new-location-openings",
+            signal_confidence=0.88,
+            why_now="Recent expansion signal.",
+        )
+        candidate = self.discovery._candidate_from_url(
+            "https://example.com/contact",
+            signaled_source,
+            "USA",
+            "architecture projects",
+        )
+        self.assertEqual(candidate["signal_detected"], "new-location-openings")
+        self.assertEqual(candidate["signal_confidence_score"], 0.88)
+        self.assertEqual(candidate["why_now"], "Recent expansion signal.")
 
 
 if __name__ == "__main__":

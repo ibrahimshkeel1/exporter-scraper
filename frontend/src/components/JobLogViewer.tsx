@@ -25,6 +25,11 @@ type WorkerLog = {
   source: string;
   status: string;
   time: string;
+  engine?: string;
+  lane?: string;
+  proxyBefore?: string;
+  proxyAfter?: string;
+  reason?: string;
 };
 
 function logTime() {
@@ -37,24 +42,43 @@ function parseWorkerPayload(event: MessageEvent) {
     const source = typeof parsed.source === "string" ? parsed.source : "worker";
     const status = typeof parsed.status === "string" ? parsed.status : "terminal";
     const message = typeof parsed.message === "string" ? parsed.message : JSON.stringify(parsed);
-    return { source, status, message };
+    const engine = typeof parsed.engine === "string" ? parsed.engine : "";
+    const lane = typeof parsed.lane === "string" ? parsed.lane : "";
+    const proxyBefore = typeof parsed.proxy_before === "string" ? parsed.proxy_before : "";
+    const proxyAfter = typeof parsed.proxy_after === "string" ? parsed.proxy_after : "";
+    const reason = typeof parsed.reason === "string" ? parsed.reason : "";
+    return { source, status, message, engine, lane, proxyBefore, proxyAfter, reason };
   } catch {
-    return { source: "worker", status: "terminal", message: event.data };
+    return { source: "worker", status: "terminal", message: event.data, engine: "", lane: "", proxyBefore: "", proxyAfter: "", reason: "" };
   }
 }
 
-function laneForSource(source: string) {
-  return source === "enrichment" || source === "scoring" ? "enrichment" : "discovery";
+type DiscoveryLane = "bing" | "duckduckgo" | "yahoo";
+
+function discoveryLaneForPayload(payload: { source: string; lane?: string; engine?: string }) {
+  if (payload.source === "enrichment" || payload.source === "scoring") return "enrichment";
+  const lane = (payload.lane || "").toLowerCase();
+  const engine = (payload.engine || "").toLowerCase();
+  if (lane === "bing" || engine === "bing") return "bing";
+  if (lane === "duckduckgo" || engine === "duckduckgo") return "duckduckgo";
+  if (lane === "yahoo" || engine === "yahoo") return "yahoo";
+  return "enrichment";
 }
 
 export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProps) {
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
-  const [discoveryLogs, setDiscoveryLogs] = useState<WorkerLog[]>([]);
+  const [discoveryLogs, setDiscoveryLogs] = useState<Record<DiscoveryLane, WorkerLog[]>>({
+    bing: [],
+    duckduckgo: [],
+    yahoo: [],
+  });
   const [enrichmentLogs, setEnrichmentLogs] = useState<WorkerLog[]>([]);
   const [state, setState] = useState<"connecting" | "live" | "retrying">("connecting");
-  const [copiedLane, setCopiedLane] = useState<"discovery" | "enrichment" | null>(null);
+  const [copiedLane, setCopiedLane] = useState<"bing" | "duckduckgo" | "yahoo" | "enrichment" | null>(null);
   const [supabase] = useState(() => createBrowserSupabase());
-  const discoveryRef = useRef<HTMLDivElement>(null);
+  const discoveryBingRef = useRef<HTMLDivElement>(null);
+  const discoveryDuckRef = useRef<HTMLDivElement>(null);
+  const discoveryYahooRef = useRef<HTMLDivElement>(null);
   const enrichmentRef = useRef<HTMLDivElement>(null);
   const eventRef = useRef<HTMLDivElement>(null);
 
@@ -66,7 +90,7 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
 
   useEffect(() => {
     setEvents(initialEvents);
-    setDiscoveryLogs([]);
+    setDiscoveryLogs({ bing: [], duckduckgo: [], yahoo: [] });
     setEnrichmentLogs([]);
     setState("connecting");
   }, [jobId, initialEvents]);
@@ -99,11 +123,14 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
     let closed = false;
 
     const appendLog = (entry: WorkerLog) => {
-      const lane = laneForSource(entry.source);
+      const lane = discoveryLaneForPayload(entry);
       if (lane === "enrichment") {
         setEnrichmentLogs((current) => [...current, entry]);
       } else {
-        setDiscoveryLogs((current) => [...current, entry]);
+        setDiscoveryLogs((current) => ({
+          ...current,
+          [lane]: [...current[lane], entry],
+        }));
       }
     };
 
@@ -114,6 +141,11 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
         status: payload.status,
         message: payload.message,
         time: logTime(),
+        lane: payload.lane,
+        engine: payload.engine,
+        proxyBefore: payload.proxyBefore,
+        proxyAfter: payload.proxyAfter,
+        reason: payload.reason,
       });
     };
 
@@ -143,9 +175,9 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
   }, [jobId, supabase]);
 
   useEffect(() => {
-    if (discoveryRef.current) {
-      discoveryRef.current.scrollTop = discoveryRef.current.scrollHeight;
-    }
+    if (discoveryBingRef.current) discoveryBingRef.current.scrollTop = discoveryBingRef.current.scrollHeight;
+    if (discoveryDuckRef.current) discoveryDuckRef.current.scrollTop = discoveryDuckRef.current.scrollHeight;
+    if (discoveryYahooRef.current) discoveryYahooRef.current.scrollTop = discoveryYahooRef.current.scrollHeight;
   }, [discoveryLogs]);
 
   useEffect(() => {
@@ -160,10 +192,16 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
     }
   }, [sortedEvents]);
 
-  async function copyLaneLogs(lane: "discovery" | "enrichment") {
-    const logs = lane === "discovery" ? discoveryLogs : enrichmentLogs;
+  async function copyLaneLogs(lane: "bing" | "duckduckgo" | "yahoo" | "enrichment") {
+    const logs = lane === "enrichment" ? enrichmentLogs : discoveryLogs[lane];
     if (logs.length === 0 || typeof navigator === "undefined" || !navigator.clipboard) return;
-    const text = logs.map((log) => `[${log.time}] [${log.source}] ${log.message}`).join("\n");
+    const text = logs
+      .map((log) => {
+        const proxyRotation =
+          log.proxyBefore && log.proxyAfter ? ` | proxy ${log.proxyBefore} -> ${log.proxyAfter}` : "";
+        return `[${log.time}] [${log.source}] ${log.message}${proxyRotation}`;
+      })
+      .join("\n");
     await navigator.clipboard.writeText(text);
     setCopiedLane(lane);
     setTimeout(() => setCopiedLane((current) => (current === lane ? null : current)), 1200);
@@ -172,75 +210,95 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-white/10 bg-[#080b11] shadow-2xl"
+        className="ide-panel flex h-[90vh] w-full max-w-[84rem] flex-col overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-white/10 bg-black/35 px-4 py-3">
-          <div className="inline-flex items-center gap-2 text-xs font-mono text-cyan-200">
+        <div className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-4 py-2">
+          <div className="inline-flex items-center gap-2 text-xs font-mono text-[#00ffff]">
             <Terminal size={13} />
             JOB {jobId.slice(0, 8)}... LIVE LOGS
           </div>
           <button
             onClick={onClose}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/5 text-vercel-text hover:bg-white/10"
+            className="ide-btn inline-flex h-8 w-8 items-center justify-center text-vercel-text"
           >
             <X size={15} />
           </button>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 xl:grid-cols-[1.05fr_1.05fr_0.9fr]">
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-cyan-500/30 bg-black">
-            <header className="flex items-center justify-between border-b border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[11px] font-mono text-cyan-200">
-              <span>DISCOVERY / MAIN</span>
-              <div className="inline-flex items-center gap-2">
-                <span>{state.toUpperCase()}</span>
-                <button
-                  type="button"
-                  onClick={() => void copyLaneLogs("discovery")}
-                  className="inline-flex h-6 items-center gap-1 rounded border border-cyan-400/30 bg-cyan-500/10 px-2 text-[10px] hover:bg-cyan-500/20"
-                >
-                  {copiedLane === "discovery" ? <Check size={11} /> : <Copy size={11} />}
-                  Copy
-                </button>
-              </div>
-            </header>
-            <div ref={discoveryRef} className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-cyan-100/90">
-              {discoveryLogs.map((log, index) => (
-                <div key={`d-${index}`} className="whitespace-pre-wrap break-words">
-                  <span className="text-cyan-500/70">[{log.time}]</span> {log.message}
+        <div className="grid h-full min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 xl:grid-cols-3 xl:grid-rows-[minmax(18rem,1.2fr)_minmax(18rem,1fr)]">
+          <section className="ide-terminal grid min-h-0 grid-cols-1 gap-2 overflow-hidden p-2 xl:col-span-3 xl:grid-cols-3 xl:row-span-1">
+            {[
+              { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
+              { key: "duckduckgo", label: "DISCOVERY / DUCKDUCKGO", ref: discoveryDuckRef },
+              { key: "yahoo", label: "DISCOVERY / YAHOO", ref: discoveryYahooRef },
+            ].map((laneRow) => (
+              <div key={laneRow.key} className="flex min-h-0 flex-col overflow-hidden border border-[#30363d] bg-black">
+                <header className="flex items-center justify-between border-b border-[#30363d] px-2 py-1.5 text-[10px] font-mono text-[#00ffff]">
+                  <span>{laneRow.label}</span>
+                  <div className="inline-flex items-center gap-2">
+                    <span>{state.toUpperCase()}</span>
+                    <button
+                      type="button"
+                      onClick={() => void copyLaneLogs(laneRow.key as DiscoveryLane)}
+                      className="ide-btn inline-flex h-5 items-center gap-1 px-1.5 text-[9px]"
+                    >
+                      {copiedLane === laneRow.key ? <Check size={10} /> : <Copy size={10} />}
+                      Copy
+                    </button>
+                  </div>
+                </header>
+                <div ref={laneRow.ref} className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-[#00ff00]">
+                  {(discoveryLogs[laneRow.key as DiscoveryLane] || []).map((log, index) => (
+                    <div key={`${laneRow.key}-${index}`} className="whitespace-pre-wrap break-words">
+                      <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
+                      {log.proxyBefore && log.proxyAfter && (
+                        <div className="text-[10px] text-[#00ffff]">
+                          proxy rotated: {log.proxyBefore} → {log.proxyAfter}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {(discoveryLogs[laneRow.key as DiscoveryLane] || []).length === 0 && (
+                    <div className="text-[#8b949e]">Waiting for {laneRow.key} lane...</div>
+                  )}
                 </div>
-              ))}
-              {discoveryLogs.length === 0 && <div className="text-cyan-300/60">Waiting for discovery lane...</div>}
-            </div>
+              </div>
+            ))}
           </section>
 
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-emerald-500/30 bg-black">
-            <header className="flex items-center justify-between border-b border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] font-mono text-emerald-200">
+          <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-2 xl:row-span-1">
+            <header className="flex items-center justify-between border-b border-[#30363d] px-3 py-1.5 text-[11px] font-mono text-[#00ffff]">
               <span>ENRICH / SCORE</span>
               <div className="inline-flex items-center gap-2">
                 <span>{state.toUpperCase()}</span>
                 <button
                   type="button"
                   onClick={() => void copyLaneLogs("enrichment")}
-                  className="inline-flex h-6 items-center gap-1 rounded border border-emerald-400/30 bg-emerald-500/10 px-2 text-[10px] hover:bg-emerald-500/20"
+                  className="ide-btn inline-flex h-6 items-center gap-1 px-2 text-[10px]"
                 >
                   {copiedLane === "enrichment" ? <Check size={11} /> : <Copy size={11} />}
                   Copy
                 </button>
               </div>
             </header>
-            <div ref={enrichmentRef} className="min-h-0 flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-emerald-100/90">
+            <div ref={enrichmentRef} className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-xs leading-5 text-[#00ff00]">
               {enrichmentLogs.map((log, index) => (
                 <div key={`e-${index}`} className="whitespace-pre-wrap break-words">
-                  <span className="text-emerald-500/70">[{log.time}]</span> {log.message}
+                  <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
+                  {log.proxyBefore && log.proxyAfter && (
+                    <div className="text-[11px] text-[#00ffff]">
+                      proxy rotated: {log.proxyBefore} → {log.proxyAfter}
+                    </div>
+                  )}
                 </div>
               ))}
-              {enrichmentLogs.length === 0 && <div className="text-emerald-300/60">Waiting for enrichment lane...</div>}
+              {enrichmentLogs.length === 0 && <div className="text-[#8b949e]">Waiting for enrichment lane...</div>}
             </div>
           </section>
 
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/20">
-            <header className="border-b border-white/10 bg-white/5 px-3 py-2 text-[11px] font-mono text-vercel-muted">MILESTONES</header>
+          <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-1 xl:row-span-1">
+            <header className="border-b border-[#30363d] bg-[#161b22] px-3 py-2 text-[11px] font-mono text-[#8b949e]">MILESTONES</header>
             <div ref={eventRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 font-mono text-[11px] leading-5">
               {latestReport !== null && (
                 <div className="mb-3 font-sans">
@@ -248,8 +306,8 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
                 </div>
               )}
               {sortedEvents.map((event, index) => (
-                <div key={event.id || `event-${index}`} className="rounded-md border border-white/10 bg-black/35 p-2">
-                  <p className="text-[10px] uppercase text-cyan-300/70">{event.status || "event"}</p>
+                <div key={event.id || `event-${index}`} className="border border-[#30363d] bg-black p-2">
+                  <p className="text-[10px] uppercase text-[#00ffff]">{event.status || "event"}</p>
                   <p className="whitespace-pre-wrap text-vercel-text">{event.message || ""}</p>
                 </div>
               ))}

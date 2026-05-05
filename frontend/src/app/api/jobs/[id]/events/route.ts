@@ -47,13 +47,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
   };
 
   const mappedStatus = statusMap[status] ?? "running";
-  const { error: updateError } = await supabase
+  let updateQuery = supabase
     .from("lead_jobs")
     .update({
       status: mappedStatus,
       error_message: mappedStatus === "failed" ? message : null
     })
     .eq("id", id);
+  if (mappedStatus === "failed") {
+    updateQuery = updateQuery.neq("status", "delivered");
+  }
+  const { error: updateError } = await updateQuery;
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }

@@ -1,9 +1,11 @@
 import asyncio
 import argparse
 import json
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 
@@ -44,6 +46,16 @@ def normalize_region(region):
     return region
 
 
+def parse_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def apply_job_config(args, config):
     """Map SaaS job JSON into the existing CLI argument shape."""
     targeting = config.get("targeting", {})
@@ -71,9 +83,17 @@ def apply_job_config(args, config):
         "status_output": "status_output",
         "job_id": "job_id",
     }
+    bool_keys = {
+        "test_mode",
+        "hunt_first_a_plus",
+        "allow_no_email",
+        "allow_weak_buyer_evidence",
+        "fill_until_complete",
+    }
     for key, attribute in flat_mappings.items():
         if key in config and config[key] is not None:
-            setattr(args, attribute, config[key])
+            value = parse_bool(config[key]) if key in bool_keys else config[key]
+            setattr(args, attribute, value)
 
     if targeting.get("region"):
         args.region = normalize_region(targeting["region"])
@@ -92,6 +112,8 @@ def apply_job_config(args, config):
         args.min_score = int(lead_pack["min_score"])
     if lead_pack.get("max_analyzed") is not None:
         args.max_analyzed = int(lead_pack["max_analyzed"])
+    if lead_pack.get("fill_until_complete") is not None:
+        args.fill_until_complete = parse_bool(lead_pack["fill_until_complete"])
     if lead_pack.get("mode") == "a_plus":
         args.hunt_first_a_plus = True
         args.a_plus_score = max(args.a_plus_score, 85)
@@ -108,13 +130,22 @@ def apply_job_config(args, config):
         args.audit_output = str(Path(delivery["output_dir"]) / f"{args.job_id}_audit.csv")
 
     if quality.get("allow_no_email") is not None:
-        args.allow_no_email = bool(quality["allow_no_email"])
+        args.allow_no_email = parse_bool(quality["allow_no_email"])
     if quality.get("allow_weak_buyer_evidence") is not None:
-        args.allow_weak_buyer_evidence = bool(quality["allow_weak_buyer_evidence"])
+        args.allow_weak_buyer_evidence = parse_bool(quality["allow_weak_buyer_evidence"])
     if quality.get("a_plus_score") is not None:
         args.a_plus_score = int(quality["a_plus_score"])
     if config.get("scoring_context") is not None:
         args.scoring_context = config["scoring_context"]
+    network = config.get("network", {}) if isinstance(config.get("network"), dict) else {}
+    if config.get("proxy_pool") is not None:
+        args.proxy_pool = list(config.get("proxy_pool") or [])
+    if config.get("proxy_file") is not None:
+        args.proxy_file = config.get("proxy_file")
+    if network.get("proxy_pool") is not None:
+        args.proxy_pool = list(network.get("proxy_pool") or [])
+    if network.get("proxy_file") is not None:
+        args.proxy_file = network.get("proxy_file")
 
     return args
 
@@ -138,6 +169,330 @@ def relaxed_score_thresholds(min_score):
     return [threshold for index, threshold in enumerate(thresholds) if threshold not in thresholds[:index]]
 
 
+def merge_search_terms(primary_terms, secondary_terms):
+    merged = []
+    for values in (primary_terms or [], secondary_terms or []):
+        for value in values:
+            text = str(value or "").strip()
+            if text and text not in merged:
+                merged.append(text)
+    return merged
+
+
+def merge_scoring_context(base_context, override_context):
+    merged = {}
+    for key in ("product_keywords", "buyer_keywords", "negative_keywords"):
+        merged_values = []
+        for context in (base_context or {}, override_context or {}):
+            for value in context.get(key, []) if isinstance(context, dict) else []:
+                text = str(value or "").strip()
+                if text and text not in merged_values:
+                    merged_values.append(text)
+        if merged_values:
+            merged[key] = merged_values
+    return merged or None
+
+
+def _parse_proxy_entry(proxy_value):
+    text = str(proxy_value or "").strip()
+    if not text:
+        return None
+    parsed = urlsplit(text)
+    if not parsed.scheme or not parsed.hostname:
+        return None
+    server = f"{parsed.scheme}://{parsed.hostname}"
+    if parsed.port:
+        server = f"{server}:{parsed.port}"
+    payload = {"server": server}
+    if parsed.username:
+        payload["username"] = parsed.username
+    if parsed.password:
+        payload["password"] = parsed.password
+    return payload
+
+
+def resolve_proxy_pool(proxy_pool=None, proxy_file=None):
+    values = []
+    for entry in proxy_pool or []:
+        text = str(entry or "").strip()
+        if text and text not in values:
+            values.append(text)
+    if proxy_file:
+        file_path = Path(proxy_file)
+        if file_path.exists():
+            for line in file_path.read_text(encoding="utf-8").splitlines():
+                line_text = line.strip()
+                if not line_text or line_text.startswith("#"):
+                    continue
+                if line_text not in values:
+                    values.append(line_text)
+    env_value = str(os.environ.get("EXPORTFLOW_PROXY_POOL", "")).strip()
+    if env_value:
+        for raw in env_value.split(","):
+            item = raw.strip()
+            if item and item not in values:
+                values.append(item)
+    parsed = []
+    for value in values:
+        parsed_proxy = _parse_proxy_entry(value)
+        if parsed_proxy:
+            parsed.append({"raw": value, "playwright": parsed_proxy})
+    return parsed
+
+
+async def healthcheck_proxy_pool(proxy_pool, status_output=None, job_id=None):
+    if not proxy_pool:
+        return []
+
+    try:
+        import aiohttp
+    except ModuleNotFoundError:
+        # Proxy checks are optional; if aiohttp is missing, keep original pool.
+        return list(proxy_pool)
+
+    check_url = str(os.environ.get("EXPORTFLOW_PROXY_HEALTHCHECK_URL", "https://ip.oxylabs.io/location")).strip()
+    timeout_seconds = float(os.environ.get("EXPORTFLOW_PROXY_HEALTHCHECK_TIMEOUT_SECONDS", "12"))
+    min_healthy = int(os.environ.get("EXPORTFLOW_PROXY_MIN_HEALTHY", "1"))
+    timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+    connector = aiohttp.TCPConnector(ssl=False, ttl_dns_cache=120)
+
+    emit_progress(
+        "planning",
+        "Running proxy health checks.",
+        status_output=status_output,
+        job_id=job_id,
+        source="system",
+        proxy_check_url=check_url,
+        proxy_count=len(proxy_pool),
+        min_healthy=min_healthy,
+    )
+
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+        async def check_one(index, proxy_entry):
+            proxy_raw = proxy_entry.get("raw", "")
+            try:
+                async with session.get(check_url, proxy=proxy_raw, allow_redirects=True) as response:
+                    ok = 200 <= int(response.status) < 400
+                    return index, proxy_entry, ok, int(response.status), ""
+            except Exception as exc:
+                return index, proxy_entry, False, 0, str(exc)
+
+        tasks = [asyncio.create_task(check_one(index, proxy_entry)) for index, proxy_entry in enumerate(proxy_pool, start=1)]
+        results = await asyncio.gather(*tasks)
+
+    healthy = []
+    for index, proxy_entry, ok, status_code, error in results:
+        if ok:
+            healthy.append(proxy_entry)
+            emit_progress(
+                "planning",
+                "Proxy passed health check.",
+                status_output=status_output,
+                job_id=job_id,
+                source="system",
+                proxy_index=index,
+                proxy=proxy_entry.get("raw", ""),
+                proxy_status=status_code,
+            )
+        else:
+            emit_progress(
+                "planning",
+                "Proxy failed health check.",
+                status_output=status_output,
+                job_id=job_id,
+                source="system",
+                proxy_index=index,
+                proxy=proxy_entry.get("raw", ""),
+                proxy_status=status_code,
+                error=error,
+            )
+
+    emit_progress(
+        "planning",
+        "Proxy health checks completed.",
+        status_output=status_output,
+        job_id=job_id,
+        source="system",
+        proxy_healthy_count=len(healthy),
+        proxy_total_count=len(proxy_pool),
+    )
+    if len(healthy) < min_healthy:
+        raise RuntimeError(
+            f"Proxy health check failed: {len(healthy)}/{len(proxy_pool)} healthy proxies "
+            f"(minimum required: {min_healthy})."
+        )
+    return healthy
+
+
+class RotatingDiscoveryBrowser:
+    def __init__(self, playwright, user_agent, proxy_pool=None, start_index=0):
+        self.playwright = playwright
+        self.user_agent = user_agent
+        self.proxy_pool = list(proxy_pool or [])
+        self.proxy_index = max(0, int(start_index or 0))
+        self.browser = None
+        self.context = None
+        self.page = None
+        self.active_proxy_raw = ""
+
+    async def start(self):
+        await self._launch()
+
+    async def _launch(self):
+        launch_kwargs = {"headless": True}
+        proxy = None
+        if self.proxy_pool:
+            proxy = self.proxy_pool[self.proxy_index % len(self.proxy_pool)]
+            launch_kwargs["proxy"] = proxy["playwright"]
+        self.active_proxy_raw = proxy["raw"] if proxy else ""
+        self.browser = await self.playwright.chromium.launch(**launch_kwargs)
+        self.context = await self.browser.new_context(user_agent=self.user_agent)
+        self.page = await self.context.new_page()
+        if proxy:
+            print(f"Discovery proxy active: {proxy['raw']}")
+
+    async def rotate(self, reason=""):
+        if not self.proxy_pool:
+            return False
+        if len(self.proxy_pool) > 1:
+            self.proxy_index = (self.proxy_index + 1) % len(self.proxy_pool)
+        try:
+            if self.context:
+                await self.context.close()
+        except Exception:
+            pass
+        try:
+            if self.browser:
+                await self.browser.close()
+        except Exception:
+            pass
+        self.context = None
+        self.browser = None
+        self.page = None
+        await self._launch()
+        if reason:
+            print(f"Rotated discovery proxy due to: {reason}")
+        return True
+
+    def active_proxy(self):
+        return self.active_proxy_raw
+
+    async def close(self):
+        try:
+            if self.context:
+                await self.context.close()
+        except Exception:
+            pass
+        try:
+            if self.browser:
+                await self.browser.close()
+        except Exception:
+            pass
+
+    async def goto(self, *args, **kwargs):
+        return await self.page.goto(*args, **kwargs)
+
+    async def query_selector_all(self, *args, **kwargs):
+        return await self.page.query_selector_all(*args, **kwargs)
+
+    async def query_selector(self, *args, **kwargs):
+        return await self.page.query_selector(*args, **kwargs)
+
+    async def wait_for_timeout(self, *args, **kwargs):
+        return await self.page.wait_for_timeout(*args, **kwargs)
+
+    async def title(self, *args, **kwargs):
+        return await self.page.title(*args, **kwargs)
+
+
+def _normalize_domain_value(value):
+    domain = str(value or "").strip().lower()
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain
+
+
+def partition_discovery_sources(sources):
+    groups = {
+        "main": [],
+        "bing": [],
+        "duckduckgo": [],
+        "yahoo": [],
+    }
+    for source in sources:
+        engine = (getattr(source, "search_engine", "") or "").strip().lower()
+        if engine in {"bing", "duckduckgo", "yahoo"}:
+            groups[engine].append(source)
+        else:
+            groups["main"].append(source)
+    return {key: value for key, value in groups.items() if value}
+
+
+def _recent_domains_file(output_path):
+    output_file = Path(output_path or "buyer_leads.csv")
+    parent = output_file.parent if str(output_file.parent) else Path(".")
+    return parent / "recent_delivered_domains.json"
+
+
+def load_recent_domains(file_path, max_items=500):
+    path = Path(file_path)
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    cleaned = []
+    for item in payload:
+        domain = _normalize_domain_value(item)
+        if domain and domain not in cleaned:
+            cleaned.append(domain)
+    return cleaned[:max_items]
+
+
+def save_recent_domains(file_path, existing_domains, new_domains, max_items=500):
+    seen = []
+    for domain in new_domains + existing_domains:
+        normalized = _normalize_domain_value(domain)
+        if normalized and normalized not in seen:
+            seen.append(normalized)
+    final_domains = seen[:max_items]
+    path = Path(file_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(final_domains, ensure_ascii=True, indent=2), encoding="utf-8")
+    return final_domains
+
+
+def apply_recent_dedupe(scoring, scored_candidates, min_score, limit, recent_domains):
+    if not scored_candidates or not recent_domains:
+        ranked = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
+        return ranked, 0
+
+    ranked_candidates = scoring.rank_and_filter(
+        scored_candidates,
+        limit=max(limit * 6, len(scored_candidates)),
+        min_score=min_score,
+    )
+    recent_set = {_normalize_domain_value(domain) for domain in recent_domains}
+    filtered = []
+    dropped = 0
+    seen = set()
+    for candidate in ranked_candidates:
+        domain = _normalize_domain_value(candidate.get("domain", ""))
+        if not domain or domain in seen:
+            continue
+        seen.add(domain)
+        if domain in recent_set:
+            dropped += 1
+            continue
+        filtered.append(candidate)
+        if len(filtered) >= limit:
+            break
+    return filtered, dropped
+
+
 async def run_scraper(
     region,
     industry,
@@ -155,6 +510,8 @@ async def run_scraper(
     max_analyzed=None,
     search_terms=None,
     scoring_context=None,
+    proxy_pool=None,
+    proxy_file=None,
 ):
     region = normalize_region(region)
     print(
@@ -184,6 +541,7 @@ async def run_scraper(
     from modules.enrichment import LeadEnrichment
     from modules.export import LeadExport
     from modules.scoring import LeadScoring
+    from modules.signal_map import build_signal_map
 
     try:
         import aiohttp
@@ -204,11 +562,34 @@ async def run_scraper(
     enriched_candidates = []
     scored_candidates = []
     top_leads = []
+    seen_enriched_domains = set()
+
+    signal_map = build_signal_map(region=region, industry=industry, search_terms=search_terms)
+    merged_search_terms = merge_search_terms(signal_map.get("routed_search_terms", []), search_terms or [])
+    merged_scoring_context = merge_scoring_context(signal_map.get("scoring_context"), scoring_context)
+    resolved_proxies = resolve_proxy_pool(proxy_pool=proxy_pool, proxy_file=proxy_file)
+    if resolved_proxies:
+        resolved_proxies = await healthcheck_proxy_pool(
+            resolved_proxies,
+            status_output=status_output,
+            job_id=job_id,
+        )
+    emit_progress(
+        "planning",
+        "Signal map generated for discovery routing.",
+        status_output=status_output,
+        job_id=job_id,
+        source="system",
+        signal_cluster=signal_map.get("cluster", ""),
+        signal_count=len(signal_map.get("signals", [])),
+        routed_search_terms=len(merged_search_terms),
+        proxy_count=len(resolved_proxies),
+    )
 
     scoring = LeadScoring(
         require_email=not allow_no_email,
         require_buyer_evidence=not allow_weak_buyer_evidence,
-        scoring_context=scoring_context,
+        scoring_context=merged_scoring_context,
     )
 
     worker_count = 2 if test_mode else 4
@@ -216,23 +597,46 @@ async def run_scraper(
     stop_event = asyncio.Event()
     state_lock = asyncio.Lock()
 
-    async def discovery_producer(discovery, page, chunk_size):
+    async def discovery_producer(
+        producer_name,
+        discovery,
+        page,
+        chunk_size,
+        sources,
+        on_engine_blocked=None,
+    ):
         batch_index = 0
         discovered_count = 0
         try:
             emit_progress(
                 "discovering",
-                "Discovery started.",
+                f"Discovery lane started: {producer_name}.",
                 status_output=status_output,
                 job_id=job_id,
                 source="discovery",
+                engine=producer_name,
                 queue_maxsize=candidate_queue.maxsize,
+                source_count=len(sources),
             )
+            async def on_discovery_event(payload):
+                emit_progress(
+                    "discovering",
+                    str(payload.get("event", "discovery_event")),
+                    status_output=status_output,
+                    job_id=job_id,
+                    source="discovery",
+                    lane=producer_name,
+                    **payload,
+                )
+
             async for candidate_batch in discovery.run_discovery(
                 page,
                 region=region,
                 industry=industry,
                 chunk_size=chunk_size,
+                on_engine_blocked=on_engine_blocked,
+                on_discovery_event=on_discovery_event,
+                sources=sources,
             ):
                 if stop_event.is_set():
                     break
@@ -247,6 +651,7 @@ async def run_scraper(
                     status_output=status_output,
                     job_id=job_id,
                     source="discovery",
+                    engine=producer_name,
                     batch_index=batch_index,
                     batch_size=len(candidate_batch),
                     discovered_count=discovered_count,
@@ -259,14 +664,13 @@ async def run_scraper(
                 if stop_event.is_set():
                     break
         finally:
-            for _ in range(worker_count):
-                await candidate_queue.put(None)
             emit_progress(
                 "discovered",
-                "Discovery stream completed.",
+                f"Discovery lane completed: {producer_name}.",
                 status_output=status_output,
                 job_id=job_id,
                 source="discovery",
+                engine=producer_name,
                 discovered_count=discovered_count,
             )
 
@@ -305,6 +709,29 @@ async def run_scraper(
                     worker_id=worker_id,
                     domain=domain,
                     error=str(exc),
+                )
+                candidate_queue.task_done()
+                continue
+
+            candidate_domain = (enriched.get("domain") or "").strip().lower()
+            if candidate_domain.startswith("www."):
+                candidate_domain = candidate_domain[4:]
+            duplicate_domain = False
+            if candidate_domain:
+                async with state_lock:
+                    if candidate_domain in seen_enriched_domains:
+                        duplicate_domain = True
+                    else:
+                        seen_enriched_domains.add(candidate_domain)
+            if duplicate_domain:
+                emit_progress(
+                    "enriching",
+                    "Duplicate domain skipped after enrichment.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    source="enrichment",
+                    worker_id=worker_id,
+                    domain=candidate_domain,
                 )
                 candidate_queue.task_done()
                 continue
@@ -353,20 +780,64 @@ async def run_scraper(
             candidate_queue.task_done()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        user_agent = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
-        page = await context.new_page()
+        enrichment_browser = await p.chromium.launch(headless=True)
+        enrichment_context = await enrichment_browser.new_context(user_agent=user_agent)
+        discovery_template = LeadDiscovery(
+            limit=discovery_limit,
+            search_terms=merged_search_terms,
+            signal_map=signal_map,
+        )
+        source_groups = partition_discovery_sources(discovery_template.generate_sources(region, industry))
+        active_discovery_groups = list(source_groups.items())
+        if not active_discovery_groups:
+            active_discovery_groups = [("main", [])]
+        lane_limit = max(limit, discovery_limit // max(1, len(active_discovery_groups)))
 
-        discovery = LeadDiscovery(limit=discovery_limit, search_terms=search_terms)
+        discovery_browsers = {}
+        for lane_index, (lane_name, _) in enumerate(active_discovery_groups):
+            lane_proxies = resolved_proxies
+            if lane_name == "main":
+                lane_proxies = []
+            lane_browser = RotatingDiscoveryBrowser(
+                playwright=p,
+                user_agent=user_agent,
+                proxy_pool=lane_proxies,
+                start_index=lane_index,
+            )
+            await lane_browser.start()
+            discovery_browsers[lane_name] = lane_browser
+            emit_progress(
+                "discovering",
+                "Discovery lane browser started.",
+                status_output=status_output,
+                job_id=job_id,
+                source="discovery",
+                lane=lane_name,
+                proxy_active=lane_browser.active_proxy(),
+                proxy_pool_size=len(lane_browser.proxy_pool),
+            )
+
+        emit_progress(
+            "planning",
+            "Discovery lanes initialized.",
+            status_output=status_output,
+            job_id=job_id,
+            source="discovery",
+            lane_count=len(active_discovery_groups),
+            lanes=[lane for lane, _ in active_discovery_groups],
+        )
+
         enrichment = LeadEnrichment(
             concurrency=worker_count,
             max_extra_pages=12,
-            browser_context=context,
+            browser_context=enrichment_context,
             browser_fallback_concurrency=max(1, worker_count // 2),
         )
-        batch_size = 60 if test_mode else max(80, min(160, limit * 12))
+        batch_size = 8 if test_mode else max(12, min(40, limit * 2))
 
         connector = aiohttp.TCPConnector(limit_per_host=max(2, worker_count), ttl_dns_cache=300)
         timeout = aiohttp.ClientTimeout(total=enrichment.request_timeout)
@@ -379,24 +850,79 @@ async def run_scraper(
         }
 
         async with aiohttp.ClientSession(connector=connector, timeout=timeout, headers=headers) as session:
-            producer_task = asyncio.create_task(discovery_producer(discovery, page, batch_size))
+            async def rotate_proxy_on_block(lane_name, engine, source_url, reason):
+                lane_browser = discovery_browsers.get(lane_name)
+                if not lane_browser:
+                    return False
+                if not lane_browser.proxy_pool or len(lane_browser.proxy_pool) <= 1:
+                    return False
+                from_proxy = lane_browser.active_proxy()
+                rotated = await lane_browser.rotate(reason=f"{engine} block on {source_url}")
+                to_proxy = lane_browser.active_proxy()
+                emit_progress(
+                    "discovering",
+                    "Rotating discovery proxy after throttle/block signal.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    source="discovery",
+                    lane=lane_name,
+                    engine=engine,
+                    source_url=source_url,
+                    reason=reason,
+                    proxy_before=from_proxy,
+                    proxy_after=to_proxy,
+                )
+                return rotated
+
+            producer_tasks = []
+            for lane_name, lane_sources in active_discovery_groups:
+                lane_browser = discovery_browsers[lane_name]
+                lane_discovery = LeadDiscovery(
+                    limit=lane_limit,
+                    search_terms=merged_search_terms,
+                    signal_map=signal_map,
+                )
+                async def lane_rotate(engine, source_url, reason, lane_name=lane_name):
+                    return await rotate_proxy_on_block(lane_name, engine, source_url, reason)
+
+                producer_tasks.append(
+                    asyncio.create_task(
+                        discovery_producer(
+                            lane_name,
+                            lane_discovery,
+                            lane_browser,
+                            batch_size,
+                            lane_sources,
+                            on_engine_blocked=lane_rotate,
+                        )
+                    )
+                )
             worker_tasks = [
                 asyncio.create_task(enrichment_worker(enrichment, session, worker_id=index + 1))
                 for index in range(worker_count)
             ]
 
             try:
-                await producer_task
+                await asyncio.gather(*producer_tasks)
+                for _ in range(worker_count):
+                    await candidate_queue.put(None)
                 await candidate_queue.join()
                 await asyncio.gather(*worker_tasks)
             finally:
                 stop_event.set()
+                for producer_task in producer_tasks:
+                    if not producer_task.done():
+                        producer_task.cancel()
+                await asyncio.gather(*producer_tasks, return_exceptions=True)
                 for worker_task in worker_tasks:
                     if not worker_task.done():
                         worker_task.cancel()
                 await asyncio.gather(*worker_tasks, return_exceptions=True)
 
-        await browser.close()
+        await enrichment_context.close()
+        await enrichment_browser.close()
+        for lane_name, lane_browser in discovery_browsers.items():
+            await lane_browser.close()
 
     if fill_until_complete and len(top_leads) < limit and scored_candidates:
         for threshold in relaxed_score_thresholds(min_score)[1:]:
@@ -450,6 +976,28 @@ async def run_scraper(
         f"Quality filter: {len(top_leads)}/{limit} qualified leads from {len(scored_candidates)} enriched candidates"
     )
 
+    recent_domains_path = _recent_domains_file(output)
+    recent_domains = load_recent_domains(recent_domains_path, max_items=500)
+    top_leads, dropped_as_repeats = apply_recent_dedupe(
+        scoring=scoring,
+        scored_candidates=scored_candidates,
+        min_score=effective_min_score,
+        limit=limit,
+        recent_domains=recent_domains,
+    )
+    if dropped_as_repeats:
+        emit_progress(
+            "scoring",
+            "Suppressed recently delivered domains from this batch.",
+            status_output=status_output,
+            job_id=job_id,
+            source="scoring",
+            dropped_repeat_domains=dropped_as_repeats,
+            recent_memory_size=len(recent_domains),
+            qualified_count=len(top_leads),
+            target_count=limit,
+        )
+
     emit_progress(
         "exporting",
         "Writing customer exports.",
@@ -481,6 +1029,14 @@ async def run_scraper(
             output_format=output_format,
         )
     filled_pack = len(top_leads) >= limit
+    delivered_domains = [_normalize_domain_value(lead.get("domain", "")) for lead in top_leads if lead.get("domain")]
+    if delivered_domains:
+        save_recent_domains(
+            recent_domains_path,
+            recent_domains,
+            delivered_domains,
+            max_items=500,
+        )
     if not filled_pack:
         message = "Could not fill the paid lead pack before the candidate hard cap."
         if fill_until_complete:
@@ -547,6 +1103,8 @@ async def run_hunt_first_a_plus(
     a_plus_score,
     status_output=None,
     job_id=None,
+    proxy_pool=None,
+    proxy_file=None,
 ):
     print(
         f"Starting A+ hunt | Region: {region} | Industry: {industry} | Hard stop: {max_analyzed} analyzed candidates"
@@ -584,12 +1142,27 @@ async def run_hunt_first_a_plus(
     analyzed_domains = set()
     found_lead = None
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    resolved_proxies = resolve_proxy_pool(proxy_pool=proxy_pool, proxy_file=proxy_file)
+    if resolved_proxies:
+        resolved_proxies = await healthcheck_proxy_pool(
+            resolved_proxies,
+            status_output=status_output,
+            job_id=job_id,
         )
-        page = await context.new_page()
+    async with async_playwright() as p:
+        user_agent = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        )
+        discovery_browser = RotatingDiscoveryBrowser(
+            playwright=p,
+            user_agent=user_agent,
+            proxy_pool=resolved_proxies,
+        )
+        await discovery_browser.start()
+        enrichment_browser = await p.chromium.launch(headless=True)
+        context = await enrichment_browser.new_context(user_agent=user_agent)
+        page = discovery_browser
         enrichment = LeadEnrichment(
             concurrency=1,
             max_extra_pages=12,
@@ -679,9 +1252,15 @@ async def run_hunt_first_a_plus(
             try:
                 await page.goto(source.url, timeout=30000, wait_until="domcontentloaded")
                 await page.wait_for_timeout(1000)
+                if await discovery._looks_like_block_page(page):
+                    if resolved_proxies and len(resolved_proxies) > 1:
+                        await discovery_browser.rotate(reason=f"hunt block on {source.url}")
+                    continue
                 links = await discovery._extract_links_from_source(page, source)
             except Exception as exc:
                 print(f"Hunt source failed: {source.url} | {exc}")
+                if discovery._is_throttle_or_block_error(str(exc)) and resolved_proxies and len(resolved_proxies) > 1:
+                    await discovery_browser.rotate(reason=f"hunt error on {source.url}")
                 continue
 
             found_in_source = 0
@@ -701,7 +1280,9 @@ async def run_hunt_first_a_plus(
                 f"Hunt source complete: {found_in_source} analyzed candidates from {source.name}; total analyzed={len(analyzed_candidates)}"
             )
 
-        await browser.close()
+        await context.close()
+        await enrichment_browser.close()
+        await discovery_browser.close()
 
     total_elapsed = round(time.perf_counter() - start_time, 2)
     if found_lead:
@@ -815,6 +1396,18 @@ if __name__ == "__main__":
         action="store_true",
         help="Allow leads that have product fit but weak buyer/importer/procurement evidence",
     )
+    parser.add_argument(
+        "--proxy",
+        action="append",
+        dest="proxy_pool",
+        default=[],
+        help="Proxy URL for discovery rotation (repeat flag for multiple proxies).",
+    )
+    parser.add_argument(
+        "--proxy-file",
+        default=None,
+        help="Optional file containing one proxy URL per line for discovery rotation.",
+    )
     parser.set_defaults(scoring_context=None)
     
     args = parser.parse_args()
@@ -833,6 +1426,8 @@ if __name__ == "__main__":
                 a_plus_score=args.a_plus_score,
                 status_output=args.status_output,
                 job_id=args.job_id,
+                proxy_pool=args.proxy_pool,
+                proxy_file=args.proxy_file,
             ))
         else:
             asyncio.run(run_scraper(
@@ -852,6 +1447,8 @@ if __name__ == "__main__":
                 max_analyzed=args.max_analyzed,
                 search_terms=args.search_terms,
                 scoring_context=args.scoring_context,
+                proxy_pool=args.proxy_pool,
+                proxy_file=args.proxy_file,
             ))
     except Exception as exc:
         emit_progress(

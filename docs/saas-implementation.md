@@ -1,81 +1,80 @@
-# ExportFlow SaaS Implementation Notes
+# ExportFlow SaaS Implementation
 
-## Runtime Shape
+## Components
 
-- **Frontend**: `frontend/` Next.js app deployed on Vercel.
-- **Database and files**: Supabase Auth, Postgres, and Storage.
-- **Automation**: n8n receives approved jobs, calls the VPS worker API, and can send customer emails after delivery.
-- **Worker**: `worker_api.py` runs `python "final scrapper.py" --job-config <path> --status-output <path>`, forwards scraper progress, uploads exports, and registers delivery.
+- Frontend: `frontend/` (Next.js on Vercel)
+- Database and storage: Supabase
+- Automation: n8n webhook flow
+- Worker API: `worker_api.py` on VPS
+- Scraper engine: `scraper/main.py` via `final scrapper.py`
 
-For VPS upload and service restart commands, see `docs/vps-worker-deploy.md`.
+## Required Environment Variables
 
-## Required Environment
-
-Set these in Vercel:
+Frontend server environment (`frontend/.env.local` and Vercel):
 
 ```env
-APP_URL=https://your-vercel-domain.vercel.app
-NEXT_PUBLIC_APP_URL=https://your-vercel-domain.vercel.app
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-GEMINI_API_KEY=
+APP_URL=https://your-app-domain
+NEXT_PUBLIC_APP_URL=https://your-app-domain
+NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+GEMINI_API_KEY=<gemini-key>
 GEMINI_MODEL=gemini-3-flash-preview
 N8N_LEAD_JOB_WEBHOOK_URL=https://your-n8n-domain/webhook/exportflow-lead-job
-N8N_WEBHOOK_SECRET=
-ADMIN_PASSWORD=
-ADMIN_BYPASS_CODE=
+N8N_WEBHOOK_SECRET=<shared-secret>
+ADMIN_PASSWORD=<admin-password>
+ADMIN_BYPASS_CODE=<admin-bypass-code>
 WORKER_OUTPUT_BASE_DIR=exports/worker-runs
-WORKER_API_URL=https://your-worker-domain.example
+WORKER_API_URL=https://your-worker-domain
 ```
 
-Set these on the VPS/n8n host:
+Worker environment (`/srv/exportflow/worker.env` on VPS):
 
 ```env
-WORKER_API_SECRET=
-N8N_WEBHOOK_SECRET=
-SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
+WORKER_PORT=8787
+WORKER_API_SECRET=<shared-secret>
+N8N_WEBHOOK_SECRET=<shared-secret>
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 SUPABASE_EXPORT_BUCKET=lead-exports
+EXPORTFLOW_PROXY_POOL=http://user:pass@host:port,http://user:pass@host2:port
+EXPORTFLOW_PROXY_HEALTHCHECK_URL=https://ip.oxylabs.io/location
+EXPORTFLOW_PROXY_HEALTHCHECK_TIMEOUT_SECONDS=12
+EXPORTFLOW_PROXY_MIN_HEALTHY=1
 ```
 
-## Supabase Setup
+Critical key rule:
 
-1. Create a Supabase project.
-2. Run `supabase/schema.sql` in the SQL editor.
-3. Enable email/password auth in Supabase Auth. Email OTP can stay enabled as a fallback.
-4. Keep `payment-proofs` and `lead-exports` private.
-5. Use the service role key only in Vercel server-side API routes and the private worker/n8n host.
+- `SUPABASE_SERVICE_ROLE_KEY` must be a JWT with `role=service_role`.
+- Do not use an anon key in this variable, or export upload/registration will fail.
 
-## n8n Lead Job Workflow
+## Job Execution Contract
 
-Webhook input from the frontend:
+Worker endpoint:
+
+```text
+POST /run-job
+Header: x-exportflow-secret: <shared-secret>
+```
+
+Expected payload:
 
 ```json
 {
   "job_id": "uuid",
-  "customer_email": "buyer@example.com",
   "status_callback": "https://app/api/jobs/uuid/events",
   "export_callback": "https://app/api/jobs/uuid/exports",
   "job_config": {
     "job_id": "uuid",
     "targeting": {
       "region": "USA",
-      "industry": "socks hosiery buyers",
-      "refined_industry": "socks hosiery importers wholesalers private label buyers",
-      "search_terms": ["socks importer wholesaler USA contact"]
+      "industry": "Architecture, Engineering, and Construction"
     },
     "lead_pack": {
       "limit": 10,
-      "max_analyzed": 3000,
       "min_score": 75,
-      "fill_until_complete": true,
-      "mode": "verified"
-    },
-    "quality": {
-      "allow_no_email": false,
-      "allow_weak_buyer_evidence": false,
-      "a_plus_score": 85
+      "max_analyzed": 3000,
+      "fill_until_complete": true
     },
     "delivery": {
       "format": "all",
@@ -85,84 +84,22 @@ Webhook input from the frontend:
 }
 ```
 
-Recommended n8n nodes:
+## Status Flow
 
-1. Webhook: `POST /webhook/exportflow-lead-job`, validate `x-exportflow-secret`.
-2. HTTP Request: call the VPS worker API.
-3. Optional email node: notify the customer when the app marks the job `delivered`.
-
-If your n8n has no **Execute Command** node, run the worker API on the VPS:
-
-```bash
-cd /srv/exportflow
-export WORKER_API_SECRET="same-value-as-N8N_WEBHOOK_SECRET"
-export WORKER_PORT=8787
-python worker_api.py
-```
-
-Then configure the n8n **HTTP Request** node:
+Normal successful flow:
 
 ```text
-Method: POST
-URL: http://127.0.0.1:8787/run-job
-Send Headers: true
-Header name: x-exportflow-secret
-Header value: same-value-as-N8N_WEBHOOK_SECRET
-Send Body: true
-Body Content Type: JSON
-Body:
-{
-  "job_id": "{{ $json.body.job_id }}",
-  "status_callback": "{{ $json.body.status_callback }}",
-  "export_callback": "{{ $json.body.export_callback }}",
-  "job_config": {{ JSON.stringify($json.body.job_config) }}
-}
+queued -> running -> exporting -> delivered
 ```
 
-The worker writes logs, events, and default export files under:
+If scraper succeeds but upload fails:
 
 ```text
-exports/worker-runs/<job_id>/
+running -> exporting -> failed (delivery failed)
 ```
 
-It returns immediately with `202`, then the scraper keeps running in the background. While the job runs, the worker reads `events.jsonl` and posts progress events to `status_callback`. After the scraper finishes, the worker uploads generated `.xlsx`, `.csv`, and `.json` files to Supabase Storage bucket `lead-exports`, then POSTs registered files to `export_callback`:
+## Live Logs
 
-   ```json
-   {
-     "exports": [
-       {
-         "format": "xlsx",
-         "storage_path": "uuid/uuid_leads.xlsx",
-         "public_url": "signed-or-public-download-url",
-         "row_count": 10
-       }
-     ]
-   }
-   ```
-Finally, send the customer email when exports are registered.
+- Frontend streams via: `GET /api/jobs/<job_id>/logs`
+- Worker logs and events live under: `exports/worker-runs/<job_id>/`
 
-If `export_callback` is not supplied, the worker registers exports directly through Supabase REST using `SUPABASE_SERVICE_ROLE_KEY`.
-
-## Worker Contract
-
-The scraper now accepts:
-
-```bash
-python "final scrapper.py" --job-config scraper/job_config.example.json --status-output exports/demo/events.jsonl
-```
-
-Output events are emitted to stdout as:
-
-```text
-SCRAPER_EVENT {"status":"discovering","message":"Discovering candidate buyer websites.","job_id":"demo-job-001"}
-```
-
-The same JSON is appended to `--status-output` when provided.
-
-## Launch Guardrails
-
-- Keep v1 focused on apparel/textile exporters in Pakistan.
-- Use admin bypass only for demos and internal proof runs.
-- Do not enable automated outreach until lead-pack buyers are converting.
-- Cap self-serve jobs to 60 leads until the 1000-lead batch path is chunked, resumable, and monitored.
-- Treat 1000-lead batches as custom quotes with manual QA.

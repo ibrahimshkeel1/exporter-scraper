@@ -1,6 +1,6 @@
-# ExportFlow Buyer Lead Scraper
+# ExportFlow Lead Generation Engine
 
-Python scraper for discovering and qualifying clothing/apparel buyer leads in `USA`, `UK`, and `Europe`.
+Pipeline for discovering and qualifying international B2B leads across industries (for example architecture, retail, restaurants, industrial, SaaS, and manufacturing).
 
 ## What It Does
 
@@ -50,6 +50,15 @@ python "final scrapper.py" --job-config scraper/job_config.example.json --status
 - `--a-plus-score`: minimum score for A+ hunt success (default: `85`)
 - `--allow-no-email`: allow otherwise qualified leads without candidate-owned emails
 - `--allow-weak-buyer-evidence`: allow product-fit leads with weak buyer/importer/procurement evidence
+- `--proxy`: discovery proxy URL; repeat flag for a proxy pool
+- `--proxy-file`: file with one proxy URL per line
+
+Proxy pool can also be passed by environment variable:
+
+- `EXPORTFLOW_PROXY_POOL=http://user:pass@host:port,http://user:pass@host2:port`
+- `EXPORTFLOW_PROXY_HEALTHCHECK_URL=https://ip.oxylabs.io/location`
+- `EXPORTFLOW_PROXY_HEALTHCHECK_TIMEOUT_SECONDS=12`
+- `EXPORTFLOW_PROXY_MIN_HEALTHY=1`
 
 ## Output Fields
 
@@ -81,7 +90,7 @@ npm run dev
 
 Copy `frontend/.env.example` to `frontend/.env.local`, fill Supabase, Gemini, n8n, admin, and `WORKER_API_URL` values, then run the Supabase schema in `supabase/schema.sql`.
 
-See `docs/saas-implementation.md` for the n8n/VPS handoff and `docs/vps-worker-deploy.md` for upload/restart commands.
+See `docs/README.md` for current project docs, including architecture, SaaS wiring, and VPS runbooks.
 
 The optional VPS worker API lives at `worker_api.py`. It accepts approved jobs from n8n, forwards scraper progress to the app, uploads private exports to Supabase Storage, and registers delivery. Worker exports default to `exports/worker-runs/<job_id>/exports` unless `WORKER_OUTPUT_BASE_DIR` is set in the frontend environment.
 

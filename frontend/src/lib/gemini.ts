@@ -51,8 +51,18 @@ function hasAny(text: string, terms: string[]) {
   return terms.some((term) => text.includes(term));
 }
 
+function hasAudienceSignal(text: string) {
+  return /retail|retailer|restaurant|hospitality|industrial|factory|warehouse|developer|franchise|chain|company|companies|business|firm|client|customer|buyer|lead|prospect/.test(text);
+}
+
+function hasEvidenceSignal(text: string) {
+  return /email|contact form|contact route|contact|niche fit|fit|buying intent|company size|decision maker|website|lead evidence|useful/.test(text);
+}
+
 function extractWebsite(text: string) {
-  return text.match(/https?:\/\/[^\s)]+/i)?.[0]?.replace(/[.,]+$/, "") || "";
+  const explicitUrl = text.match(/https?:\/\/[^\s)]+/i)?.[0];
+  const bareDomain = text.match(/\b(?:www\.)?[a-z0-9-]+\.[a-z]{2,}(?:\/[^\s)]*)?/i)?.[0];
+  return (explicitUrl || bareDomain || "").replace(/[.,]+$/, "");
 }
 
 function inferMarkets(region: string, transcript: string) {
@@ -76,6 +86,7 @@ function inferFallbackBriefParts(input: PreflightInput) {
   const website = extractWebsite(transcript);
   const targetMarkets = inferMarkets(input.region, transcript);
   const isClothingManufacturer = hasAny(lower, ["manufacturer", "manufacturing", "factory", "export"]) && hasAny(lower, ["clothing", "apparel", "denim", "jeans", "garment"]);
+  const isArchitectureBusiness = hasAny(lower, ["architecture", "architect", "architectural", "interior design", "commercial design", "masdesigns", "masdesigns.pk"]);
   const isAgency = hasAny(lower, ["agency", "web design", "marketing", "seo", "software", "development"]);
   const isHealthcare = hasAny(lower, ["clinic", "dentist", "dental", "doctor", "medical"]);
 
@@ -110,6 +121,42 @@ function inferFallbackBriefParts(input: PreflightInput) {
     };
   }
 
+  if (isArchitectureBusiness) {
+    const buyerTypes = unique([
+      hasAny(lower, ["retail", "retailer", "retailers"]) ? "Growing retailers" : "",
+      hasAny(lower, ["restaurant", "restaurants", "hospitality"]) ? "Restaurant and hospitality groups" : "",
+      hasAny(lower, ["industrial", "factory", "warehouse"]) ? "Industrial firms expanding facilities" : "",
+      "Franchise operators",
+      "Commercial property developers"
+    ]);
+    const audience = buyerTypes.slice(0, 3).join(", ").toLowerCase();
+
+    return {
+      transcript,
+      website,
+      businessSummary: `Pakistan-based architecture and commercial design business${website ? ` with website ${website}` : ""}.`,
+      offerSummary: "Architecture, interior design, commercial fit-out, and planning expertise for businesses opening or upgrading physical locations.",
+      idealCustomerProfile: buyerTypes.join(", "),
+      refinedIndustry: `growing retailers restaurants industrial firms needing architecture commercial interior design`,
+      buyerTypes,
+      targetMarkets,
+      excludedMarkets: ["Pakistan-based prospects unless explicitly international-facing"],
+      qualificationSignals: [
+        "retail expansion",
+        "new store",
+        "restaurant opening",
+        "franchise locations",
+        "commercial fit-out",
+        "architecture or design need",
+        "facility expansion",
+        "usable email or contact route",
+        "niche fit"
+      ],
+      disqualificationSignals: ["architecture firms", "design agencies", "job listings", "directories without direct company websites", "suppliers selling to architects"],
+      searchStem: `${audience || "growing retail restaurant industrial companies"} architecture design fit out expansion`
+    };
+  }
+
   if (isAgency || isHealthcare) {
     const offer = isAgency ? "digital services" : "business services";
     const audience = isHealthcare ? "clinics and healthcare businesses" : "companies likely to buy digital services";
@@ -130,7 +177,13 @@ function inferFallbackBriefParts(input: PreflightInput) {
   }
 
   const product = input.productCategory.trim() || transcript.slice(0, 140) || "business services";
-  const buyer = input.buyerType.trim() || "qualified prospects and decision makers";
+  const inferredBuyer = unique([
+    hasAny(lower, ["retail", "retailer", "retailers"]) ? "Retail companies" : "",
+    hasAny(lower, ["restaurant", "restaurants"]) ? "Restaurants" : "",
+    hasAny(lower, ["industrial", "factory", "warehouse"]) ? "Industrial firms" : "",
+    hasAny(lower, ["firm", "firms", "company", "companies", "business", "businesses"]) ? "Relevant companies" : ""
+  ]).join(", ");
+  const buyer = input.buyerType.trim() || inferredBuyer || "qualified prospects and decision makers";
   return {
     transcript,
     website,
@@ -154,13 +207,14 @@ function fallbackPreflight(input: PreflightInput): TargetingPreflight {
   const transcript = brief.transcript.toLowerCase();
   const hasSpecificAudience = brief.buyerTypes.some((buyer) => !/qualified prospects|decision makers|companies with buying intent/i.test(buyer));
   const hasMarketSignal = brief.targetMarkets.some((market) => market !== "International") || /international|global|worldwide/.test(transcript);
-  const hasOfferSignal = brief.offerSummary.length > 30 || hasAny(transcript, ["sell", "offer", "service", "manufacturer", "agency", "brand", "website", "export"]);
-  const needsMoreInfo = brief.transcript.length < 80 || !hasSpecificAudience || !hasMarketSignal || !hasOfferSignal;
+  const hasOfferSignal = brief.offerSummary.length > 30 || hasAny(transcript, ["sell", "offer", "service", "manufacturer", "agency", "brand", "website", "export", "architecture", "architect", "design", "expertise"]);
+  const hasQualitySignal = hasEvidenceSignal(transcript);
+  const needsMoreInfo = brief.transcript.length < 50 || !hasSpecificAudience || !hasMarketSignal || !hasOfferSignal || !hasAudienceSignal(transcript) || !hasQualitySignal;
   const followUpQuestions = [
     !hasOfferSignal ? "What exactly are you selling, and what makes your offer different?" : "",
     !hasSpecificAudience ? "What type of companies or people should count as ideal leads?" : "",
     !hasMarketSignal ? "Which countries or regions should I prioritize, or should this be international?" : "",
-    "What lead evidence should I require before a result is considered useful, such as email, contact form, buying intent, company size, or niche fit?"
+    !hasQualitySignal ? "What lead evidence should I require before a result is considered useful, such as email, contact form, buying intent, company size, or niche fit?" : ""
   ].filter(Boolean).slice(0, 4);
 
   return {
@@ -292,9 +346,10 @@ function parseLeadJobReviewJson(text: string): LeadJobReviewReport | null {
 export async function runTargetingPreflight(input: PreflightInput): Promise<TargetingPreflight> {
   const apiKey = process.env.GEMINI_API_KEY;
   const model = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
+  const localPreflight = fallbackPreflight(input);
 
   if (!apiKey) {
-    return fallbackPreflight(input);
+    return localPreflight;
   }
 
   const transcript = (input.conversation || [])
@@ -340,7 +395,7 @@ export async function runTargetingPreflight(input: PreflightInput): Promise<Targ
 
   if (!response.ok) {
     return {
-      ...fallbackPreflight(input),
+      ...localPreflight,
       riskLevel: "medium",
       warnings: [
         response.status === 429
@@ -356,9 +411,24 @@ export async function runTargetingPreflight(input: PreflightInput): Promise<Targ
 
   if (!parsed || !parsed.refinedIndustry || parsed.searchTerms.length === 0) {
     return {
-      ...fallbackPreflight(input),
+      ...localPreflight,
       riskLevel: "medium",
       warnings: ["Gemini returned an incomplete lead brief; fallback targeting was used."]
+    };
+  }
+
+  if (parsed.needsMoreInfo && !localPreflight.needsMoreInfo) {
+    return {
+      ...localPreflight,
+      ...parsed,
+      needsMoreInfo: false,
+      followUpQuestions: [],
+      riskLevel: parsed.riskLevel === "high" ? "medium" : parsed.riskLevel,
+      qualityNotes: parsed.qualityNotes || "The chat contains enough offer, audience, market, and lead-evidence context to run the search.",
+      warnings: unique([
+        ...(parsed.warnings || []),
+        "Gemini requested more context, but the local completeness check found enough detail to proceed."
+      ])
     };
   }
 

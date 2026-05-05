@@ -1,16 +1,17 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, CheckCircle2, Check, Copy, Download, Loader2, Send, Sparkles, Terminal, UserRound } from "lucide-react";
+import { CheckCircle2, Check, Copy, Download, Loader2, Mail, Send, Sparkles, Terminal, ChevronDown, ChevronUp } from "lucide-react";
 import { leadPacks } from "../lib/pricing";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 import { TargetingPreflight } from "../lib/types";
+import { parsePastedLeads } from "../lib/outreach";
 import { JobReportCard } from "./JobReportCard";
 
 export type AgenticMessage = {
   id: string;
   role: "assistant" | "user";
-  type: "text" | "config" | "terminal" | "report";
+  type: "text" | "config" | "terminal" | "report" | "outreach";
   content?: string;
   payload?: any;
   created_at: string;
@@ -25,6 +26,11 @@ type WorkerLog = {
   source: string;
   status: string;
   time: string;
+  engine?: string;
+  lane?: string;
+  proxyBefore?: string;
+  proxyAfter?: string;
+  reason?: string;
 };
 
 const initialMessages: AgenticMessage[] = [
@@ -65,22 +71,41 @@ function parseWorkerPayload(event: MessageEvent) {
     const source = typeof parsed.source === "string" ? parsed.source : "worker";
     const status = typeof parsed.status === "string" ? parsed.status : "terminal";
     const message = typeof parsed.message === "string" ? parsed.message : JSON.stringify(parsed);
-    return { message, source, status };
+    const engine = typeof parsed.engine === "string" ? parsed.engine : "";
+    const lane = typeof parsed.lane === "string" ? parsed.lane : "";
+    const proxyBefore = typeof parsed.proxy_before === "string" ? parsed.proxy_before : "";
+    const proxyAfter = typeof parsed.proxy_after === "string" ? parsed.proxy_after : "";
+    const reason = typeof parsed.reason === "string" ? parsed.reason : "";
+    return { message, source, status, engine, lane, proxyBefore, proxyAfter, reason };
   } catch {
-    return { message: event.data, source: "worker", status: "terminal" };
+    return { message: event.data, source: "worker", status: "terminal", engine: "", lane: "", proxyBefore: "", proxyAfter: "", reason: "" };
   }
 }
 
-function laneForSource(source: string) {
-  return source === "enrichment" || source === "scoring" ? "enrichment" : "discovery";
+type DiscoveryLane = "bing" | "duckduckgo" | "yahoo";
+
+function discoveryLaneForPayload(payload: { source: string; lane?: string; engine?: string }) {
+  if (payload.source === "enrichment" || payload.source === "scoring") return "enrichment";
+  const lane = (payload.lane || "").toLowerCase();
+  const engine = (payload.engine || "").toLowerCase();
+  if (lane === "bing" || engine === "bing") return "bing";
+  if (lane === "duckduckgo" || engine === "duckduckgo") return "duckduckgo";
+  if (lane === "yahoo" || engine === "yahoo") return "yahoo";
+  return "enrichment";
 }
 
 function DualLiveTerminal({ jobId }: { jobId: string }) {
-  const [discoveryLogs, setDiscoveryLogs] = useState<WorkerLog[]>([]);
+  const [discoveryLogs, setDiscoveryLogs] = useState<Record<DiscoveryLane, WorkerLog[]>>({
+    bing: [],
+    duckduckgo: [],
+    yahoo: [],
+  });
   const [enrichmentLogs, setEnrichmentLogs] = useState<WorkerLog[]>([]);
   const [state, setState] = useState<"connecting" | "live" | "retrying">("connecting");
-  const [copiedLane, setCopiedLane] = useState<"discovery" | "enrichment" | null>(null);
-  const discoveryRef = useRef<HTMLDivElement>(null);
+  const [copiedLane, setCopiedLane] = useState<"bing" | "duckduckgo" | "yahoo" | "enrichment" | null>(null);
+  const discoveryBingRef = useRef<HTMLDivElement>(null);
+  const discoveryDuckRef = useRef<HTMLDivElement>(null);
+  const discoveryYahooRef = useRef<HTMLDivElement>(null);
   const enrichmentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -90,17 +115,20 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
 
-    setDiscoveryLogs([]);
+    setDiscoveryLogs({ bing: [], duckduckgo: [], yahoo: [] });
     setEnrichmentLogs([]);
     setState("connecting");
 
     const pushLog = (entry: WorkerLog) => {
       if (!entry.message) return;
-      const lane = laneForSource(entry.source);
+      const lane = discoveryLaneForPayload(entry);
       if (lane === "enrichment") {
         setEnrichmentLogs((current) => [...current, entry]);
       } else {
-        setDiscoveryLogs((current) => [...current, entry]);
+        setDiscoveryLogs((current) => ({
+          ...current,
+          [lane]: [...current[lane], entry],
+        }));
       }
     };
 
@@ -111,6 +139,11 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
         source: payload.source,
         status: payload.status,
         time: logTime(),
+        lane: payload.lane,
+        engine: payload.engine,
+        proxyBefore: payload.proxyBefore,
+        proxyAfter: payload.proxyAfter,
+        reason: payload.reason,
       });
     };
 
@@ -140,9 +173,9 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
   }, [jobId]);
 
   useEffect(() => {
-    if (discoveryRef.current) {
-      discoveryRef.current.scrollTop = discoveryRef.current.scrollHeight;
-    }
+    if (discoveryBingRef.current) discoveryBingRef.current.scrollTop = discoveryBingRef.current.scrollHeight;
+    if (discoveryDuckRef.current) discoveryDuckRef.current.scrollTop = discoveryDuckRef.current.scrollHeight;
+    if (discoveryYahooRef.current) discoveryYahooRef.current.scrollTop = discoveryYahooRef.current.scrollHeight;
   }, [discoveryLogs]);
 
   useEffect(() => {
@@ -151,69 +184,95 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
     }
   }, [enrichmentLogs]);
 
-  async function copyLaneLogs(lane: "discovery" | "enrichment") {
-    const logs = lane === "discovery" ? discoveryLogs : enrichmentLogs;
+  async function copyLaneLogs(lane: "bing" | "duckduckgo" | "yahoo" | "enrichment") {
+    const logs = lane === "enrichment" ? enrichmentLogs : discoveryLogs[lane];
     if (logs.length === 0 || typeof navigator === "undefined" || !navigator.clipboard) return;
-    const text = logs.map((log) => `[${log.time}] [${log.source}] ${log.message}`).join("\n");
+    const text = logs
+      .map((log) => {
+        const proxyRotation =
+          log.proxyBefore && log.proxyAfter ? ` | proxy ${log.proxyBefore} -> ${log.proxyAfter}` : "";
+        return `[${log.time}] [${log.source}] ${log.message}${proxyRotation}`;
+      })
+      .join("\n");
     await navigator.clipboard.writeText(text);
     setCopiedLane(lane);
     setTimeout(() => setCopiedLane((current) => (current === lane ? null : current)), 1200);
   }
 
   return (
-    <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
-      <section className="flex h-56 min-h-0 flex-col overflow-hidden rounded-xl border border-cyan-500/30 bg-black">
-        <div className="flex items-center justify-between border-b border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[11px] font-mono text-cyan-200">
-          <span className="inline-flex items-center gap-1.5">
-            <Terminal size={12} />
-            DISCOVERY / MAIN
-          </span>
-          <div className="inline-flex items-center gap-2">
-            <span>{state.toUpperCase()}</span>
-            <button
-              type="button"
-              onClick={() => void copyLaneLogs("discovery")}
-              className="inline-flex h-6 items-center gap-1 rounded border border-cyan-400/30 bg-cyan-500/10 px-2 text-[10px] hover:bg-cyan-500/20"
-            >
-              {copiedLane === "discovery" ? <Check size={11} /> : <Copy size={11} />}
-              Copy
-            </button>
-          </div>
-        </div>
-        <div ref={discoveryRef} className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-cyan-100/90">
-          {discoveryLogs.map((log, index) => (
-            <div key={`d-${index}`} className="whitespace-pre-wrap break-words">
-              <span className="text-cyan-500/70">[{log.time}]</span> {log.message}
+    <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-hidden xl:grid-cols-3 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+      <section className="ide-terminal grid min-h-0 grid-cols-1 gap-2 overflow-hidden p-2 xl:col-span-3 xl:grid-cols-3">
+        {[
+          { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
+          { key: "duckduckgo", label: "DISCOVERY / DUCKDUCKGO", ref: discoveryDuckRef },
+          { key: "yahoo", label: "DISCOVERY / YAHOO", ref: discoveryYahooRef },
+        ].map((laneRow) => (
+          <div key={laneRow.key} className="flex h-full min-h-0 flex-col overflow-hidden border border-[#30363d] bg-black">
+            <div className="flex items-center justify-between border-b border-[#30363d] px-2 py-1 text-[10px] font-mono text-[#00ffff]">
+              <span className="inline-flex items-center gap-1.5">
+                <Terminal size={11} />
+                {laneRow.label}
+              </span>
+              <div className="inline-flex items-center gap-2">
+                <span>{state.toUpperCase()}</span>
+                <button
+                  type="button"
+                  onClick={() => void copyLaneLogs(laneRow.key as DiscoveryLane)}
+                  className="ide-btn inline-flex h-5 items-center gap-1 px-1.5 text-[9px]"
+                >
+                  {copiedLane === laneRow.key ? <Check size={10} /> : <Copy size={10} />}
+                  Copy
+                </button>
+              </div>
             </div>
-          ))}
-          {discoveryLogs.length === 0 && <div className="text-cyan-300/60">Waiting for discovery logs...</div>}
-        </div>
+            <div ref={laneRow.ref} className="flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-[#00ff00]">
+              {(discoveryLogs[laneRow.key as DiscoveryLane] || []).map((log, index) => (
+                <div key={`${laneRow.key}-${index}`} className="whitespace-pre-wrap break-words">
+                  <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
+                  {log.proxyBefore && log.proxyAfter && (
+                    <div className="text-[10px] text-[#00ffff]">
+                      proxy rotated: {log.proxyBefore} → {log.proxyAfter}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {(discoveryLogs[laneRow.key as DiscoveryLane] || []).length === 0 && (
+                <div className="text-[#8b949e]">Waiting for {laneRow.key} logs...</div>
+              )}
+            </div>
+          </div>
+        ))}
       </section>
-      <section className="flex h-56 min-h-0 flex-col overflow-hidden rounded-xl border border-emerald-500/30 bg-black">
-        <div className="flex items-center justify-between border-b border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] font-mono text-emerald-200">
+      <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-3">
+        <div className="flex items-center justify-between border-b border-[#30363d] px-3 py-1.5 text-[11px] font-mono text-[#00ffff]">
           <span className="inline-flex items-center gap-1.5">
             <Terminal size={12} />
             ENRICH / SCORE
           </span>
           <div className="inline-flex items-center gap-2">
-            <span>{state.toUpperCase()}</span>
-            <button
-              type="button"
-              onClick={() => void copyLaneLogs("enrichment")}
-              className="inline-flex h-6 items-center gap-1 rounded border border-emerald-400/30 bg-emerald-500/10 px-2 text-[10px] hover:bg-emerald-500/20"
+              <span>{state.toUpperCase()}</span>
+              <button
+                type="button"
+                onClick={() => void copyLaneLogs("enrichment")}
+              className="ide-btn inline-flex h-6 items-center gap-1 px-2 text-[10px]"
             >
               {copiedLane === "enrichment" ? <Check size={11} /> : <Copy size={11} />}
               Copy
             </button>
           </div>
         </div>
-        <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-5 text-emerald-100/90">
+        <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-2 font-mono text-xs leading-5 text-[#00ff00]">
           {enrichmentLogs.map((log, index) => (
             <div key={`e-${index}`} className="whitespace-pre-wrap break-words">
-              <span className="text-emerald-500/70">[{log.time}]</span> {log.message}
+              <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
+              {log.proxyBefore && log.proxyAfter && (
+                <div className="text-[11px] text-[#00ffff]">
+                  proxy rotated: {log.proxyBefore} → {log.proxyAfter}
+                </div>
+              )}
             </div>
           ))}
-          {enrichmentLogs.length === 0 && <div className="text-emerald-300/60">Waiting for enrichment logs...</div>}
+          {enrichmentLogs.length === 0 && <div className="text-[#8b949e]">Waiting for enrichment logs...</div>}
         </div>
       </section>
     </div>
@@ -223,9 +282,11 @@ function DualLiveTerminal({ jobId }: { jobId: string }) {
 function ReportDownloads({
   jobId,
   supabase,
+  report,
 }: {
   jobId: string;
   supabase: ReturnType<typeof createBrowserSupabase> | null;
+  report?: Record<string, unknown> | null;
 }) {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
@@ -258,14 +319,35 @@ function ReportDownloads({
     window.open(payload.url, "_blank", "noopener,noreferrer");
   }
 
+  function downloadReportJson() {
+    if (!report || typeof window === "undefined") return;
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${jobId}_ai_report.json`;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
+        {report && (
+          <button
+            type="button"
+            onClick={downloadReportJson}
+            className="ide-btn inline-flex items-center gap-2 px-3 py-2 text-sm"
+          >
+            <Download size={14} />
+            AI Report
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void openExport("csv")}
           disabled={downloadingFormat !== null}
-          className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+          className="ide-btn ide-btn-primary inline-flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50"
         >
           <Download size={14} />
           Leads CSV
@@ -274,7 +356,7 @@ function ReportDownloads({
           type="button"
           onClick={() => void openExport("xlsx")}
           disabled={downloadingFormat !== null}
-          className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm text-vercel-text hover:bg-white/10 disabled:opacity-50"
+          className="ide-btn inline-flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50"
         >
           <Download size={14} />
           Audit XLSX
@@ -291,7 +373,9 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
   const [draft, setDraft] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [showLiveLanes, setShowLiveLanes] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const reportRequestedRef = useRef<Set<string>>(new Set());
 
   async function resetConversation() {
     setMessages(initialMessages);
@@ -372,12 +456,33 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
     const runningJobs = messages.filter((item) => item.type === "terminal").map((item) => String(item.payload?.jobId || ""));
     if (runningJobs.length === 0) return;
 
+    async function autoGenerateReport(jobId: string) {
+      if (!supabase) return;
+      if (reportRequestedRef.current.has(jobId)) return;
+      reportRequestedRef.current.add(jobId);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      await fetch(`/api/jobs/${encodeURIComponent(jobId)}/report`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+
     const channel = supabase
       .channel("chat-job-events")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_events" }, (payload) => {
-        const evt = payload.new as { status: string; job_id: string; metadata?: Record<string, unknown> };
+        const evt = payload.new as { status: string; job_id: string; message?: string; metadata?: Record<string, unknown> };
         if (!runningJobs.includes(evt.job_id)) return;
         if (evt.status !== "report_ready" && evt.status !== "delivered" && evt.status !== "failed") return;
+
+        if (evt.status === "delivered") {
+          void autoGenerateReport(evt.job_id);
+        }
 
         setMessages((current) => {
           if (evt.status === "report_ready" && evt.metadata?.report) {
@@ -393,13 +498,82 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
               },
             ];
           }
+          if (evt.status === "delivered") {
+            if (
+              current.some(
+                (item) =>
+                  item.type === "text" &&
+                  item.payload?.kind === "delivery_notice" &&
+                  item.payload?.jobId === evt.job_id
+              )
+            ) {
+              return current;
+            }
+            const newMessages: AgenticMessage[] = [
+              {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                type: "text",
+                content: "Delivery complete. I'm generating the AI quality report now.",
+                payload: { kind: "delivery_notice", jobId: evt.job_id },
+                created_at: new Date().toISOString(),
+              },
+            ];
+            if (!current.some((item) => item.type === "outreach" && item.payload?.jobId === evt.job_id)) {
+              newMessages.push({
+                id: crypto.randomUUID(),
+                role: "assistant",
+                type: "text",
+                content: "Want to run an email outreach funnel on these leads? Type 'start outreach' or open the Outreach tab.",
+                payload: { kind: "outreach_suggestion", jobId: evt.job_id },
+                created_at: new Date().toISOString(),
+              });
+            }
+            return [...current, ...newMessages];
+          }
+          if (
+            current.some(
+              (item) =>
+                item.type === "text" &&
+                item.payload?.kind === "failed_notice" &&
+                item.payload?.jobId === evt.job_id
+            )
+          ) {
+            return current;
+          }
+          if (
+            current.some(
+              (item) =>
+                item.type === "text" &&
+                item.payload?.kind === "failed_notice" &&
+                item.payload?.jobId === evt.job_id
+            )
+          ) {
+            return current;
+          }
+          const alreadyDelivered = current.some(
+            (item) =>
+              (item.type === "text" && item.payload?.kind === "delivery_notice" && item.payload?.jobId === evt.job_id) ||
+              (item.type === "report" && item.payload?.jobId === evt.job_id)
+          );
+          if (alreadyDelivered) {
+            return current;
+          }
+          const failedMessage = String(evt.message || "");
+          const looksLikeDeliveryFailure =
+            failedMessage.toLowerCase().includes("delivery failed") ||
+            failedMessage.toLowerCase().includes("export delivery failed") ||
+            failedMessage.toLowerCase().includes("upload failed");
           return [
             ...current,
             {
               id: crypto.randomUUID(),
               role: "assistant",
               type: "text",
-              content: `Job ${evt.status}. Check dashboard downloads for outputs.`,
+              content: looksLikeDeliveryFailure
+                ? "Job run completed but export delivery failed. Open logs and retry delivery/upload."
+                : "Job failed. Open live logs and check proxy/source health.",
+              payload: { kind: "failed_notice", jobId: evt.job_id },
               created_at: new Date().toISOString(),
             },
           ];
@@ -411,16 +585,44 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
     };
   }, [supabase, messages]);
 
+  function detectOutreachIntent(text: string) {
+    const lower = text.toLowerCase();
+    const keywords = ["email campaign", "outreach", "email funnel", "send emails", "cold email", "followup", "follow up"];
+    return keywords.some((kw) => lower.includes(kw));
+  }
+
   async function analyzeConversation(nextMessages: AgenticMessage[]) {
     setIsThinking(true);
     try {
       const lastJobArtifactIndex = nextMessages.reduce((lastIndex, message, index) => {
-        return ["config", "terminal", "report"].includes(message.type) ? index : lastIndex;
+        return ["config", "terminal", "report", "outreach"].includes(message.type) ? index : lastIndex;
       }, -1);
       const activeThread = nextMessages.slice(lastJobArtifactIndex + 1);
       const conversation = activeThread
         .filter((message) => message.type === "text")
         .map((message) => ({ role: message.role, content: message.content || "" }));
+
+      const lastUserText = conversation.filter((m) => m.role === "user").at(-1)?.content || "";
+      if (detectOutreachIntent(lastUserText)) {
+        const preflightBrief = nextMessages.find((m) => m.type === "config" && m.payload?.brief)?.payload?.brief as TargetingPreflight | undefined;
+        const prefill: Record<string, string> = {};
+        if (preflightBrief) {
+          prefill.business_plan = preflightBrief.offerSummary || "";
+          prefill.target_buyer = preflightBrief.idealCustomerProfile || "";
+        }
+        setMessages((current) => [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            type: "outreach",
+            payload: { prefill },
+            created_at: new Date().toISOString(),
+          },
+        ]);
+        return;
+      }
+
       const response = await fetch("/api/preflight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -491,97 +693,118 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
     await analyzeConversation(nextMessages);
   }
 
+  const activeTerminalJobId = [...messages]
+    .reverse()
+    .find((message) => message.type === "terminal" && typeof message.payload?.jobId === "string")?.payload?.jobId as
+    | string
+    | undefined;
+  const visibleMessages = messages.filter((message) => message.type !== "terminal");
+
   return (
-    <section className="flex h-full min-h-0 flex-col rounded-2xl border border-white/10 bg-[#090d12] shadow-2xl">
-      <header className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6">
+    <section className="ide-panel flex h-full min-h-0 flex-col">
+      <header className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.22em] text-cyan-300/80">Agentic Lead Search</p>
-          <h2 className="text-lg font-semibold text-vercel-text">Live discovery + enrichment workspace</h2>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-[#8b949e]">Agentic Lead Search</p>
+          <h2 className="text-sm font-semibold text-vercel-text">Live discovery + enrichment workspace</h2>
         </div>
-        <span className="text-xs text-vercel-muted">{sessionLoaded ? "Session synced" : "Loading session..."}</span>
+        <div className="inline-flex items-center gap-2">
+          {activeTerminalJobId && (
+            <button
+              type="button"
+              onClick={() => setShowLiveLanes((value) => !value)}
+              className="ide-btn inline-flex h-7 items-center gap-1 px-2 text-[10px] uppercase tracking-[0.1em]"
+            >
+              {showLiveLanes ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+              {showLiveLanes ? "Collapse Lanes" : "Expand Lanes"}
+            </button>
+          )}
+          <span className="ide-status">{sessionLoaded ? "session synced" : "loading session"}</span>
+        </div>
       </header>
 
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
-        {messages.map((message) => (
-          <div key={message.id} className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-            {message.role === "assistant" && (
-              <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
-                <Bot size={16} />
-              </div>
-            )}
-            <div className={message.role === "user" ? "max-w-[78%]" : "w-full max-w-5xl"}>
+      <div className="min-h-0 flex flex-1 flex-col overflow-hidden">
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+          {visibleMessages.map((message) => (
+            <div key={message.id}>
               {message.type === "text" && (
-                <div
-                  className={`whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${
-                    message.role === "user"
-                      ? "bg-white text-black"
-                      : "border border-white/10 bg-black/40 text-vercel-text"
-                  }`}
-                >
-                  {message.content}
+                <div className={`ide-panel px-3 py-2 text-sm leading-6 ${message.role === "user" ? "text-[#00ffff]" : "text-vercel-text"}`}>
+                  <span className="mr-2 text-[#8b949e]">{message.role === "user" ? ">" : "ai>"}</span>
+                  <span className="whitespace-pre-wrap">{message.content}</span>
                 </div>
               )}
 
               {message.type === "config" && Boolean(message.payload?.brief) && (
-                <ConfigWidget
-                  brief={message.payload.brief as TargetingPreflight}
-                  messages={messages}
-                  supabase={supabase}
-                  onJobStarted={(jobId) => {
-                    setMessages((current) => [
-                      ...current,
-                      {
-                        id: crypto.randomUUID(),
-                        role: "assistant",
-                        type: "terminal",
-                        payload: { jobId },
-                        created_at: new Date().toISOString(),
-                      },
-                    ]);
-                    onJobCreated?.();
-                  }}
-                />
-              )}
-
-              {message.type === "terminal" && typeof message.payload?.jobId === "string" && (
-                <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
-                  <p className="text-xs text-vercel-muted">Live worker logs for `{message.payload.jobId.slice(0, 8)}...`</p>
-                  <DualLiveTerminal jobId={message.payload.jobId} />
+                <div className="mt-2">
+                  <ConfigWidget
+                    brief={message.payload.brief as TargetingPreflight}
+                    messages={messages}
+                    supabase={supabase}
+                    onJobStarted={(jobId) => {
+                      setMessages((current) => [
+                        ...current,
+                        {
+                          id: crypto.randomUUID(),
+                          role: "assistant",
+                          type: "terminal",
+                          payload: { jobId },
+                          created_at: new Date().toISOString(),
+                        },
+                        {
+                          id: crypto.randomUUID(),
+                          role: "assistant",
+                          type: "text",
+                          content: `Job ${jobId.slice(0, 8)} started. Streaming live lanes below.`,
+                          created_at: new Date().toISOString(),
+                        },
+                      ]);
+                      onJobCreated?.();
+                    }}
+                  />
                 </div>
               )}
 
               {message.type === "report" && Boolean(message.payload?.report) && (
-                <div className="space-y-3">
+                <div className="mt-2 space-y-2">
                   <JobReportCard report={message.payload.report as any} />
-                  <ReportDownloads jobId={String(message.payload.jobId)} supabase={supabase} />
+                  <ReportDownloads jobId={String(message.payload.jobId)} supabase={supabase} report={message.payload.report as Record<string, unknown>} />
+                </div>
+              )}
+
+              {message.type === "outreach" && (
+                <div className="mt-2">
+                  <OutreachLauncherWidget
+                    prefill={message.payload?.prefill as Record<string, string> | undefined}
+                    supabase={supabase}
+                  />
                 </div>
               )}
             </div>
-            {message.role === "user" && (
-              <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white">
-                <UserRound size={16} />
-              </div>
-            )}
-          </div>
-        ))}
+          ))}
 
-        {isThinking && (
-          <div className="flex gap-3">
-            <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
-              <Bot size={16} />
+          {isThinking && (
+            <div className="ide-panel inline-flex items-center gap-2 px-3 py-2 text-sm text-[#00ffff]">
+              <Loader2 size={14} className="animate-spin" />
+              analyzing request...
             </div>
-            <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cyan-100">
-              <Loader2 size={15} className="animate-spin" />
-              Analyzing request...
+          )}
+        </div>
+
+        {activeTerminalJobId && showLiveLanes && (
+          <div className="min-h-[240px] max-h-[52vh] shrink-0 overflow-hidden border-t border-[#30363d] bg-[#0d1117] p-2">
+            <p className="mb-2 shrink-0 text-[11px] uppercase tracking-[0.15em] text-[#8b949e]">
+              Live worker lanes for {activeTerminalJobId.slice(0, 8)}
+            </p>
+            <div className="min-h-0 h-[calc(100%-1.25rem)] overflow-hidden">
+              <DualLiveTerminal jobId={activeTerminalJobId} />
             </div>
           </div>
         )}
       </div>
 
-      <footer className="border-t border-white/10 bg-black/35 px-4 py-4 sm:px-6">
-        <form className="mx-auto flex max-w-5xl gap-3" onSubmit={appendUserMessage}>
+      <footer className="border-t border-[#30363d] bg-[#161b22] p-3">
+        <form className="flex gap-2" onSubmit={appendUserMessage}>
           <textarea
-            className="h-14 flex-1 resize-none rounded-xl border border-white/10 bg-[#121920] px-4 py-3 text-sm text-vercel-text outline-none transition focus:border-cyan-300/40"
+            className="ide-input h-14 flex-1 resize-none px-3 py-2 text-sm"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -594,7 +817,7 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
             disabled={isThinking}
           />
           <button
-            className="inline-flex h-14 w-14 items-center justify-center rounded-xl bg-white text-black transition hover:bg-cyan-100 disabled:opacity-50"
+            className="ide-btn ide-btn-primary inline-flex h-14 w-14 items-center justify-center disabled:opacity-50"
             type="submit"
             disabled={isThinking || !draft.trim()}
           >
@@ -671,12 +894,12 @@ function ConfigWidget({
   }
 
   if (hasStarted) {
-    return <div className="text-sm text-vercel-muted">Job request sent. Streaming will appear below.</div>;
+    return <div className="ide-panel px-3 py-2 text-sm text-[#8b949e]">Job request sent. Streaming will appear below.</div>;
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-5">
-      <div className="flex items-center gap-2 text-emerald-300">
+    <div className="ide-panel space-y-4 p-4">
+      <div className="flex items-center gap-2 text-[#00ff00]">
         <CheckCircle2 size={18} />
         <h3 className="font-semibold">Brief ready to run</h3>
       </div>
@@ -691,15 +914,15 @@ function ConfigWidget({
         </div>
       </div>
 
-      <div className="space-y-4 border-t border-white/10 pt-4">
+      <div className="space-y-4 border-t border-[#30363d] pt-4">
         <div className="grid grid-cols-3 gap-2">
           {leadPacks.map((pack) => (
             <button
               key={pack.id}
               type="button"
               onClick={() => setPackId(pack.id)}
-              className={`rounded-lg px-2 py-2 text-xs transition ${
-                pack.id === packId ? "bg-white text-black" : "border border-white/10 bg-black/40 text-vercel-muted hover:text-white"
+              className={`ide-btn px-2 py-2 text-xs transition ${
+                pack.id === packId ? "ide-btn-primary" : "text-vercel-muted hover:text-white"
               }`}
             >
               {pack.leads} leads
@@ -710,10 +933,10 @@ function ConfigWidget({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <label className="flex max-w-[240px] flex-col gap-1 text-xs text-vercel-text">
             <span className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Min Quality Score: {minScore}</span>
-            <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-cyan-300" />
+            <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-[#00ffff]" />
           </label>
           <label className="flex items-center gap-2 text-xs text-vercel-text">
-            <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} className="rounded border-white/20" />
+            <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} className="border border-[#30363d] bg-[#010409]" />
             Allow missing emails
           </label>
         </div>
@@ -722,10 +945,127 @@ function ConfigWidget({
       <button
         onClick={createJob}
         disabled={submitting}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-300 disabled:opacity-50"
+        className="ide-btn ide-btn-primary inline-flex w-full items-center justify-center gap-2 px-5 py-3 text-sm font-semibold disabled:opacity-50"
       >
         {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
         Run this search
+      </button>
+    </div>
+  );
+}
+
+function OutreachLauncherWidget({
+  prefill,
+  supabase,
+}: {
+  prefill?: Record<string, string>;
+  supabase: ReturnType<typeof createBrowserSupabase> | null;
+}) {
+  const [businessPlan, setBusinessPlan] = useState(prefill?.business_plan || "");
+  const [offer, setOffer] = useState("");
+  const [targetBuyer, setTargetBuyer] = useState(prefill?.target_buyer || "");
+  const [tone, setTone] = useState("professional");
+  const [cta, setCta] = useState("Reply if this is relevant and I can send details.");
+  const [signature, setSignature] = useState("Best,\nExportFlow");
+  const [senderName, setSenderName] = useState("ExportFlow");
+  const [senderEmail, setSenderEmail] = useState("");
+  const [pastedLeads, setPastedLeads] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function createCampaign() {
+    if (!supabase) return;
+    const leads = pastedLeads.trim() ? parsePastedLeads(pastedLeads) : [];
+    if (leads.length === 0) {
+      setMessage("Add at least one lead (paste emails below).");
+      return;
+    }
+    setLoading(true);
+    setMessage("");
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setMessage("Sign in first.");
+        setLoading(false);
+        return;
+      }
+      const response = await fetch("/api/outreach/campaigns", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          business_plan: businessPlan,
+          offer,
+          target_buyer: targetBuyer,
+          tone,
+          cta,
+          signature,
+          sender_name: senderName,
+          sender_email: senderEmail,
+          leads,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not create campaign.");
+      setMessage("Campaign created! Open the Outreach tab to generate templates and send.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not create campaign.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="ide-panel space-y-3 p-4">
+      <div className="flex items-center gap-2 text-[#00ffff]">
+        <Mail size={16} />
+        <h3 className="font-semibold">Quick outreach campaign</h3>
+      </div>
+      {message && <p className="text-xs text-amber-300">{message}</p>}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <label className="block space-y-1 text-xs text-[#8b949e]">
+          <span>Business plan</span>
+          <input className="ide-input h-9 w-full px-2 text-sm" value={businessPlan} onChange={(e) => setBusinessPlan(e.target.value)} placeholder="What you do" />
+        </label>
+        <label className="block space-y-1 text-xs text-[#8b949e]">
+          <span>Offer</span>
+          <input className="ide-input h-9 w-full px-2 text-sm" value={offer} onChange={(e) => setOffer(e.target.value)} placeholder="Your offer" />
+        </label>
+        <label className="block space-y-1 text-xs text-[#8b949e]">
+          <span>Target buyer</span>
+          <input className="ide-input h-9 w-full px-2 text-sm" value={targetBuyer} onChange={(e) => setTargetBuyer(e.target.value)} placeholder="Who to reach" />
+        </label>
+        <label className="block space-y-1 text-xs text-[#8b949e]">
+          <span>Tone</span>
+          <select className="ide-input h-9 w-full px-2 text-sm" value={tone} onChange={(e) => setTone(e.target.value)}>
+            {["professional", "direct", "warm", "premium", "bold", "convincing"].map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="block space-y-1 text-xs text-[#8b949e]">
+        <span>Pasted leads (name, company, email, website — one per line)</span>
+        <textarea
+          className="ide-input h-24 w-full resize-none px-2 py-2 font-mono text-xs"
+          value={pastedLeads}
+          onChange={(e) => setPastedLeads(e.target.value)}
+          placeholder="Acme Textiles, Sarah Khan, sarah@example.com, https://example.com"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={() => void createCampaign()}
+        disabled={loading}
+        className="ide-btn ide-btn-primary inline-flex w-full items-center justify-center gap-2 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+      >
+        {loading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+        Create campaign
       </button>
     </div>
   );

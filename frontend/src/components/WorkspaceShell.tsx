@@ -2,7 +2,7 @@
 
 import { ReactNode, useState } from "react";
 import Link from "next/link";
-import { LayoutDashboard, Mail, Menu, PanelLeft, Plus, ShieldClose, X } from "lucide-react";
+import { LayoutDashboard, Mail, Menu, PanelLeftClose, PanelLeftOpen, Plus, Settings, ShieldClose, X } from "lucide-react";
 import { AuthPanel } from "./AuthPanel";
 
 type WorkspaceMode = "dashboard" | "outreach" | "admin";
@@ -14,152 +14,126 @@ type WorkspaceShellProps = {
   children: ReactNode;
 };
 
-function SideNav({
-  mode,
-  onClose,
-}: {
-  mode: WorkspaceMode;
-  onClose?: () => void;
-}) {
-  const onNewSearch = () => {
-    window.dispatchEvent(new Event("exportflow:new-chat"));
-    onClose?.();
-  };
+function navItems() {
+  return [
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, mode: "dashboard" as const },
+    { href: "/outreach", label: "Outreach", icon: Mail, mode: "outreach" as const },
+    { href: "/admin", label: "Admin", icon: ShieldClose, mode: "admin" as const },
+    { href: "/dashboard", label: "Settings", icon: Settings, mode: "settings" as const },
+  ];
+}
 
+function SideBar({ mode, compact, onClose }: { mode: WorkspaceMode; compact?: boolean; onClose?: () => void }) {
   return (
-    <div className="flex h-full flex-col gap-4 bg-[#0a0f16] p-4">
-      <div className="flex items-center justify-between">
-        <Link href="/" className="text-sm font-semibold tracking-wide text-vercel-text">
-          ExportFlow Workspace
-        </Link>
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/5 text-vercel-text hover:bg-white/10 lg:hidden"
-          >
-            <X size={15} />
-          </button>
-        )}
+    <div className={`flex h-full flex-col bg-[#0d1117] ${compact ? "p-2" : "p-3"}`}>
+      <div className="mb-3 border border-[#30363d] bg-[#010409] px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-[#8b949e]">
+        Explorer
       </div>
-
       <button
         type="button"
-        onClick={onNewSearch}
-        className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-300 px-3 py-2 text-sm font-semibold text-black hover:bg-cyan-200"
+        onClick={() => {
+          window.dispatchEvent(new Event("exportflow:new-chat"));
+          onClose?.();
+        }}
+        className="ide-btn ide-btn-primary mb-3 inline-flex h-9 items-center justify-center gap-2 px-2 text-xs"
       >
         <Plus size={14} />
         New Search
       </button>
-
-      <nav className="space-y-1">
-        <Link
-          href="/dashboard"
-          onClick={onClose}
-          className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
-            mode === "dashboard" ? "bg-cyan-400/10 text-cyan-200" : "text-vercel-muted hover:bg-white/5 hover:text-vercel-text"
-          }`}
-        >
-          <LayoutDashboard size={15} />
-          Agentic Lead Search
-        </Link>
-        <Link
-          href="/outreach"
-          onClick={onClose}
-          className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
-            mode === "outreach" ? "bg-cyan-400/10 text-cyan-200" : "text-vercel-muted hover:bg-white/5 hover:text-vercel-text"
-          }`}
-        >
-          <Mail size={15} />
-          Auto Email Test
-        </Link>
-        <Link
-          href="/admin"
-          onClick={onClose}
-          className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
-            mode === "admin" ? "bg-cyan-400/10 text-cyan-200" : "text-vercel-muted hover:bg-white/5 hover:text-vercel-text"
-          }`}
-        >
-          <ShieldClose size={15} />
-          Operator Console
-        </Link>
-      </nav>
-
-      <div className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-2">
-        <AuthPanel compact />
+      <div className="ide-panel min-h-0 flex-1 overflow-y-auto p-2">
+        <div className="space-y-1 font-mono text-xs">
+          <p className="text-[#8b949e]">workspace</p>
+          <p className="text-[#8b949e]">- frontend/</p>
+          <p className={`${mode === "dashboard" ? "text-[#00ffff]" : "text-[#c9d1d9]"}`}>  - agentic-lead-search.tsx</p>
+          <p className={`${mode === "outreach" ? "text-[#00ffff]" : "text-[#c9d1d9]"}`}>  - outreach-funnel.tsx</p>
+          <p className={`${mode === "admin" ? "text-[#00ffff]" : "text-[#c9d1d9]"}`}>  - operator-console.tsx</p>
+          <p className="text-[#8b949e]">- exports/</p>
+          <p className="text-[#8b949e]">  - *_leads.csv</p>
+          <p className="text-[#8b949e]">  - *_audit.xlsx</p>
+          <p className="text-[#8b949e]">- events/</p>
+          <p className="text-[#8b949e]">  - stdout.log</p>
+          <p className="text-[#8b949e]">  - report.json</p>
+        </div>
       </div>
+      {!compact && <div className="mt-3"><AuthPanel compact /></div>}
     </div>
   );
 }
 
 export function WorkspaceShell({ mode, title, subtitle, children }: WorkspaceShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#05090f] text-vercel-text">
+    <div className="h-screen w-screen overflow-hidden bg-[#0d1117] text-vercel-text">
       <div className="flex h-full min-h-0">
-        <aside className={`hidden h-full border-r border-white/10 lg:block ${collapsed ? "w-[72px]" : "w-[340px]"}`}>
-          {collapsed ? (
-            <div className="flex h-full flex-col items-center gap-3 bg-[#0a0f16] py-4">
-              <button
-                type="button"
-                onClick={() => setCollapsed(false)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/5 text-vercel-text hover:bg-white/10"
+        <aside className="hidden w-12 border-r border-[#30363d] bg-[#010409] lg:flex lg:flex-col lg:items-center lg:py-2">
+          {navItems().map((item) => {
+            const Icon = item.icon;
+            const active = item.mode === mode;
+            return (
+              <Link
+                key={`${item.label}-${item.href}`}
+                href={item.href}
+                className={`relative mb-1 inline-flex h-10 w-10 items-center justify-center border border-transparent text-[#8b949e] hover:text-[#00ffff] ${
+                  active ? "text-[#00ffff]" : ""
+                }`}
+                title={item.label}
               >
-                <PanelLeft size={14} />
-              </button>
-              <Link href="/dashboard" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-vercel-text hover:bg-white/10">
-                <LayoutDashboard size={15} />
+                {active && <span className="absolute left-[-9px] top-0 h-full w-[2px] bg-[#00ffff]" />}
+                <Icon size={16} />
               </Link>
-              <Link href="/outreach" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-vercel-text hover:bg-white/10">
-                <Mail size={15} />
-              </Link>
-              <button
-                type="button"
-                onClick={() => window.dispatchEvent(new Event("exportflow:new-chat"))}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-cyan-300 text-black hover:bg-cyan-200"
-              >
-                <Plus size={15} />
-              </button>
-            </div>
-          ) : (
-            <SideNav mode={mode} />
-          )}
+            );
+          })}
         </aside>
 
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          <header className="flex items-center justify-between border-b border-white/10 bg-black/30 px-4 py-3 lg:px-6">
-            <div className="flex items-center gap-2">
+        <aside className={`hidden border-r border-[#30363d] bg-[#0d1117] lg:block ${sidebarOpen ? "w-[250px]" : "w-0 overflow-hidden"}`}>
+          <SideBar mode={mode} />
+        </aside>
+
+        <section className="flex min-h-0 flex-1 flex-col">
+          <header className="border-b border-[#30363d] bg-[#161b22]">
+            <div className="flex items-center border-b border-[#30363d] px-2">
               <button
                 type="button"
                 onClick={() => setMobileOpen(true)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-vercel-text hover:bg-white/10 lg:hidden"
+                className="ide-btn mr-2 inline-flex h-8 w-8 items-center justify-center lg:hidden"
               >
-                <Menu size={16} />
+                <Menu size={15} />
               </button>
               <button
                 type="button"
-                onClick={() => setCollapsed((value) => !value)}
-                className="hidden h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-vercel-text hover:bg-white/10 lg:inline-flex"
+                onClick={() => setSidebarOpen((value) => !value)}
+                className="ide-btn mr-2 hidden h-8 w-8 items-center justify-center lg:inline-flex"
               >
-                <PanelLeft size={16} />
+                {sidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
               </button>
-              <div>
-                <p className="text-sm font-semibold text-vercel-text">{title}</p>
-                <p className="text-xs text-vercel-muted">{subtitle}</p>
+              <div className="ide-panel mr-2 border-b-0 bg-[#0d1117] px-3 py-1.5 text-xs text-[#c9d1d9]">
+                [ {title} x ]
               </div>
+              <div className="text-[11px] text-[#8b949e]">{subtitle}</div>
             </div>
           </header>
 
-          <main className="min-h-0 flex-1 p-3 lg:p-5">{children}</main>
-        </div>
+          <main className="min-h-0 flex-1 overflow-hidden bg-[#0d1117] p-3">{children}</main>
+
+          <footer className="flex h-[22px] items-center justify-between border-t border-[#30363d] bg-[#161b22] px-2 text-[11px] text-[#8b949e]">
+            <span>WS: exportflow</span>
+            <span className="text-[#00ff00]">SSE: LIVE</span>
+          </footer>
+        </section>
       </div>
 
       {mobileOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 lg:hidden">
-          <aside className="h-full w-[88vw] max-w-[360px] border-r border-white/10">
-            <SideNav mode={mode} onClose={() => setMobileOpen(false)} />
+          <aside className="h-full w-[90vw] max-w-[300px] border-r border-[#30363d] bg-[#0d1117]">
+            <div className="flex items-center justify-between border-b border-[#30363d] p-2">
+              <p className="text-xs uppercase tracking-[0.14em] text-[#8b949e]">Sidebar</p>
+              <button type="button" className="ide-btn inline-flex h-8 w-8 items-center justify-center" onClick={() => setMobileOpen(false)}>
+                <X size={15} />
+              </button>
+            </div>
+            <SideBar mode={mode} compact onClose={() => setMobileOpen(false)} />
           </aside>
         </div>
       )}

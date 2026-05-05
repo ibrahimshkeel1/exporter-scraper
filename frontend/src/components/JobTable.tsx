@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, TerminalSquare } from "lucide-react";
+import { ChevronDown, ChevronUp, FileJson2, FileSpreadsheet, RefreshCw, TerminalSquare } from "lucide-react";
 import { PaymentProofUpload } from "./PaymentProofUpload";
 import { StatusPill } from "./StatusPill";
 import { JobLogViewer, JobEvent } from "./JobLogViewer";
@@ -10,11 +10,12 @@ import { LeadJob } from "../lib/types";
 
 type JobTableProps = {
   refreshSignal: number;
+  compact?: boolean;
 };
 
 type LeadExportFile = NonNullable<LeadJob["lead_exports"]>[number];
 
-export function JobTable({ refreshSignal }: JobTableProps) {
+export function JobTable({ refreshSignal, compact = false }: JobTableProps) {
   const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
   const [jobs, setJobs] = useState<LeadJob[]>([]);
   const [message, setMessage] = useState("");
@@ -22,6 +23,9 @@ export function JobTable({ refreshSignal }: JobTableProps) {
   const [reportJobId, setReportJobId] = useState<string | null>(null);
   const [activeLogs, setActiveLogs] = useState<JobEvent[] | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [jobsCollapsed, setJobsCollapsed] = useState(false);
+  const [filesCollapsed, setFilesCollapsed] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   async function loadJobs() {
     setLoading(true);
@@ -99,28 +103,182 @@ export function JobTable({ refreshSignal }: JobTableProps) {
   }
 
   useEffect(() => {
-    loadJobs();
+    void loadJobs();
   }, [refreshSignal]);
 
+  useEffect(() => {
+    if (!selectedJobId && jobs.length > 0) {
+      setSelectedJobId(jobs[0].id);
+      return;
+    }
+    if (selectedJobId && !jobs.some((job) => job.id === selectedJobId)) {
+      setSelectedJobId(jobs[0]?.id ?? null);
+    }
+  }, [jobs, selectedJobId]);
+
+  const selectedJob = jobs.find((job) => job.id === selectedJobId) ?? null;
+
+  if (compact) {
+    return (
+      <div className="ide-panel flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-vercel-text">Jobs</h2>
+            <p className="text-[11px] text-vercel-muted">Right rail: queue, exports, audit files</p>
+          </div>
+          <button className="ide-btn inline-flex items-center gap-1 px-2 py-1 text-[10px]" type="button" onClick={() => void loadJobs()} disabled={loading}>
+            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+            Refresh
+          </button>
+        </div>
+
+        {message && <div className="border-b border-[#30363d] bg-[#220b0b] px-3 py-2 text-xs text-[#ff6b6b]">{message}</div>}
+
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="border-b border-[#30363d]">
+              <button
+                type="button"
+                onClick={() => setJobsCollapsed((value) => !value)}
+                className="flex w-full items-center justify-between bg-[#0d1117] px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-[#8b949e]"
+              >
+                <span>Jobs ({jobs.length})</span>
+                {jobsCollapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+              {!jobsCollapsed && (
+                <div className="max-h-[46vh] overflow-y-auto">
+                  <div className="divide-y divide-[#30363d]">
+                    {jobs.length === 0 && <p className="px-3 py-3 text-xs text-vercel-muted">No jobs yet.</p>}
+                    {jobs.map((job) => (
+                      <button
+                        key={job.id}
+                        type="button"
+                        onClick={() => setSelectedJobId(job.id)}
+                        className={`w-full space-y-1 px-3 py-2 text-left ${selectedJobId === job.id ? "bg-[#13212e]" : "bg-transparent hover:bg-[#161b22]"}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <StatusPill status={job.status} />
+                          <span className="font-mono text-[10px] text-[#8b949e]">{job.id.slice(0, 8)}</span>
+                        </div>
+                        <p className="text-xs text-vercel-text">{job.target_region} | {job.refined_industry || job.original_industry}</p>
+                        <p className="text-[11px] text-vercel-muted">{new Date(job.created_at).toLocaleString()}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setFilesCollapsed((value) => !value)}
+                className="flex w-full items-center justify-between border-b border-[#30363d] bg-[#0d1117] px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-[#8b949e]"
+              >
+                <span>Files & Audit</span>
+                {filesCollapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+              {!filesCollapsed && (
+                <div className="min-h-0 h-full overflow-y-auto p-3">
+                  {!selectedJob && <p className="text-xs text-vercel-muted">Select a job to view files.</p>}
+                  {selectedJob && (
+                    <div className="space-y-3">
+                      <div className="border border-[#30363d] bg-black p-2 text-xs text-vercel-text">
+                        <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8b949e]">Selected Job</p>
+                        <p>{selectedJob.target_region} | {selectedJob.refined_industry || selectedJob.original_industry}</p>
+                        {selectedJob.error_message && <p className="mt-1 text-[#ff6b6b]">{selectedJob.error_message}</p>}
+                      </div>
+
+                      <div className="space-y-2">
+                        {(selectedJob.lead_exports || []).length > 0 ? (
+                          selectedJob.lead_exports?.map((file) => {
+                            const isAudit = file.storage_path?.includes("audit");
+                            return (
+                              <button
+                                className="ide-btn inline-flex w-full items-center justify-between gap-2 px-3 py-2 text-xs"
+                                key={file.id}
+                                type="button"
+                                onClick={() => void downloadExport(file)}
+                              >
+                                <span className="inline-flex items-center gap-2">
+                                  {isAudit ? <FileSpreadsheet size={12} /> : <FileJson2 size={12} />}
+                                  {file.storage_path?.split("/").at(-1) || file.format.toUpperCase()}
+                                </span>
+                                <span className="text-[#8b949e]">{file.row_count ?? "-"} rows</span>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <p className="text-xs text-vercel-muted">
+                            {selectedJob.status === "failed" ? "No delivered files. Check logs." : "Waiting for delivery files."}
+                          </p>
+                        )}
+                      </div>
+
+                      {selectedJob.status === "delivered" &&
+                        !(((selectedJob as any).job_events || []) as JobEvent[]).some((event) => event.status === "report_ready") && (
+                          <button
+                            type="button"
+                            onClick={() => void requestReport(selectedJob.id)}
+                            disabled={reportJobId === selectedJob.id}
+                            className="ide-btn inline-flex w-full items-center justify-center gap-1.5 border-[#00ff00] px-3 py-1.5 text-xs font-medium text-[#00ff00] disabled:opacity-60"
+                          >
+                            {reportJobId === selectedJob.id ? "Generating..." : "Generate Analysis"}
+                          </button>
+                        )}
+
+                      {selectedJob && (
+                        <button
+                          onClick={() => {
+                            setActiveJobId(selectedJob.id);
+                            setActiveLogs((selectedJob as any).job_events || []);
+                          }}
+                          className="ide-btn ide-btn-primary inline-flex w-full items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium"
+                        >
+                          <TerminalSquare size={14} /> View Logs
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {activeJobId && activeLogs && (
+          <JobLogViewer 
+            jobId={activeJobId} 
+            initialEvents={activeLogs} 
+            onClose={() => {
+              setActiveJobId(null);
+              setActiveLogs(null);
+            }} 
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-gradient-to-b from-[#18181B] to-[#09090B] backdrop-blur-md border border-white/10 rounded-xl p-8 shadow-2xl flex flex-col gap-6">
+    <div className="ide-panel flex flex-col gap-4 p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h2 className="text-2xl font-semibold text-vercel-text tracking-tight">Lead jobs</h2>
           <p className="text-sm text-vercel-muted">Payment review, worker progress, and export delivery live here.</p>
         </div>
-        <button className="inline-flex items-center gap-2 bg-black/50 backdrop-blur-md border border-white/10 text-vercel-text hover:bg-white/5 rounded-lg px-4 py-2 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98]" type="button" onClick={loadJobs} disabled={loading}>
+        <button className="ide-btn inline-flex items-center gap-2 px-4 py-2 text-sm font-medium" type="button" onClick={loadJobs} disabled={loading}>
           <RefreshCw size={16} className={loading ? "animate-spin" : ""} aria-hidden="true" />
           Refresh
         </button>
       </div>
 
-      {message && <div className="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 px-4 py-3 rounded-lg shadow-sm">{message}</div>}
+      {message && <div className="border border-[#ff6b6b] bg-[#220b0b] px-4 py-3 text-sm text-[#ff6b6b]">{message}</div>}
 
-      <div className="overflow-x-auto rounded-lg border border-white/10 bg-black/20">
+      <div className="overflow-x-auto border border-[#30363d] bg-[#0d1117]">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
-            <tr className="border-b border-white/10 bg-black/40">
+            <tr className="border-b border-[#30363d] bg-[#161b22]">
               <th className="py-4 px-4 font-medium text-vercel-muted">Status</th>
               <th className="py-4 px-4 font-medium text-vercel-muted">Pack</th>
               <th className="py-4 px-4 font-medium text-vercel-muted">Target</th>
@@ -128,7 +286,7 @@ export function JobTable({ refreshSignal }: JobTableProps) {
               <th className="py-4 px-4 font-medium text-vercel-muted">Exports & Logs</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/5">
+          <tbody className="divide-y divide-[#30363d]">
             {jobs.length === 0 && (
               <tr>
                 <td colSpan={5} className="py-8 px-4 text-center text-vercel-muted">
@@ -137,7 +295,7 @@ export function JobTable({ refreshSignal }: JobTableProps) {
               </tr>
             )}
             {jobs.map((job) => (
-              <tr key={job.id} className="hover:bg-white/5 transition-colors group">
+              <tr key={job.id} className="group hover:bg-[#161b22]">
                 <td className="py-4 px-4 align-top">
                   <div className="flex flex-col gap-1.5 items-start">
                     <StatusPill status={job.status} />
@@ -162,7 +320,7 @@ export function JobTable({ refreshSignal }: JobTableProps) {
                     {job.payment_status === "pending" && (
                       <PaymentProofUpload jobId={job.id} amountUsd={job.price_usd} onUploaded={loadJobs} />
                     )}
-                    {job.payment_status !== "pending" && job.admin_note && <p className="text-xs text-vercel-muted mt-1 bg-black/40 p-2 rounded-md border border-white/5">{job.admin_note}</p>}
+                    {job.payment_status !== "pending" && job.admin_note && <p className="mt-1 border border-[#30363d] bg-black p-2 text-xs text-vercel-muted">{job.admin_note}</p>}
                   </div>
                 </td>
                 <td className="py-4 px-4 align-top">
@@ -172,14 +330,16 @@ export function JobTable({ refreshSignal }: JobTableProps) {
                         {job.lead_exports.map((file) => {
                           const isAudit = file.storage_path?.includes("audit");
                           return (
-                            <button className={`inline-flex items-center gap-1.5 ${isAudit ? "bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20" : "bg-black/50 border border-white/10 text-vercel-text hover:bg-white/10"} rounded-md px-3 py-1.5 text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98] shadow-sm`} key={file.id} type="button" onClick={() => downloadExport(file)}>
+                            <button className={`ide-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium ${isAudit ? "border-[#ff6b6b] text-[#ff6b6b]" : ""}`} key={file.id} type="button" onClick={() => downloadExport(file)}>
                               {isAudit ? "AUDIT CSV" : file.format.toUpperCase()}
                             </button>
                           );
                         })}
                       </div>
                     ) : (
-                      <span className="text-xs text-vercel-muted italic">Waiting for delivery</span>
+                      <span className="text-xs text-vercel-muted italic">
+                        {job.status === "failed" ? "Delivery failed (check logs)." : "Waiting for delivery"}
+                      </span>
                     )}
                     {job.status === "delivered" &&
                       !(((job as any).job_events || []) as JobEvent[]).some((event) => event.status === "report_ready") && (
@@ -187,7 +347,7 @@ export function JobTable({ refreshSignal }: JobTableProps) {
                           type="button"
                           onClick={() => void requestReport(job.id)}
                           disabled={reportJobId === job.id}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-60"
+                          className="ide-btn inline-flex items-center gap-1.5 border-[#00ff00] px-3 py-1.5 text-xs font-medium text-[#00ff00] disabled:opacity-60"
                         >
                           {reportJobId === job.id ? "Generating..." : "Generate Analysis"}
                         </button>
@@ -198,7 +358,7 @@ export function JobTable({ refreshSignal }: JobTableProps) {
                         setActiveJobId(job.id);
                         setActiveLogs((job as any).job_events || []);
                       }}
-                      className="inline-flex items-center gap-1.5 bg-vercel-accent text-black hover:bg-white rounded-md px-3 py-1.5 text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_10px_rgba(255,255,255,0.1)] mt-2"
+                      className="ide-btn ide-btn-primary mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium"
                     >
                       <TerminalSquare size={14} /> View Logs
                     </button>
