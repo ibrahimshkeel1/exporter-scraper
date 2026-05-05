@@ -44,3 +44,5 @@ playwright/.cache/
 !frontend/**/*.json
 /exports/
 /scraper/proxies.oxylabs.txt
+.vercel
+.env*.local
