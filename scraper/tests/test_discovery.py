@@ -202,6 +202,15 @@ class LeadDiscoveryTests(unittest.TestCase):
         sources = discovery._search_sources("Lahore", "coffee shops")
         names = [source.name for source in sources]
 
+        self.assertFalse(any(name.startswith("bing-p2-") for name in names))
+        self.assertFalse(any(name.startswith("duckduckgo-p2-") for name in names))
+        self.assertFalse(any(name.startswith("yahoo-p2-") for name in names))
+
+    def test_local_services_sources_respect_depth_override(self):
+        discovery = LeadDiscovery(limit=10, search_terms=["coffee shops in lahore"])
+        sources = discovery._search_sources("Lahore", "coffee shops", depth=3)
+        names = [source.name for source in sources]
+
         self.assertTrue(any(name.startswith("bing-p2-") for name in names))
         self.assertTrue(any(name.startswith("duckduckgo-p3-") for name in names))
         self.assertTrue(any(name.startswith("yahoo-p2-") for name in names))

@@ -89,8 +89,6 @@ class LeadDiscovery:
         "wordpress.",
         "sentry.",
         "dictionary.",
-        "docs.",
-        "github.",
         "gitlab.",
         "huggingface.",
         "wiktionary.",
@@ -166,12 +164,14 @@ class LeadDiscovery:
         "yahoo": 60.0,
     }
 
-    def __init__(self, limit=30, search_terms=None, signal_map=None, scoring_context=None):
+    def __init__(self, limit=30, search_terms=None, signal_map=None, scoring_context=None, diagnostics=None):
         self.limit = limit
         self.search_terms = [term for term in (search_terms or []) if term]
         self.signal_map = signal_map or {}
         self.scoring_context = scoring_context if isinstance(scoring_context, dict) else {}
         self.seen_domains = set()
+        self.diagnostics = diagnostics
+        self._last_intake_event = None
         self.dynamic_excluded_root_domains = {
             self._normalize_domain_value(value)
             for value in self.scoring_context.get("blocked_domains", []) if str(value or "").strip()
@@ -327,44 +327,43 @@ class LeadDiscovery:
 
     def _candidate_from_url(self, clean_url, source, region, industry):
         if not self._is_valid_candidate_url(clean_url, source):
+            if self.diagnostics:
+                domain = self._normalize_domain(clean_url)
+                host = (urlsplit(clean_url).hostname or "").lower()
+                path = urlsplit(clean_url).path.lower()
+                if domain in self.EXCLUDED_ROOT_DOMAINS or domain in self.dynamic_excluded_root_domains:
+                    reason = "domain"
+                elif any(part in host for part in self.EXCLUDED_HOST_PARTS) or any(part in host for part in self.dynamic_excluded_host_parts):
+                    reason = "host"
+                elif any(domain.endswith(suffix) for suffix in list(self.dynamic_excluded_domain_suffixes) + ([] if self.allow_public_sector_domains else list(self.EXCLUDED_DOMAIN_SUFFIXES))):
+                    reason = "tld"
+                elif any(part in path for part in self.EXCLUDED_PATH_PARTS):
+                    reason = "path"
+                else:
+                    reason = "other"
+                self.diagnostics.record_intake(clean_url, passed=False, blocked_reason=reason)
             return None
-
-        if source.candidate_kind == "directory_profile":
-            parsed = urlsplit(clean_url)
-            source_host = (urlsplit(source.url).hostname or "").lower()
-            if (parsed.hostname or "").lower() != source_host:
-                return None
-            if not parsed.path.startswith("/go/"):
-                return None
-            profile_key = parsed.path.strip("/").replace("/", ":")
-            domain = f"{source.name}:{profile_key}"
-            if domain in self.seen_domains:
-                return None
-            self.seen_domains.add(domain)
-            return {
-                "url": clean_url,
-                "discovery_url": clean_url,
-                "domain": domain,
-                "source_name": source.name,
-                "source_url": source.url,
-                "discovery_method": source.discovery_method,
-                "candidate_kind": source.candidate_kind,
-                "needs_website_resolution": True,
-                "region": region,
-                "industry": industry,
-            }
 
         domain = self._normalize_domain(clean_url)
         if not domain or domain in self.seen_domains:
+            if self.diagnostics:
+                self.diagnostics.record_intake(clean_url, passed=False, blocked_reason="dedup")
             return None
         if not self._is_target_region_domain(domain, region):
+            if self.diagnostics:
+                self.diagnostics.record_intake(clean_url, passed=False, blocked_reason="country")
             return None
 
         homepage_url = self._canonical_homepage_url(clean_url)
         if not homepage_url:
+            if self.diagnostics:
+                self.diagnostics.record_intake(clean_url, passed=False, blocked_reason="other")
             return None
 
         self.seen_domains.add(domain)
+        if self.diagnostics:
+            self.diagnostics.record_intake(clean_url, passed=True)
+            self.diagnostics.record_candidate_domain(domain)
         return {
             "url": homepage_url,
             "discovery_url": clean_url,
@@ -380,11 +379,12 @@ class LeadDiscovery:
             "industry": industry,
         }
 
+
     @staticmethod
     def _signal_slug(value):
         return re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")[:36] or "signal"
 
-    def _signal_search_sources(self, region, industry):
+    def _signal_search_sources(self, region, industry, depth=None):
         signals = self.signal_map.get("signals", []) if isinstance(self.signal_map, dict) else []
         if not signals:
             return []
@@ -572,8 +572,8 @@ class LeadDiscovery:
     @staticmethod
     def _noise_exclusion_suffix():
         return (
-            "-dictionary -definition -github -gitlab -wikipedia -wiktionary "
-            "-reddit -youtube -documentation -tutorial -pdf"
+            "-dictionary -definition -wikipedia -wiktionary "
+            "-reddit -youtube"
         )
 
     @staticmethod
@@ -790,7 +790,7 @@ class LeadDiscovery:
                 )
         return sources
 
-    def _search_sources(self, region, industry):
+    def _search_sources(self, region, industry, depth=None):
         sources = []
         is_apparel = self._is_apparel_industry(industry)
         is_architecture = self._is_architecture_industry(industry)
@@ -798,28 +798,24 @@ class LeadDiscovery:
         queries = self._buyer_search_queries(region, industry)
         if is_architecture:
             queries = queries[:6]
-            page_depth = 1
-            yahoo_depth = 1
+            page_depth = depth if depth is not None else 1
+            yahoo_depth = depth if depth is not None else 1
         elif is_local_services:
             queries = queries[:12]
-            page_depth = 3
-            yahoo_depth = 2
+            page_depth = depth if depth is not None else 1
+            yahoo_depth = depth if depth is not None else 1
         elif is_apparel:
             queries = queries[:8]
-            page_depth = 2
-            yahoo_depth = 1
+            page_depth = depth if depth is not None else 1
+            yahoo_depth = depth if depth is not None else 1
         else:
             queries = queries[:8]
-            page_depth = 2
-            yahoo_depth = 1
+            page_depth = depth if depth is not None else 1
+            yahoo_depth = depth if depth is not None else 1
         for query_index, query in enumerate(queries, start=1):
             slug = self._slug(query)
             query_page_depth = page_depth
             query_yahoo_depth = yahoo_depth
-            if is_local_services and query_index > 6:
-                query_page_depth = 2
-            if is_local_services and query_index > 8:
-                query_yahoo_depth = 1
             sources.extend(
                 self._search_source_pages(
                     query=query,
@@ -830,9 +826,9 @@ class LeadDiscovery:
             )
         return sources
 
-    def generate_sources(self, region, industry):
+    def generate_sources(self, region, industry, depth=None):
         region = self._canonical_region(region)
-        signal_sources = self._signal_search_sources(region, industry)
+        signal_sources = self._signal_search_sources(region, industry, depth=depth)
         query = quote_plus(self._product_seed(industry))
         is_apparel = self._is_apparel_industry(industry)
         if region == "USA":
@@ -844,7 +840,7 @@ class LeadDiscovery:
                         selectors=("a.track-visit-website", "a[data-analytics='website']"),
                     ),
                 ]
-                return signal_sources + directory_sources + self._search_sources(region, industry)
+                return signal_sources + directory_sources + self._search_sources(region, industry, depth=depth)
             buyer_intent_sources = [
                 DiscoverySource(
                     name="seed-usa-buyer-intent-pages",
@@ -910,7 +906,7 @@ class LeadDiscovery:
                     candidate_kind="seed_list",
                 ),
             ]
-            return signal_sources + buyer_intent_sources + directory_sources + self._search_sources(region, industry)
+            return signal_sources + buyer_intent_sources + directory_sources + self._search_sources(region, industry, depth=depth)
         if region == "UK":
             if not is_apparel:
                 directory_sources = [
@@ -923,7 +919,7 @@ class LeadDiscovery:
                         ),
                     ),
                 ]
-                return signal_sources + directory_sources + self._search_sources(region, industry)
+                return signal_sources + directory_sources + self._search_sources(region, industry, depth=depth)
             buyer_intent_sources = [
                 DiscoverySource(
                     name="seed-uk-buyer-intent-pages",
@@ -950,10 +946,10 @@ class LeadDiscovery:
                     ),
                 ),
             ]
-            return signal_sources + buyer_intent_sources + directory_sources + self._search_sources(region, industry)
+            return signal_sources + buyer_intent_sources + directory_sources + self._search_sources(region, industry, depth=depth)
         if region == "International":
             if not is_apparel:
-                return signal_sources + self._search_sources(region, industry)
+                return signal_sources + self._search_sources(region, industry, depth=depth)
             seed_sources = [
                 DiscoverySource(
                     name="seed-usa-buyer-intent-pages",
@@ -977,9 +973,9 @@ class LeadDiscovery:
                     candidate_kind="seed_list",
                 ),
             ]
-            return signal_sources + seed_sources + self._search_sources(region, industry)
+            return signal_sources + seed_sources + self._search_sources(region, industry, depth=depth)
         if not is_apparel:
-            return signal_sources + self._search_sources(region, industry)
+            return signal_sources + self._search_sources(region, industry, depth=depth)
         buyer_intent_sources = [
             DiscoverySource(
                 name="seed-europe-buyer-intent-pages",
@@ -999,7 +995,7 @@ class LeadDiscovery:
                 ),
             ),
         ]
-        return signal_sources + buyer_intent_sources + sources + self._search_sources(region, industry)
+        return signal_sources + buyer_intent_sources + sources + self._search_sources(region, industry, depth=depth)
 
     @staticmethod
     def _is_throttle_or_block_error(text):

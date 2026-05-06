@@ -313,8 +313,6 @@ def build_signal_map(region, industry, search_terms=None):
     ]
     blocked_host_markers = [
         "dictionary.",
-        "docs.",
-        "github.",
         "gitlab.",
         "huggingface.",
         "learn.",

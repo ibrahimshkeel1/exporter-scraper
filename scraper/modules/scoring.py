@@ -165,8 +165,6 @@ class LeadScoring:
         }
         self.blocked_domain_markers = [
             "dictionary.",
-            "docs.",
-            "github.",
             "gitlab.",
             "huggingface.",
             "wiktionary.",

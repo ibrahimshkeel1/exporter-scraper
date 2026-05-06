@@ -1533,6 +1533,501 @@ async def run_hunt_first_a_plus(
         audit_output=audit_output or "",
     )
 
+async def run_scraper_adaptive(
+    region,
+    industry,
+    limit,
+    output,
+    output_format,
+    test_mode,
+    min_score,
+    fill_until_complete=False,
+    audit_output=None,
+    allow_no_email=False,
+    allow_weak_buyer_evidence=False,
+    status_output=None,
+    job_id=None,
+    max_analyzed=None,
+    search_terms=None,
+    scoring_context=None,
+    proxy_pool=None,
+    proxy_file=None,
+):
+    """Adaptive 3-phase pipeline: discover broadly → qualify deeply → adapt & retry."""
+    region = normalize_region(region)
+    print(
+        f"Starting adaptive scraper | Region: {region} | Industry: {industry} | Limit: {limit} | Test mode: {test_mode}"
+    )
+    emit_progress(
+        "starting",
+        "Adaptive scraper job started.",
+        status_output=status_output,
+        job_id=job_id,
+        source="system",
+        region=region,
+        industry=industry,
+        limit=limit,
+        pipeline="adaptive",
+    )
+
+    try:
+        from playwright.async_api import async_playwright
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Missing Playwright dependency. Run `pip install -r scraper/requirements.txt` "
+            "and `python -m playwright install chromium`."
+        ) from exc
+
+    from modules.discovery import LeadDiscovery
+    from modules.enrichment import LeadEnrichment
+    from modules.export import LeadExport
+    from modules.scoring import LeadScoring
+    from modules.signal_map import build_signal_map
+    from modules.diagnostics import PhaseDiagnostics
+
+    try:
+        import aiohttp
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Missing dependency: aiohttp. Install with `pip install -r scraper/requirements.txt`."
+        ) from exc
+
+    discovery_limit = compute_discovery_limit(
+        limit=limit,
+        test_mode=test_mode,
+        max_analyzed=max_analyzed,
+    )
+    run_id = f"run-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
+
+    signal_map = build_signal_map(region=region, industry=industry, search_terms=search_terms)
+    merged_search_terms = merge_search_terms(signal_map.get("routed_search_terms", []), search_terms or [])
+    merged_scoring_context = merge_scoring_context(signal_map.get("scoring_context"), scoring_context)
+    resolved_proxies = resolve_proxy_pool(proxy_pool=proxy_pool, proxy_file=proxy_file)
+    if resolved_proxies:
+        resolved_proxies = await healthcheck_proxy_pool(
+            resolved_proxies,
+            status_output=status_output,
+            job_id=job_id,
+        )
+    emit_progress(
+        "planning",
+        "Signal map generated for adaptive discovery routing.",
+        status_output=status_output,
+        job_id=job_id,
+        source="system",
+        signal_cluster=signal_map.get("cluster", ""),
+        signal_count=len(signal_map.get("signals", [])),
+        routed_search_terms=len(merged_search_terms),
+        proxy_count=len(resolved_proxies),
+        pipeline="adaptive",
+    )
+
+    scoring = LeadScoring(
+        require_email=not allow_no_email,
+        require_buyer_evidence=not allow_weak_buyer_evidence,
+        scoring_context=merged_scoring_context,
+        industry=industry,
+    )
+    worker_count = 2 if test_mode else 4
+
+    diagnostics = PhaseDiagnostics(region=region, industry=industry, target_limit=limit)
+    all_scored_candidates = []
+    all_enriched = []
+    top_leads = []
+    seen_enriched_domains = set()
+    state_lock = asyncio.Lock()
+
+    user_agent = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    )
+
+    async with async_playwright() as p:
+        enrichment_browser = await p.chromium.launch(headless=True)
+        enrichment_ctx = await enrichment_browser.new_context(user_agent=user_agent)
+
+        current_min_score = min_score
+
+        # FUTURE: bailout threshold — if Phase 1 produces >500 raw candidates but
+        # the first ~100 score below 40 on average, the discovery pool is likely
+        # noise. A lightweight pre-score on a sample before full enrichment would
+        # save 1000+ wasted page fetches. Leave for now; revisit when tuning scale.
+        async def _enrich_candidates(candidates_to_process):
+            scored_list = []
+            enriched_list = []
+            phase_domains = set()
+
+            async with aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(limit_per_host=max(2, worker_count), ttl_dns_cache=300),
+                timeout=aiohttp.ClientTimeout(total=20),
+                headers={
+                    "User-Agent": user_agent,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+            ) as session:
+                enrichment = LeadEnrichment(
+                    concurrency=worker_count,
+                    max_extra_pages=12,
+                    browser_context=enrichment_ctx,
+                    browser_fallback_concurrency=max(1, worker_count // 2),
+                )
+                sem = asyncio.Semaphore(worker_count)
+
+                async def _process_one(candidate):
+                    async with sem:
+                        domain = candidate.get("domain", "")
+                        if not domain:
+                            return
+                        async with state_lock:
+                            norm = domain.strip().lower()
+                            if norm.startswith("www."):
+                                norm = norm[4:]
+                            if norm in seen_enriched_domains or norm in phase_domains:
+                                return
+                            phase_domains.add(norm)
+                        try:
+                            enriched = await enrichment.enrich_candidate(session, candidate)
+                        except Exception:
+                            return
+                        if not enriched or not enriched.get("fetch_ok"):
+                            return
+                        scored = scoring.evaluate_candidate(enriched)
+                        async with state_lock:
+                            seen_enriched_domains.add(norm)
+                            enriched_list.append(enriched)
+                            scored_list.append(scored)
+                            all_enriched.append(enriched)
+                            all_scored_candidates.append(scored)
+
+                tasks = [asyncio.create_task(_process_one(c)) for c in candidates_to_process]
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+            return enriched_list, scored_list
+
+        for iteration in range(3):
+            depth = iteration + 1
+
+            emit_progress(
+                "discovering",
+                f"Adaptive depth={depth}, iteration={iteration + 1}/3.",
+                status_output=status_output,
+                job_id=job_id,
+                source="discovery",
+                iteration=iteration,
+                depth=depth,
+                pipeline="adaptive",
+            )
+
+            diagnostics.start_phase(f"depth{depth}", iteration=iteration, depth=depth)
+
+            discovery_template = LeadDiscovery(
+                limit=discovery_limit,
+                search_terms=merged_search_terms,
+                signal_map=signal_map,
+                scoring_context=merged_scoring_context,
+                diagnostics=diagnostics,
+            )
+            sources = discovery_template.generate_sources(region, industry, depth=depth)
+            source_groups = partition_discovery_sources(sources)
+            active_groups = list(source_groups.items())
+            if not active_groups:
+                active_groups = [("main", [])]
+            lane_limit = max(limit, discovery_limit // max(1, len(active_groups)))
+
+            discovery_browsers = {}
+            phase_candidates = []
+
+            for lane_idx, (lane_name, _) in enumerate(active_groups):
+                lane_proxies = resolved_proxies if lane_name != "main" else []
+                lane_browser = RotatingDiscoveryBrowser(
+                    playwright=p,
+                    user_agent=user_agent,
+                    proxy_pool=lane_proxies,
+                    start_index=lane_idx,
+                )
+                await lane_browser.start()
+                discovery_browsers[lane_name] = lane_browser
+
+            for lane_name, lane_sources in active_groups:
+                lane_browser = discovery_browsers.get(lane_name)
+                if not lane_browser:
+                    continue
+                lane_discovery = LeadDiscovery(
+                    limit=lane_limit,
+                    search_terms=merged_search_terms,
+                    signal_map=signal_map,
+                    scoring_context=merged_scoring_context,
+                    diagnostics=diagnostics,
+                )
+                async for batch in lane_discovery.run_discovery(
+                    lane_browser,
+                    region=region,
+                    industry=industry,
+                    chunk_size=40,
+                    sources=lane_sources,
+                ):
+                    if batch:
+                        phase_candidates.extend(batch)
+
+            for _, lb in discovery_browsers.items():
+                await lb.close()
+
+            print(
+                f"Phase {iteration + 1} discovery: {len(phase_candidates)} raw candidates at depth={depth}"
+            )
+            emit_progress(
+                "discovered",
+                f"Discovery phase {iteration + 1} complete.",
+                status_output=status_output,
+                job_id=job_id,
+                source="discovery",
+                candidate_count=len(phase_candidates),
+                depth=depth,
+                iteration=iteration,
+                pipeline="adaptive",
+            )
+
+            if phase_candidates:
+                enriched, scored = await _enrich_candidates(phase_candidates)
+                print(f"Phase {iteration + 1} enrichment: {len(scored)} scored candidates")
+
+            top_leads, effective_min_score, pack_stages = build_lead_pack(
+                scoring=scoring,
+                scored_candidates=all_scored_candidates,
+                limit=limit,
+                min_score=current_min_score,
+                fill_until_complete=False,
+            )
+
+            diagnostics.finish_phase(
+                enriched=len(all_enriched),
+                scored=len(all_scored_candidates),
+                qualified=len(top_leads),
+                effective_min_score=effective_min_score,
+                pack_stages=pack_stages,
+            )
+
+            for stage_name, stage_floor, lead_count in pack_stages:
+                if stage_name == "strict":
+                    continue
+                emit_progress(
+                    "scoring",
+                    "Adjusted quality gate in adaptive pipeline.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    source="scoring",
+                    stage=stage_name,
+                    stage_floor=stage_floor,
+                    qualified_count=lead_count,
+                    target_count=limit,
+                    analyzed_count=len(all_scored_candidates),
+                    effective_min_score=effective_min_score,
+                    iteration=iteration,
+                    depth=depth,
+                )
+
+            if len(top_leads) >= limit:
+                emit_progress(
+                    "discovering",
+                    f"Target reached at depth={depth}.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    source="discovery",
+                    qualified_count=len(top_leads),
+                    target_count=limit,
+                    depth=depth,
+                    pipeline="adaptive",
+                )
+                break
+
+            gap = max(0, limit - len(top_leads))
+            emit_progress(
+                "discovering",
+                f"Gap: {gap} leads needed. Running diagnostics...",
+                status_output=status_output,
+                job_id=job_id,
+                source="discovery",
+                gap=gap,
+                qualified_count=len(top_leads),
+                target_count=limit,
+                depth=depth,
+                pipeline="adaptive",
+            )
+
+            adjustments = diagnostics.heuristic_adjustments()
+            if adjustments.get("scoring_adjustment"):
+                current_min_score = adjustments["scoring_adjustment"].get("min_score", current_min_score)
+
+            if adjustments.get("new_query_variants") and iteration >= 1:
+                merged_search_terms = list(dict.fromkeys(
+                    list(merged_search_terms) + adjustments["new_query_variants"][:5]
+                ))
+                emit_progress(
+                    "discovering",
+                    "Diagnostics suggested new query variants.",
+                    status_output=status_output,
+                    job_id=job_id,
+                    source="discovery",
+                    new_queries=adjustments["new_query_variants"][:5],
+                    pipeline="adaptive",
+                )
+
+            if iteration >= 1 and gap > 3:
+                ai_result = await diagnostics.ai_suggest_strategy()
+                if ai_result:
+                    new_qs = ai_result.get("new_queries", [])
+                    if new_qs:
+                        merged_search_terms = list(dict.fromkeys(
+                            list(merged_search_terms) + new_qs
+                        ))
+                        emit_progress(
+                            "discovering",
+                            "AI suggested new search strategies.",
+                            status_output=status_output,
+                            job_id=job_id,
+                            source="discovery",
+                            ai_suggestions=new_qs,
+                            ai_reasoning=ai_result.get("reasoning", ""),
+                            pipeline="adaptive",
+                        )
+                    if ai_result.get("scoring_floor"):
+                        current_min_score = max(20, int(ai_result["scoring_floor"]))
+
+        await enrichment_ctx.close()
+        await enrichment_browser.close()
+
+    print(f"\n{diagnostics.to_log_summary()}")
+
+    if not all_scored_candidates:
+        print("No candidates found during any discovery phase.")
+        emit_progress(
+            "failed",
+            "No candidates found during adaptive discovery.",
+            status_output=status_output,
+            job_id=job_id,
+            source="discovery",
+            pipeline="adaptive",
+        )
+        return
+
+    top_leads, effective_min_score, pack_stages = build_lead_pack(
+        scoring=scoring,
+        scored_candidates=all_scored_candidates,
+        limit=limit,
+        min_score=min_score,
+        fill_until_complete=fill_until_complete,
+    )
+    for stage_name, stage_floor, lead_count in pack_stages:
+        if stage_name == "strict":
+            continue
+        emit_progress(
+            "scoring",
+            "Safety-net backfill applied to reach lead target.",
+            status_output=status_output,
+            job_id=job_id,
+            source="scoring",
+            stage=stage_name,
+            stage_floor=stage_floor,
+            qualified_count=lead_count,
+            target_count=limit,
+            analyzed_count=len(all_scored_candidates),
+            effective_min_score=effective_min_score,
+            pipeline="adaptive",
+        )
+
+    recent_domains_path = _recent_domains_file(output)
+    recent_domains = load_recent_domains(recent_domains_path, max_items=500)
+    top_leads, dropped, restored = apply_recent_domain_suppression(
+        leads=top_leads,
+        recent_domains=recent_domains,
+        limit=limit,
+        preserve_target=fill_until_complete,
+    )
+    if dropped:
+        emit_progress(
+            "scoring",
+            "Suppressed recently delivered domains.",
+            status_output=status_output,
+            job_id=job_id,
+            source="scoring",
+            dropped_repeat_domains=dropped,
+            qualified_count=len(top_leads),
+            target_count=limit,
+        )
+
+    if fill_until_complete and len(top_leads) < limit and top_leads:
+        top_leads, repeated = pad_lead_pack_with_repeats(top_leads, limit)
+        if repeated:
+            emit_progress(
+                "scoring",
+                "Repeated top leads to satisfy guaranteed pack size.",
+                status_output=status_output,
+                job_id=job_id,
+                source="scoring",
+                repeated_fill_count=repeated,
+                qualified_count=len(top_leads),
+                target_count=limit,
+            )
+
+    emit_progress(
+        "exporting",
+        "Writing adaptive scraper exports.",
+        status_output=status_output,
+        job_id=job_id,
+        source="scoring",
+        qualified_count=len(top_leads),
+        target_count=limit,
+        analyzed_count=len(all_scored_candidates),
+        effective_min_score=effective_min_score,
+        output=output,
+        output_format=output_format,
+        pipeline="adaptive",
+    )
+    exporter = LeadExport(output_file=output)
+    exporter.save(
+        top_leads,
+        region=region,
+        industry=industry,
+        run_id=run_id,
+        output_format=output_format,
+    )
+    if audit_output:
+        audit_exporter = LeadExport(output_file=audit_output)
+        audit_exporter.save(
+            all_scored_candidates,
+            region=region,
+            industry=industry,
+            run_id=run_id,
+            output_format=output_format,
+        )
+
+    filled = len(top_leads) >= limit
+    delivered_domains = [_normalize_domain_value(l.get("domain", "")) for l in top_leads if l.get("domain")]
+    if delivered_domains:
+        save_recent_domains(recent_domains_path, recent_domains, delivered_domains, max_items=500)
+
+    status = "delivered" if filled else "delivered"
+    emit_progress(
+        status,
+        "Adaptive scraper job completed." if filled else "Adaptive scraper completed with partial results.",
+        status_output=status_output,
+        job_id=job_id,
+        source="scoring",
+        qualified_count=len(top_leads),
+        target_count=limit,
+        analyzed_count=len(all_scored_candidates),
+        effective_min_score=effective_min_score,
+        output=output,
+        output_format=output_format,
+        audit_output=audit_output or "",
+        filled_pack=filled,
+        partial_fill=not filled,
+        pipeline="adaptive",
+    )
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Buyer lead scraper for apparel/clothing markets")
     parser.add_argument(
@@ -1624,6 +2119,11 @@ if __name__ == "__main__":
         help="Optional file containing one proxy URL per line for discovery rotation.",
     )
     parser.set_defaults(scoring_context=None)
+    parser.add_argument(
+        "--legacy",
+        action="store_true",
+        help="Use legacy parallel pipeline instead of adaptive phased pipeline.",
+    )
     
     args = parser.parse_args()
     if args.job_config:
@@ -1644,8 +2144,29 @@ if __name__ == "__main__":
                 proxy_pool=args.proxy_pool,
                 proxy_file=args.proxy_file,
             ))
-        else:
+        elif args.legacy:
             asyncio.run(run_scraper(
+                region=args.region,
+                industry=args.industry,
+                limit=args.limit,
+                output=args.output,
+                output_format=args.format,
+                test_mode=args.test_mode,
+                min_score=args.min_score,
+                fill_until_complete=getattr(args, "fill_until_complete", False),
+                audit_output=args.audit_output,
+                allow_no_email=args.allow_no_email,
+                allow_weak_buyer_evidence=args.allow_weak_buyer_evidence,
+                status_output=args.status_output,
+                job_id=args.job_id,
+                max_analyzed=args.max_analyzed,
+                search_terms=args.search_terms,
+                scoring_context=args.scoring_context,
+                proxy_pool=args.proxy_pool,
+                proxy_file=args.proxy_file,
+            ))
+        else:
+            asyncio.run(run_scraper_adaptive(
                 region=args.region,
                 industry=args.industry,
                 limit=args.limit,
