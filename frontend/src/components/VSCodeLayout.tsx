@@ -23,6 +23,31 @@ const DEFAULT_TERMINAL_SIZE = 28;
 const MIN_LEFT_SIZE = 12;
 const MIN_RIGHT_SIZE = 16;
 const MIN_TERMINAL_SIZE = 14;
+const LAYOUT_STORAGE_KEY = "exportflow:vscode_layout";
+
+type PersistedLayoutState = {
+  leftOpen?: boolean;
+  rightOpen?: boolean;
+  terminalOpen?: boolean;
+  leftSize?: number;
+  rightSize?: number;
+  terminalSize?: number;
+};
+
+function readLayoutState(): PersistedLayoutState {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PersistedLayoutState) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLayoutState(state: PersistedLayoutState) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(state));
+}
 
 function mimeTypeForArtifact(kind: WorkspaceArtifact["kind"]) {
   if (kind === "json" || kind === "report") return "application/json";
@@ -359,22 +384,43 @@ export function VSCodeLayout({
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
   const terminalPanelRef = useRef<PanelImperativeHandle | null>(null);
-  const lastSessionTabRef = useRef<{ id: string | null; token: number }>({ id: null, token: -1 });
-  const terminalManuallyChangedRef = useRef(false);
+  const initialLayoutStateRef = useRef<PersistedLayoutState>(readLayoutState());
+  const handledSessionOpenTokenRef = useRef(activeSessionOpenToken);
+  const terminalManuallyChangedRef = useRef(initialLayoutStateRef.current.terminalOpen === false);
 
   const rightDefaultOpen = true;
   const hasTerminalContent = Boolean(terminalContent);
 
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(rightDefaultOpen);
-  const [terminalOpen, setTerminalOpen] = useState(hasTerminalContent);
+  const [leftOpen, setLeftOpen] = useState(initialLayoutStateRef.current.leftOpen ?? true);
+  const [rightOpen, setRightOpen] = useState(initialLayoutStateRef.current.rightOpen ?? rightDefaultOpen);
+  const [terminalOpen, setTerminalOpen] = useState(initialLayoutStateRef.current.terminalOpen ?? hasTerminalContent);
   const [focusMode, setFocusMode] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [leftSize, setLeftSize] = useState(DEFAULT_LEFT_SIZE);
-  const [rightSize, setRightSize] = useState(DEFAULT_RIGHT_SIZE);
-  const [terminalSize, setTerminalSize] = useState(DEFAULT_TERMINAL_SIZE);
+  const [leftSize, setLeftSize] = useState(initialLayoutStateRef.current.leftSize ?? DEFAULT_LEFT_SIZE);
+  const [rightSize, setRightSize] = useState(initialLayoutStateRef.current.rightSize ?? DEFAULT_RIGHT_SIZE);
+  const [terminalSize, setTerminalSize] = useState(initialLayoutStateRef.current.terminalSize ?? DEFAULT_TERMINAL_SIZE);
   const [openArtifacts, setOpenArtifacts] = useState<WorkspaceArtifact[]>([]);
   const [activeTabId, setActiveTabId] = useState(MAIN_TAB_ID);
+  const [liveTerminalSummary, setLiveTerminalSummary] = useState<string | null>(null);
+
+  useEffect(() => {
+    writeLayoutState({ leftOpen, rightOpen, terminalOpen, leftSize, rightSize, terminalSize });
+  }, [leftOpen, rightOpen, terminalOpen, leftSize, rightSize, terminalSize]);
+
+  useEffect(() => {
+    setLiveTerminalSummary(null);
+  }, [activeTerminalJobId]);
+
+  useEffect(() => {
+    function handleTerminalSummary(event: Event) {
+      const detail = (event as CustomEvent<{ jobId?: string; summary?: string }>).detail;
+      if (!detail?.summary || detail.jobId !== activeTerminalJobId) return;
+      setLiveTerminalSummary(detail.summary);
+    }
+
+    window.addEventListener("exportflow:terminal-summary", handleTerminalSummary);
+    return () => window.removeEventListener("exportflow:terminal-summary", handleTerminalSummary);
+  }, [activeTerminalJobId]);
 
   useEffect(() => {
     if (!hasTerminalContent) {
@@ -407,16 +453,12 @@ export function VSCodeLayout({
 
   useEffect(() => {
     if (!explorerContext?.activeSessionId) {
-      lastSessionTabRef.current = { id: null, token: -1 };
       return;
     }
-    const alreadyOpened =
-      lastSessionTabRef.current.id === explorerContext.activeSessionId &&
-      lastSessionTabRef.current.token === activeSessionOpenToken;
-    if (alreadyOpened) {
+    if (activeSessionOpenToken <= 0 || activeSessionOpenToken === handledSessionOpenTokenRef.current) {
       return;
     }
-    lastSessionTabRef.current = { id: explorerContext.activeSessionId, token: activeSessionOpenToken };
+    handledSessionOpenTokenRef.current = activeSessionOpenToken;
     const sessionTabId = `session-${explorerContext.activeSessionId}-summary`;
     const sessionArtifact = explorerContext.artifacts.find((artifact) => artifact.id === sessionTabId);
     if (!sessionArtifact) return;
@@ -551,7 +593,7 @@ export function VSCodeLayout({
     [activeTabId, openArtifacts]
   );
 
-  const miniTerminalSummary = terminalSummary || (activeTerminalJobId ? `Scoring: LIVE | Job: ${activeTerminalJobId.slice(0, 8)} | SSE: connected` : "Terminal idle");
+  const miniTerminalSummary = liveTerminalSummary || terminalSummary || (activeTerminalJobId ? `Scoring: LIVE | Job: ${activeTerminalJobId.slice(0, 8)} | SSE: connected` : "Terminal idle");
   const activeArtifactId = activeTabId === MAIN_TAB_ID ? null : activeTabId;
 
   return (
@@ -577,7 +619,7 @@ export function VSCodeLayout({
           <Panel
             id="left-sidebar"
             panelRef={leftPanelRef}
-            defaultSize={`${DEFAULT_LEFT_SIZE}%`}
+            defaultSize={leftOpen ? `${Math.max(MIN_LEFT_SIZE, leftSize)}%` : "0%"}
             minSize={`${MIN_LEFT_SIZE}%`}
             maxSize="34%"
             collapsible
@@ -604,16 +646,10 @@ export function VSCodeLayout({
                 <PanelGroup orientation="horizontal" className="min-h-0 min-w-0">
                   <Panel id="editor-main" minSize="50%" className="min-w-0">
                     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-                      <div className="flex items-center border-b border-[#30363d] bg-[#161b22]">
-                        <button
-                          type="button"
-                          onClick={() => setActiveTabId(MAIN_TAB_ID)}
-                          className={`flex items-center gap-2 border-r border-[#30363d] px-3 py-1.5 text-[11px] ${
-                            activeTabId === MAIN_TAB_ID ? "bg-[#0d1117] text-[#c9d1d9]" : "text-[#8b949e] hover:text-[#c9d1d9]"
-                          }`}
-                        >
+                      <div className="flex min-w-0 items-center border-b border-[#30363d] bg-[#161b22]">
+                        <div className="flex flex-shrink-0 items-center gap-2 border-r border-[#30363d] px-3 py-1.5 text-[11px] text-[#c9d1d9]">
                           <span>{title}</span>
-                        </button>
+                        </div>
                         {openArtifacts.map((artifact) => (
                           <button
                             key={artifact.id}
@@ -635,7 +671,7 @@ export function VSCodeLayout({
                             </span>
                           </button>
                         ))}
-                        <div className="px-3 text-[11px] text-[#8b949e]">{subtitle}</div>
+                        <div className="min-w-0 truncate px-3 text-[11px] text-[#8b949e]">{subtitle}</div>
                         {focusMode && (
                           <div className="ml-auto px-3 text-[10px] uppercase tracking-[0.1em] text-[#00ffff]">
                             Focus Mode
@@ -656,7 +692,7 @@ export function VSCodeLayout({
                   <Panel
                     id="right-sidebar"
                     panelRef={rightPanelRef}
-                    defaultSize={rightDefaultOpen ? `${DEFAULT_RIGHT_SIZE}%` : "0%"}
+                    defaultSize={rightOpen ? `${Math.max(MIN_RIGHT_SIZE, rightSize)}%` : "0%"}
                     minSize={`${MIN_RIGHT_SIZE}%`}
                     maxSize="38%"
                     collapsible
@@ -678,7 +714,7 @@ export function VSCodeLayout({
                 <Panel
                   id="terminal"
                   panelRef={terminalPanelRef}
-                  defaultSize={`${DEFAULT_TERMINAL_SIZE}%`}
+                  defaultSize={terminalOpen ? `${Math.max(MIN_TERMINAL_SIZE, terminalSize)}%` : "6%"}
                   minSize={`${MIN_TERMINAL_SIZE}%`}
                   maxSize="58%"
                   collapsible
@@ -690,7 +726,7 @@ export function VSCodeLayout({
                   className="min-h-0"
                 >
                   {terminalOpen ? (
-                    <BottomPanel onClose={toggleTerminal} jobId={activeTerminalJobId}>
+                    <BottomPanel onClose={toggleTerminal} jobId={activeTerminalJobId} summary={miniTerminalSummary}>
                       {terminalContent}
                     </BottomPanel>
                   ) : (

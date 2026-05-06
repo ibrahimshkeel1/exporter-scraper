@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, createContext, createElement, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { JobTableSelection } from "./JobTable";
 import type { JobEvent } from "./JobLogViewer";
 import type { WorkspaceArtifact, WorkspaceContext } from "./workspace-types";
@@ -235,7 +235,84 @@ function writeStoredActiveJobId(jobId: string | null) {
   }
 }
 
-export function useLeadSessionWorkspace() {
+function pickNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.round(value));
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return Math.max(0, Math.round(parsed));
+  }
+  return null;
+}
+
+function numberFromMetadata(metadata: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = pickNumber(metadata[key]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function compactMessage(value: string) {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  return clean.length > 42 ? `${clean.slice(0, 39)}...` : clean;
+}
+
+function isAuditExport(file: NonNullable<LeadJob["lead_exports"]>[number]) {
+  const path = (file.storage_path || "").toLowerCase();
+  const format = (file.format || "").toLowerCase();
+  return path.includes("audit") || format.includes("audit");
+}
+
+function summarizeJob(job: LeadWorkspaceJob | null) {
+  if (!job) return "No lead session selected";
+
+  const events = sortedEvents(job);
+  const exports = job.lead_exports || [];
+  const lastEvent = [...events].reverse().find((event) => event.message || event.metadata?.message);
+  const discovered =
+    [...events]
+      .reverse()
+      .map((event) =>
+        numberFromMetadata(event.metadata || {}, [
+          "discovered",
+          "discovered_count",
+          "candidate_count",
+          "candidates",
+          "total_candidates",
+          "found",
+          "found_count",
+          "count",
+        ])
+      )
+      .find((value) => value !== null) ??
+    events.filter((event) => String(event.status || "").toLowerCase().includes("discover")).length;
+  const enriched =
+    [...events]
+      .reverse()
+      .map((event) => numberFromMetadata(event.metadata || {}, ["enriched", "enriched_count", "processed", "processed_count", "scored", "scored_count"]))
+      .find((value) => value !== null) ??
+    events.filter((event) => /enrich|scor/i.test(`${event.status || ""} ${event.message || ""}`)).length;
+  const exported = exports
+    .filter((file) => !isAuditExport(file))
+    .reduce((total, file) => total + (file.row_count ?? 0), 0);
+  const lastMessage = compactMessage(
+    (typeof lastEvent?.metadata?.message === "string" ? lastEvent.metadata.message : lastEvent?.message) || job.status
+  );
+
+  return [
+    `job:${job.id.slice(0, 8)}`,
+    job.status,
+    `found:${discovered}`,
+    `enriched:${enriched}`,
+    exported > 0 ? `exported:${exported}` : null,
+    lastMessage ? `now:${lastMessage}` : null,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function useLeadSessionWorkspaceState() {
   const [jobs, setJobs] = useState<LeadWorkspaceJob[]>([]);
   const [selectedJobId, setSelectedJobIdState] = useState<string | null>(() => readStoredActiveJobId());
   const [pendingSelectedJobId, setPendingSelectedJobId] = useState<string | null>(null);
@@ -299,9 +376,7 @@ export function useLeadSessionWorkspace() {
   const explorerContext = useMemo(() => buildLeadSessionExplorerContext(selectedJob, jobs), [selectedJob, jobs]);
   const terminalJobId = selectedJobId || selectedJob?.id || null;
   const terminalEvents = selectedJob?.id === terminalJobId ? selectedJob.job_events || [] : [];
-  const terminalSummary = terminalJobId
-    ? `Session: ${terminalJobId.slice(0, 8)} | Logs: saved + live`
-    : "No lead session selected";
+  const terminalSummary = summarizeJob(selectedJob);
 
   return {
     jobs,
@@ -314,10 +389,28 @@ export function useLeadSessionWorkspace() {
     terminalEvents,
     terminalSummary,
     jobTableProps: {
+      initialJobs: jobs,
       selectedJobId,
-      onSelectedJobIdChange: selectJob,
+      onSelectedJobIdChange: (jobId: string | null) => selectJob(jobId, false),
       onSelectedJobChange: handleSelectedJobChange,
       onJobsChange: handleJobsChange,
     },
   };
+}
+
+export type LeadSessionWorkspaceValue = ReturnType<typeof useLeadSessionWorkspaceState>;
+
+const LeadSessionWorkspaceContext = createContext<LeadSessionWorkspaceValue | null>(null);
+
+export function LeadSessionWorkspaceProvider({ children }: { children: ReactNode }) {
+  const value = useLeadSessionWorkspaceState();
+  return createElement(LeadSessionWorkspaceContext.Provider, { value }, children);
+}
+
+export function useLeadSessionWorkspace() {
+  const value = useContext(LeadSessionWorkspaceContext);
+  if (!value) {
+    throw new Error("useLeadSessionWorkspace must be used inside LeadSessionWorkspaceProvider.");
+  }
+  return value;
 }

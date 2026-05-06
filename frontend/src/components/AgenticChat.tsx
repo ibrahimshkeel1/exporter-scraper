@@ -124,6 +124,25 @@ function workerLogFromJobEvent(event: HistoricalJobEvent): WorkerLog | null {
 
 type DiscoveryLane = "bing" | "duckduckgo" | "yahoo";
 
+function compactTerminalMessage(value: string) {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  return clean.length > 46 ? `${clean.slice(0, 43)}...` : clean;
+}
+
+function terminalSummaryFromLogs(jobId: string, discoveryLogs: Record<DiscoveryLane, WorkerLog[]>, enrichmentLogs: WorkerLog[]) {
+  const found = Object.values(discoveryLogs).reduce((total, laneLogs) => total + laneLogs.length, 0);
+  const enriched = enrichmentLogs.length;
+  const latest =
+    enrichmentLogs.at(-1) ||
+    discoveryLogs.yahoo.at(-1) ||
+    discoveryLogs.duckduckgo.at(-1) ||
+    discoveryLogs.bing.at(-1);
+  const current = latest ? compactTerminalMessage(latest.message) : "waiting for worker";
+
+  return `job:${jobId.slice(0, 8)} | found:${found} | enriched/scored:${enriched} | now:${current}`;
+}
+
 export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string; initialEvents?: HistoricalJobEvent[] }) {
   const [discoveryLogs, setDiscoveryLogs] = useState<Record<DiscoveryLane, WorkerLog[]>>({
     bing: [],
@@ -225,6 +244,17 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
       enrichmentRef.current.scrollTop = enrichmentRef.current.scrollHeight;
     }
   }, [enrichmentLogs]);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("exportflow:terminal-summary", {
+        detail: {
+          jobId,
+          summary: terminalSummaryFromLogs(jobId, discoveryLogs, enrichmentLogs),
+        },
+      })
+    );
+  }, [discoveryLogs, enrichmentLogs, jobId]);
 
   async function copyLaneLogs(lane: "bing" | "duckduckgo" | "yahoo" | "enrichment") {
     const logs = lane === "enrichment" ? enrichmentLogs : discoveryLogs[lane];
@@ -411,25 +441,26 @@ function ReportDownloads({
 
 function AiGlyph({ active = false }: { active?: boolean }) {
   return (
-    <span className="relative inline-flex h-6 w-6 flex-shrink-0 items-center justify-center border border-black/20 bg-black/10">
-      {active && <span className="absolute inset-0 animate-ping border border-black/40" />}
+    <span className="relative inline-flex h-7 w-7 flex-shrink-0 items-center justify-center border border-black/30 bg-black text-[#2dd4bf] shadow-[inset_0_0_0_1px_rgba(45,212,191,0.35),0_0_18px_rgba(0,0,0,0.25)]">
+      {active && <span className="absolute -inset-1 animate-ping border border-black/30" />}
+      {active && <span className="absolute h-1 w-1 animate-pulse bg-[#2dd4bf]" />}
       <svg
         viewBox="0 0 24 24"
         aria-hidden="true"
-        className={`h-4 w-4 ${active ? "animate-pulse" : ""}`}
+        className={`relative h-5 w-5 ${active ? "animate-pulse" : ""}`}
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.8"
+        strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        <path d="M12 3.5v3" />
-        <path d="M7 8.5h10a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-4a3 3 0 0 1 3-3Z" />
-        <path d="M9 13h.01" />
-        <path d="M15 13h.01" />
-        <path d="M10 16c1.1.7 2.9.7 4 0" />
-        <path d="M5 11H3" />
-        <path d="M21 11h-2" />
+        <path d="M12 2.8v3.1" />
+        <path d="M7.2 7.6h9.6a3.2 3.2 0 0 1 3.2 3.2v3.9a3.2 3.2 0 0 1-3.2 3.2H7.2A3.2 3.2 0 0 1 4 14.7v-3.9a3.2 3.2 0 0 1 3.2-3.2Z" />
+        <path d="M8.7 12.4h.01" strokeWidth="3.2" />
+        <path d="M15.3 12.4h.01" strokeWidth="3.2" />
+        <path d="M9.6 15.5c1.4.9 3.4.9 4.8 0" />
+        <path d="M2.8 12.2h2" />
+        <path d="M19.2 12.2h2" />
       </svg>
     </span>
   );
@@ -843,18 +874,21 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
             <div key={message.id}>
               {message.type === "text" && (
                 <div
-                  className={`flex items-start gap-2 border px-3 py-2 text-sm leading-6 ${
+                  className={`relative flex items-start gap-2 overflow-hidden border px-3 py-2 text-sm leading-6 ${
                     message.role === "user"
-                      ? "border-[#30363d] bg-[#1f242d] text-[#00ffff]"
-                      : "border-[#2dd4bf] bg-[#2dd4bf] text-black"
+                      ? "border-[#30363d] bg-[#1b2028] text-[#00ffff] shadow-[inset_2px_0_0_#00ffff]"
+                      : "border-[#00f5d4] bg-[linear-gradient(135deg,#38f8d5_0%,#16d9c5_52%,#00a7a7_100%)] text-black shadow-[0_0_28px_rgba(45,212,191,0.22)]"
                   }`}
                 >
+                  {message.role === "assistant" && (
+                    <span className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.18))]" />
+                  )}
                   {message.role === "user" ? (
                     <span className="mt-0.5 font-mono text-[#8b949e]">&gt;</span>
                   ) : (
                     <AiGlyph />
                   )}
-                  <span className="whitespace-pre-wrap">{message.content}</span>
+                  <span className="relative whitespace-pre-wrap">{message.content}</span>
                 </div>
               )}
 
@@ -922,9 +956,9 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
           ))}
 
           {isThinking && (
-            <div className="inline-flex items-center gap-2 border border-[#2dd4bf] bg-[#2dd4bf] px-3 py-2 text-sm text-black">
+            <div className="inline-flex items-center gap-2 border border-[#00f5d4] bg-[linear-gradient(135deg,#38f8d5,#00a7a7)] px-3 py-2 text-sm text-black shadow-[0_0_28px_rgba(45,212,191,0.24)]">
               <AiGlyph active />
-              analyzing request...
+              reasoning through target fit...
             </div>
           )}
         </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   ChevronRight,
@@ -19,13 +20,6 @@ import { AuthPanel } from "./AuthPanel";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 import { createZipBlob } from "../lib/zip";
 import { WorkspaceArtifact, WorkspaceContext, WorkspaceMode } from "./workspace-types";
-
-function goToSearch() {
-  window.dispatchEvent(new Event("exportflow:new-chat"));
-  if (typeof window !== "undefined" && window.location.pathname !== "/search") {
-    window.location.href = "/search";
-  }
-}
 
 type LeftSidebarProps = {
   mode: WorkspaceMode;
@@ -119,6 +113,7 @@ export function LeftSidebar({
   activeArtifactId,
   onOpenArtifact,
 }: LeftSidebarProps) {
+  const router = useRouter();
   const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [downloadingIds, setDownloadingIds] = useState<Record<string, boolean>>({});
@@ -274,6 +269,13 @@ export function LeftSidebar({
     }
   }
 
+  function startNewSearch() {
+    window.dispatchEvent(new Event("exportflow:new-chat"));
+    if (window.location.pathname !== "/search") {
+      router.push("/search");
+    }
+  }
+
   function renderFolder(node: FolderNode, depth = 0): ReactNode {
     const folderKey = `folder:${node.path}`;
     const expanded = expandedFolders[node.path] ?? true;
@@ -355,7 +357,7 @@ export function LeftSidebar({
       {(mode === "dashboard" || mode === "search") && (
         <button
           type="button"
-          onClick={goToSearch}
+          onClick={startNewSearch}
           className="ide-btn ide-btn-primary mx-2 mb-3 inline-flex h-9 items-center justify-center gap-2 px-2 text-xs"
         >
           <Plus size={14} />

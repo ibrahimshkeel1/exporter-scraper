@@ -11,6 +11,7 @@ import { LeadJob } from "../lib/types";
 type JobTableProps = {
   refreshSignal: number;
   compact?: boolean;
+  initialJobs?: LeadJob[];
   onSelectedJobChange?: (job: JobTableSelection) => void;
   onJobsChange?: (jobs: LeadJob[]) => void;
   selectedJobId?: string | null;
@@ -24,6 +25,7 @@ export type JobTableSelection = (LeadJob & { job_events?: JobEvent[] }) | null;
 export function JobTable({
   refreshSignal,
   compact = false,
+  initialJobs = [],
   onSelectedJobChange,
   onJobsChange,
   selectedJobId: controlledSelectedJobId,
@@ -31,7 +33,7 @@ export function JobTable({
   showFilesPane = true,
 }: JobTableProps) {
   const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
-  const [jobs, setJobs] = useState<LeadJob[]>([]);
+  const [jobs, setJobs] = useState<LeadJob[]>(initialJobs);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [reportJobId, setReportJobId] = useState<string | null>(null);
@@ -133,6 +135,12 @@ export function JobTable({
   useEffect(() => {
     void loadJobs();
   }, [refreshSignal]);
+
+  useEffect(() => {
+    if (initialJobs.length > 0) {
+      setJobs(initialJobs);
+    }
+  }, [initialJobs]);
 
   useEffect(() => {
     if (jobs.length === 0) {
