@@ -28,11 +28,9 @@ export function VSCodeLayout({
   terminalContent,
   activeTerminalJobId,
 }: VSCodeLayoutProps) {
-  const isDashboard = mode === "dashboard";
-
-  // Default sidebar states - dashboard mode has no sidebars
-  const [leftOpen, setLeftOpen] = useState(!isDashboard);
-  const [rightOpen, setRightOpen] = useState(!isDashboard);
+  // Default sidebar states - always open for full IDE aesthetic
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -74,31 +72,28 @@ export function VSCodeLayout({
   }, [leftOpen, rightOpen, terminalOpen]);
 
   const toggleLeft = useCallback(() => {
-    if (isDashboard) return; // disabled on dashboard
     setLeftOpen((v) => {
       const next = !v;
       if (next && focusMode) setFocusMode(false);
       return next;
     });
-  }, [focusMode, isDashboard]);
+  }, [focusMode]);
 
   const toggleRight = useCallback(() => {
-    if (isDashboard) return; // disabled on dashboard
     setRightOpen((v) => {
       const next = !v;
       if (next && focusMode) setFocusMode(false);
       return next;
     });
-  }, [focusMode, isDashboard]);
+  }, [focusMode]);
 
   const toggleTerminal = useCallback(() => {
-    if (isDashboard) return; // disabled on dashboard
     setTerminalOpen((v) => {
       const next = !v;
       if (next && focusMode) setFocusMode(false);
       return next;
     });
-  }, [focusMode, isDashboard]);
+  }, [focusMode]);
 
   const zoomIn = useCallback(() => {
     setZoomLevel((v) => Math.min(1.5, Math.round((v + 0.1) * 10) / 10));
@@ -133,16 +128,14 @@ export function VSCodeLayout({
           />
         </div>
 
-        {/* Left Sidebar — only rendered when NOT dashboard */}
-        {!isDashboard && (
-          <div
-            className={`h-full flex-shrink-0 overflow-hidden transition-all duration-200 ${
-              leftOpen ? "w-64" : "w-0"
-            }`}
-          >
-            <LeftSidebar mode={mode} />
-          </div>
-        )}
+        {/* Left Sidebar */}
+        <div
+          className={`h-full flex-shrink-0 overflow-hidden transition-all duration-200 ${
+            leftOpen ? "w-64" : "w-0"
+          }`}
+        >
+          <LeftSidebar mode={mode} />
+        </div>
 
         {/* Main Content Area — fills remaining space */}
         <div className="flex flex-1 min-w-0 flex-col overflow-hidden">
@@ -173,20 +166,18 @@ export function VSCodeLayout({
               </div>
             </div>
 
-            {/* Right Sidebar — only rendered when NOT dashboard */}
-            {!isDashboard && (
-              <div
-                className={`h-full flex-shrink-0 overflow-hidden transition-all duration-200 ${
-                  rightOpen ? "w-80" : "w-0"
-                }`}
-              >
-                <RightSidebar jobsPanel={jobsPanel} activeJobId={activeTerminalJobId} />
-              </div>
-            )}
+            {/* Right Sidebar */}
+            <div
+              className={`h-full flex-shrink-0 overflow-hidden transition-all duration-200 ${
+                rightOpen ? "w-80" : "w-0"
+              }`}
+            >
+              <RightSidebar jobsPanel={jobsPanel} activeJobId={activeTerminalJobId} />
+            </div>
           </div>
 
-          {/* Bottom Panel — terminal (only when not dashboard) */}
-          {terminalContent && !isDashboard && (
+          {/* Bottom Panel — terminal */}
+          {terminalContent && (
             <div
               className={`flex-shrink-0 overflow-hidden transition-all duration-200 ${
                 terminalOpen ? "h-64" : "h-0"
