@@ -1,57 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { FileJson2, FileSpreadsheet, RefreshCw, TerminalSquare } from "lucide-react";
-import { createBrowserSupabase, isSupabaseConfigured } from "../../lib/supabase-client";
-import { LeadJob } from "../../lib/types";
+import { useMemo } from "react";
+import { FileJson2, FileSpreadsheet, RefreshCw } from "lucide-react";
+import { DashboardSnapshot } from "./dashboard-data";
 
-export function RecentJobsWidget() {
-  const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
-  const [jobs, setJobs] = useState<LeadJob[]>([]);
-  const [loading, setLoading] = useState(false);
+type RecentJobsWidgetProps = {
+  snapshot: DashboardSnapshot;
+};
 
-  async function loadJobs() {
-    setLoading(true);
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
-    const response = await fetch("/api/jobs", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const payload = await response.json();
-    setLoading(false);
-
-    if (response.ok) {
-      const allJobs = payload.jobs ?? [];
-      const completed = allJobs
-        .filter((j: LeadJob) => j.status === "delivered" || j.status === "failed")
-        .slice(0, 5);
-      setJobs(completed);
-    }
-  }
-
-  useEffect(() => {
-    void loadJobs();
-  }, []);
-
-  async function downloadExport(job: LeadJob, file: NonNullable<LeadJob["lead_exports"]>[number]) {
-    if (file.public_url) {
-      window.open(file.public_url, "_blank", "noopener,noreferrer");
-      return;
-    }
-    if (!supabase || !file.storage_path) return;
-    const { data, error } = await supabase.storage.from("lead-exports").createSignedUrl(file.storage_path, 60 * 60);
-    if (error || !data?.signedUrl) return;
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
-  }
+export function RecentJobsWidget({ snapshot }: RecentJobsWidgetProps) {
+  const jobs = useMemo(
+    () =>
+      [...snapshot.jobs]
+        .filter((job) => job.status === "delivered" || job.status === "failed")
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 5),
+    [snapshot.jobs]
+  );
 
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-1">
@@ -59,11 +24,11 @@ export function RecentJobsWidget() {
         <span className="text-[11px] text-vercel-muted">Last 5 completed</span>
         <button
           type="button"
-          onClick={() => void loadJobs()}
-          disabled={loading}
+          onClick={snapshot.refresh}
+          disabled={snapshot.loading}
           className="ide-btn inline-flex items-center gap-1 px-2 py-1 text-[10px]"
         >
-          <RefreshCw size={10} className={loading ? "animate-spin" : ""} />
+          <RefreshCw size={10} className={snapshot.loading ? "animate-spin" : ""} />
           Refresh
         </button>
       </div>
@@ -97,29 +62,19 @@ export function RecentJobsWidget() {
             </div>
 
             <div className="flex items-center gap-1">
-              {job.lead_exports?.map((file) => {
-                const isAudit = file.storage_path?.includes("audit");
+              {(job.lead_exports || []).slice(0, 2).map((file) => {
+                const isAudit = String(file.storage_path || "").toLowerCase().includes("audit");
                 return (
-                  <button
+                  <span
                     key={file.id}
-                    type="button"
-                    onClick={() => void downloadExport(job, file)}
                     className="ide-btn inline-flex items-center gap-1 px-2 py-1 text-[10px]"
-                    title={isAudit ? "Download audit" : "Download leads"}
+                    title={isAudit ? "Audit export" : "Leads export"}
                   >
                     {isAudit ? <FileSpreadsheet size={10} /> : <FileJson2 size={10} />}
-                    {isAudit ? "AUDIT" : "LEADS"}
-                  </button>
+                    {isAudit ? "AUDIT" : String(file.format || "file").toUpperCase()}
+                  </span>
                 );
               })}
-              <button
-                type="button"
-                className="ide-btn inline-flex items-center gap-1 border-[#00ffff] px-2 py-1 text-[10px] text-[#00ffff]"
-                title="Re-run job"
-              >
-                <RefreshCw size={10} />
-                Re-run
-              </button>
             </div>
           </div>
         ))}

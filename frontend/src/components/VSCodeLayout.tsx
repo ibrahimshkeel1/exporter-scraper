@@ -32,6 +32,116 @@ function mimeTypeForArtifact(kind: WorkspaceArtifact["kind"]) {
   return "application/octet-stream";
 }
 
+function parseCsvRow(line: string) {
+  const values: string[] = [];
+  let current = "";
+  let quoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === "\"") {
+      if (quoted && next === "\"") {
+        current += "\"";
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+      continue;
+    }
+
+    if (char === "," && !quoted) {
+      values.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current.trim());
+  return values;
+}
+
+function parseCsvPreview(content: string) {
+  return content
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => parseCsvRow(line));
+}
+
+function CsvPreviewPanel({ content }: { content: string }) {
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    setQuery("");
+  }, [content]);
+  const rows = useMemo(() => parseCsvPreview(content), [content]);
+  const headers = rows[0] || [];
+  const dataRows = rows.slice(1);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = normalizedQuery
+    ? dataRows.filter((row) => row.some((cell) => cell.toLowerCase().includes(normalizedQuery)))
+    : dataRows;
+  const visible = filtered.slice(0, 300);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="ide-input h-8 min-w-[220px] flex-1 px-2 text-xs"
+          placeholder="Search CSV rows..."
+        />
+        <span className="text-[11px] text-[#8b949e]">
+          {filtered.length.toLocaleString()} rows
+          {filtered.length > visible.length ? ` (showing ${visible.length})` : ""}
+        </span>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto border border-[#30363d] bg-black/30">
+        {headers.length === 0 ? (
+          <div className="p-3 text-xs text-[#8b949e]">No CSV rows to preview.</div>
+        ) : (
+          <table className="w-full min-w-[740px] border-collapse text-left text-xs">
+            <thead className="sticky top-0 z-10 bg-[#10161f]">
+              <tr>
+                {headers.map((header, index) => (
+                  <th key={`${header}-${index}`} className="border-b border-[#30363d] px-2 py-1.5 font-semibold text-[#8cf5ff]">
+                    {header || `Column ${index + 1}`}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((row, rowIndex) => (
+                <tr key={`row-${rowIndex}`} className="border-b border-[#1c2128] align-top">
+                  {headers.map((_, cellIndex) => (
+                    <td key={`cell-${rowIndex}-${cellIndex}`} className="max-w-[420px] px-2 py-1.5 text-[#c9d1d9]">
+                      <span className="block max-h-[3.8rem] overflow-hidden whitespace-pre-wrap break-words" title={row[cellIndex] || ""}>
+                        {row[cellIndex] || ""}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {visible.length === 0 && (
+                <tr>
+                  <td className="px-2 py-2 text-[#8b949e]" colSpan={Math.max(1, headers.length)}>
+                    No rows match this search.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type VSCodeLayoutProps = {
   mode: WorkspaceMode;
   title: string;
@@ -43,7 +153,7 @@ type VSCodeLayoutProps = {
   activeTerminalJobId?: string | null;
   explorerContext?: WorkspaceContext | null;
   renderArtifact?: (artifact: WorkspaceArtifact) => ReactNode;
-  onSelectExplorerSession?: (sessionId: string) => void;
+  activeSessionOpenToken?: number;
 };
 
 function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
@@ -163,6 +273,12 @@ function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
     }
   }
 
+  const aiStyledArtifact =
+    artifact.kind === "markdown" &&
+    (artifact.name.toLowerCase().includes("ai") ||
+      artifact.name.toLowerCase().includes("report") ||
+      artifact.folder.toLowerCase().includes("analysis"));
+
   return (
     <div className="h-full overflow-auto bg-[#0d1117] p-4">
       <div className="mb-3 flex items-start justify-between gap-3 border border-[#30363d] bg-black/35 p-3 text-xs">
@@ -195,9 +311,23 @@ function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
         </div>
       )}
 
-      <pre className="whitespace-pre-wrap break-words border border-[#30363d] bg-black/40 p-3 text-xs leading-5 text-[#c9d1d9]">
-        {previewLoading ? "Loading preview..." : previewText}
-      </pre>
+      {previewLoading ? (
+        <pre className="whitespace-pre-wrap break-words border border-[#30363d] bg-black/40 p-3 text-xs leading-5 text-[#c9d1d9]">
+          Loading preview...
+        </pre>
+      ) : artifact.kind === "csv" ? (
+        <CsvPreviewPanel content={previewText} />
+      ) : (
+        <pre
+          className={`whitespace-pre-wrap break-words border p-3 text-xs leading-5 ${
+            aiStyledArtifact
+              ? "border-[#10a3a3] bg-[#33dfdf] text-black"
+              : "border-[#30363d] bg-black/40 text-[#c9d1d9]"
+          }`}
+        >
+          {previewText}
+        </pre>
+      )}
       {artifact.externalUrl && (
         <a
           href={artifact.externalUrl}
@@ -224,14 +354,18 @@ export function VSCodeLayout({
   activeTerminalJobId,
   explorerContext,
   renderArtifact,
-  onSelectExplorerSession,
+  activeSessionOpenToken = 0,
 }: VSCodeLayoutProps) {
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
   const terminalPanelRef = useRef<PanelImperativeHandle | null>(null);
+  const lastSessionTabRef = useRef<{ id: string | null; token: number }>({ id: null, token: -1 });
+  const autoCollapsedTabRef = useRef<string | null>(null);
+
+  const rightDefaultOpen = mode === "search" || mode === "dashboard";
 
   const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(rightDefaultOpen);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -260,6 +394,35 @@ export function VSCodeLayout({
       return stillExists ? current : MAIN_TAB_ID;
     });
   }, [explorerContext]);
+
+  useEffect(() => {
+    if (!explorerContext?.activeSessionId) {
+      lastSessionTabRef.current = { id: null, token: -1 };
+      return;
+    }
+    const alreadyOpened =
+      lastSessionTabRef.current.id === explorerContext.activeSessionId &&
+      lastSessionTabRef.current.token === activeSessionOpenToken;
+    if (alreadyOpened) {
+      return;
+    }
+    lastSessionTabRef.current = { id: explorerContext.activeSessionId, token: activeSessionOpenToken };
+    const sessionTabId = `session-${explorerContext.activeSessionId}-summary`;
+    const sessionArtifact = explorerContext.artifacts.find((artifact) => artifact.id === sessionTabId);
+    if (!sessionArtifact) return;
+    setOpenArtifacts((current) => (current.some((entry) => entry.id === sessionArtifact.id) ? current : [...current, sessionArtifact]));
+    setActiveTabId(sessionArtifact.id);
+  }, [activeSessionOpenToken, explorerContext]);
+
+  useEffect(() => {
+    if (activeTabId === MAIN_TAB_ID || !rightOpen) return;
+    if (autoCollapsedTabRef.current === activeTabId) return;
+    autoCollapsedTabRef.current = activeTabId;
+    const currentSize = rightPanelRef.current?.getSize?.();
+    if (currentSize?.asPercentage && currentSize.asPercentage > MIN_RIGHT_SIZE) setRightSize(currentSize.asPercentage);
+    rightPanelRef.current?.collapse?.();
+    setRightOpen(false);
+  }, [activeTabId, rightOpen]);
 
   const collapsePanel = useCallback((ref: RefObject<PanelImperativeHandle | null>) => {
     ref.current?.collapse?.();
@@ -418,7 +581,6 @@ export function VSCodeLayout({
               explorerContext={explorerContext}
               activeArtifactId={activeArtifactId}
               onOpenArtifact={openArtifact}
-              onSelectSession={onSelectExplorerSession}
             />
           </Panel>
 
@@ -482,7 +644,7 @@ export function VSCodeLayout({
                   <Panel
                     id="right-sidebar"
                     panelRef={rightPanelRef}
-                    defaultSize={`${DEFAULT_RIGHT_SIZE}%`}
+                    defaultSize={rightDefaultOpen ? `${DEFAULT_RIGHT_SIZE}%` : "0%"}
                     minSize={`${MIN_RIGHT_SIZE}%`}
                     maxSize="38%"
                     collapsible

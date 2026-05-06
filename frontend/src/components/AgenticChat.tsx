@@ -6,6 +6,7 @@ import { leadPacks } from "../lib/pricing";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 import { TargetingPreflight } from "../lib/types";
 import { parsePastedLeads } from "../lib/outreach";
+import { laneFromPayload } from "../lib/log-lanes";
 import { JobReportCard } from "./JobReportCard";
 
 export type AgenticMessage = {
@@ -20,6 +21,14 @@ export type AgenticMessage = {
 type AgenticChatProps = {
   onJobCreated?: () => void;
   onActiveJobChange?: (jobId: string | undefined) => void;
+};
+
+type RunConfigSnapshot = {
+  packId: string;
+  leadCount: number;
+  market: string;
+  minScore: number;
+  allowNoEmail: boolean;
 };
 
 type WorkerLog = {
@@ -85,16 +94,6 @@ function parseWorkerPayload(event: MessageEvent) {
 
 type DiscoveryLane = "bing" | "duckduckgo" | "yahoo";
 
-function discoveryLaneForPayload(payload: { source: string; lane?: string; engine?: string }) {
-  if (payload.source === "enrichment" || payload.source === "scoring") return "enrichment";
-  const lane = (payload.lane || "").toLowerCase();
-  const engine = (payload.engine || "").toLowerCase();
-  if (lane === "bing" || engine === "bing") return "bing";
-  if (lane === "duckduckgo" || engine === "duckduckgo") return "duckduckgo";
-  if (lane === "yahoo" || engine === "yahoo") return "yahoo";
-  return "enrichment";
-}
-
 export function DualLiveTerminal({ jobId }: { jobId: string }) {
   const [discoveryLogs, setDiscoveryLogs] = useState<Record<DiscoveryLane, WorkerLog[]>>({
     bing: [],
@@ -122,7 +121,7 @@ export function DualLiveTerminal({ jobId }: { jobId: string }) {
 
     const pushLog = (entry: WorkerLog) => {
       if (!entry.message) return;
-      const lane = discoveryLaneForPayload(entry);
+      const lane = laneFromPayload(entry);
       if (lane === "enrichment") {
         setEnrichmentLogs((current) => [...current, entry]);
       } else {
@@ -451,10 +450,21 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
     void syncSession();
   }, [messages, sessionLoaded, supabase]);
 
+  const runningJobIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          messages
+            .filter((item) => item.type === "terminal")
+            .map((item) => String(item.payload?.jobId || ""))
+            .filter(Boolean)
+        )
+      ),
+    [messages]
+  );
+
   useEffect(() => {
-    if (!supabase || messages.length === 0) return;
-    const runningJobs = messages.filter((item) => item.type === "terminal").map((item) => String(item.payload?.jobId || ""));
-    if (runningJobs.length === 0) return;
+    if (!supabase || runningJobIds.length === 0) return;
 
     async function autoGenerateReport(jobId: string) {
       if (!supabase) return;
@@ -473,11 +483,54 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
       });
     }
 
+    async function backfillReportCards() {
+      if (!supabase) return;
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      const response = await fetch("/api/jobs", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json();
+      if (!response.ok) return;
+      const jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+
+      setMessages((current) => {
+        let changed = false;
+        let next = current;
+
+        for (const job of jobs) {
+          const jobId = String(job?.id || "");
+          if (!jobId || !runningJobIds.includes(jobId)) continue;
+          const events = Array.isArray(job?.job_events) ? job.job_events : [];
+          const reportEvent = [...events].reverse().find((event: any) => event?.status === "report_ready" && event?.metadata?.report);
+          if (!reportEvent?.metadata?.report) continue;
+          if (next.some((item) => item.type === "report" && item.payload?.jobId === jobId)) continue;
+          changed = true;
+          next = [
+            ...next,
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              type: "report",
+              payload: { jobId, report: reportEvent.metadata.report },
+              created_at: new Date().toISOString(),
+            },
+          ];
+        }
+
+        return changed ? next : current;
+      });
+    }
+
     const channel = supabase
       .channel("chat-job-events")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "job_events" }, (payload) => {
         const evt = payload.new as { status: string; job_id: string; message?: string; metadata?: Record<string, unknown> };
-        if (!runningJobs.includes(evt.job_id)) return;
+        if (!runningJobIds.includes(evt.job_id)) return;
         if (evt.status !== "report_ready" && evt.status !== "delivered" && evt.status !== "failed") return;
 
         if (evt.status === "delivered") {
@@ -498,6 +551,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
               },
             ];
           }
+
           if (evt.status === "delivered") {
             if (
               current.some(
@@ -531,6 +585,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
             }
             return [...current, ...newMessages];
           }
+
           if (
             current.some(
               (item) =>
@@ -541,16 +596,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
           ) {
             return current;
           }
-          if (
-            current.some(
-              (item) =>
-                item.type === "text" &&
-                item.payload?.kind === "failed_notice" &&
-                item.payload?.jobId === evt.job_id
-            )
-          ) {
-            return current;
-          }
+
           const alreadyDelivered = current.some(
             (item) =>
               (item.type === "text" && item.payload?.kind === "delivery_notice" && item.payload?.jobId === evt.job_id) ||
@@ -580,10 +626,17 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
         });
       })
       .subscribe();
+
+    void backfillReportCards();
+    const pollTimer = setInterval(() => {
+      void backfillReportCards();
+    }, 12000);
+
     return () => {
+      clearInterval(pollTimer);
       supabase.removeChannel(channel);
     };
-  }, [supabase, messages]);
+  }, [runningJobIds, supabase]);
 
   function detectOutreachIntent(text: string) {
     const lower = text.toLowerCase();
@@ -721,8 +774,16 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
           {visibleMessages.map((message) => (
             <div key={message.id}>
               {message.type === "text" && (
-                <div className={`ide-panel px-3 py-2 text-sm leading-6 ${message.role === "user" ? "text-[#00ffff]" : "text-vercel-text"}`}>
-                  <span className="mr-2 text-[#8b949e]">{message.role === "user" ? ">" : "ai>"}</span>
+                <div
+                  className={`ide-panel px-3 py-2 text-sm leading-6 ${
+                    message.role === "user"
+                      ? "bg-transparent text-[#00ffff]"
+                      : "border-[#10a3a3] bg-[#33dfdf] text-black"
+                  }`}
+                >
+                  <span className={`mr-2 ${message.role === "user" ? "text-[#8b949e]" : "text-black/70"}`}>
+                    {message.role === "user" ? ">" : "ai>"}
+                  </span>
                   <span className="whitespace-pre-wrap">{message.content}</span>
                 </div>
               )}
@@ -732,25 +793,40 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
                   <ConfigWidget
                     brief={message.payload.brief as TargetingPreflight}
                     messages={messages}
+                    startedConfig={message.payload?.runConfig as RunConfigSnapshot | undefined}
                     supabase={supabase}
-                    onJobStarted={(jobId) => {
-                      setMessages((current) => [
-                        ...current,
-                        {
-                          id: crypto.randomUUID(),
-                          role: "assistant",
-                          type: "terminal",
-                          payload: { jobId },
-                          created_at: new Date().toISOString(),
-                        },
-                        {
-                          id: crypto.randomUUID(),
-                          role: "assistant",
-                          type: "text",
-                          content: `Job ${jobId.slice(0, 8)} started. Streaming live lanes below.`,
-                          created_at: new Date().toISOString(),
-                        },
-                      ]);
+                    onJobStarted={(jobId, runConfig) => {
+                      setMessages((current) => {
+                        const updated = current.map((item) =>
+                          item.id === message.id
+                            ? {
+                                ...item,
+                                payload: {
+                                  ...(item.payload || {}),
+                                  runConfig,
+                                  startedJobId: jobId,
+                                },
+                              }
+                            : item
+                        );
+                        return [
+                          ...updated,
+                          {
+                            id: crypto.randomUUID(),
+                            role: "assistant",
+                            type: "terminal",
+                            payload: { jobId },
+                            created_at: new Date().toISOString(),
+                          },
+                          {
+                            id: crypto.randomUUID(),
+                            role: "assistant",
+                            type: "text",
+                            content: `Job ${jobId.slice(0, 8)} started. Streaming live lanes below.`,
+                            created_at: new Date().toISOString(),
+                          },
+                        ];
+                      });
                       onJobCreated?.();
                     }}
                   />
@@ -816,20 +892,30 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
 function ConfigWidget({
   brief,
   messages,
+  startedConfig,
   supabase,
   onJobStarted,
 }: {
   brief: TargetingPreflight;
   messages: AgenticMessage[];
+  startedConfig?: RunConfigSnapshot;
   supabase: ReturnType<typeof createBrowserSupabase> | null;
-  onJobStarted: (id: string) => void;
+  onJobStarted: (id: string, runConfig: RunConfigSnapshot) => void;
 }) {
-  const [packId, setPackId] = useState("starter");
-  const [market, setMarket] = useState(normalizeRegion(brief.targetMarkets?.[0] || "International"));
-  const [minScore, setMinScore] = useState(brief.recommendedMinScore ? Math.max(35, Math.min(85, brief.recommendedMinScore)) : 55);
-  const [allowNoEmail, setAllowNoEmail] = useState(true);
+  const [packId, setPackId] = useState(startedConfig?.packId || "starter");
+  const [market, setMarket] = useState(startedConfig?.market || normalizeRegion(brief.targetMarkets?.[0] || "International"));
+  const [minScore, setMinScore] = useState(
+    startedConfig?.minScore ?? (brief.recommendedMinScore ? Math.max(35, Math.min(85, brief.recommendedMinScore)) : 55)
+  );
+  const [allowNoEmail, setAllowNoEmail] = useState(startedConfig?.allowNoEmail ?? true);
   const [submitting, setSubmitting] = useState(false);
-  const [hasStarted, setHasStarted] = useState(false);
+  const [localStartedConfig, setLocalStartedConfig] = useState<RunConfigSnapshot | null>(startedConfig || null);
+
+  useEffect(() => {
+    if (startedConfig) {
+      setLocalStartedConfig(startedConfig);
+    }
+  }, [startedConfig]);
 
   async function createJob() {
     if (!supabase) return;
@@ -873,12 +959,30 @@ function ConfigWidget({
     setSubmitting(false);
     if (!response.ok) return;
 
-    setHasStarted(true);
-    if (payload.job?.id) onJobStarted(payload.job.id);
+    const selectedPack = leadPacks.find((pack) => pack.id === packId);
+    const runConfig: RunConfigSnapshot = {
+      packId,
+      leadCount: selectedPack?.leads ?? 0,
+      market,
+      minScore,
+      allowNoEmail,
+    };
+    setLocalStartedConfig(runConfig);
+    if (payload.job?.id) onJobStarted(payload.job.id, runConfig);
   }
 
-  if (hasStarted) {
-    return <div className="ide-panel px-3 py-2 text-sm text-[#8b949e]">Job request sent. Streaming will appear below.</div>;
+  if (localStartedConfig) {
+    return (
+      <div className="ide-panel space-y-2 border-[#10a3a3] bg-[#33dfdf] px-3 py-3 text-sm text-black">
+        <p className="font-semibold">Job started with this brief config:</p>
+        <p className="text-xs uppercase tracking-[0.14em] text-black/70">
+          {localStartedConfig.leadCount} leads • {localStartedConfig.market} • min score {localStartedConfig.minScore}
+        </p>
+        <p className="text-xs text-black/70">
+          Missing email allowed: {localStartedConfig.allowNoEmail ? "yes" : "no"}
+        </p>
+      </div>
+    );
   }
 
   return (

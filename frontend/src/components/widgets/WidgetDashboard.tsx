@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Responsive, useContainerWidth } from "react-grid-layout";
 import { Edit3, Save, RotateCcw, Plus, LayoutGrid } from "lucide-react";
 import { createBrowserSupabase, isSupabaseConfigured } from "../../lib/supabase-client";
+import { OutreachCampaign } from "../../lib/outreach";
 import {
   WIDGET_REGISTRY,
   WidgetType,
@@ -22,6 +23,7 @@ import { QuickActionsWidget } from "./QuickActionsWidget";
 import { DailyStatsWidget } from "./DailyStatsWidget";
 import { NetworkStatusWidget } from "./NetworkStatusWidget";
 import { OutreachSummaryWidget } from "./OutreachSummaryWidget";
+import { DashboardJob, DashboardSnapshot } from "./dashboard-data";
 
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -30,7 +32,7 @@ const GRID_BREAKPOINTS = { lg: 1200, md: 996, sm: 768, xs: 480 } as const;
 const GRID_COLS = { lg: 12, md: 10, sm: 6, xs: 4 } as const;
 type GridBreakpoint = keyof typeof GRID_COLS;
 
-const WIDGET_COMPONENTS: Record<WidgetType, React.FC> = {
+const WIDGET_COMPONENTS: Record<WidgetType, React.FC<{ snapshot: DashboardSnapshot }>> = {
   "active-agents": ActiveAgentStatusWidget,
   "lead-funnel": LeadFunnelWidget,
   "quality-metrics": QualityMetricsWidget,
@@ -138,6 +140,11 @@ export function WidgetDashboard() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [jobsData, setJobsData] = useState<DashboardJob[]>([]);
+  const [campaignData, setCampaignData] = useState<OutreachCampaign[]>([]);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [refreshedAt, setRefreshedAt] = useState<string | null>(null);
 
   // Use rgl v2's built-in container width hook with measure-before-mount
   const { width: gridWidth, containerRef, mounted } = useContainerWidth({
@@ -150,7 +157,58 @@ export function WidgetDashboard() {
     [activeWidgets]
   );
 
-  async function loadLayout() {
+  const loadDashboardData = useCallback(async () => {
+    if (!supabase) {
+      setDataError("Supabase public env vars are not configured.");
+      setJobsData([]);
+      setCampaignData([]);
+      return;
+    }
+    setDataLoading(true);
+    setDataError(null);
+
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      setDataLoading(false);
+      setDataError("Sign in to load dashboard data.");
+      setJobsData([]);
+      setCampaignData([]);
+      return;
+    }
+
+    try {
+      const [jobsResponse, campaignsResponse] = await Promise.all([
+        fetch("/api/jobs", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch("/api/outreach/campaigns", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      const jobsPayload = await jobsResponse.json().catch(() => ({}));
+      const campaignsPayload = await campaignsResponse.json().catch(() => ({}));
+
+      if (!jobsResponse.ok) {
+        throw new Error(jobsPayload.error || "Could not load jobs.");
+      }
+      setJobsData(Array.isArray(jobsPayload.jobs) ? (jobsPayload.jobs as DashboardJob[]) : []);
+
+      if (campaignsResponse.ok) {
+        setCampaignData(Array.isArray(campaignsPayload.campaigns) ? (campaignsPayload.campaigns as OutreachCampaign[]) : []);
+      } else {
+        setCampaignData([]);
+      }
+      setRefreshedAt(new Date().toISOString());
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : "Could not refresh dashboard data.");
+    } finally {
+      setDataLoading(false);
+    }
+  }, [supabase]);
+
+  const loadLayout = useCallback(async () => {
     if (!supabase) return;
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
@@ -173,7 +231,7 @@ export function WidgetDashboard() {
     } finally {
       setLoaded(true);
     }
-  }
+  }, [supabase]);
 
   async function saveLayout(newLayout: DashboardLayout, newWidgets: string[]) {
     if (!supabase) {
@@ -217,7 +275,12 @@ export function WidgetDashboard() {
 
   useEffect(() => {
     void loadLayout();
-  }, []);
+    void loadDashboardData();
+    const interval = setInterval(() => {
+      void loadDashboardData();
+    }, 20000);
+    return () => clearInterval(interval);
+  }, [loadDashboardData, loadLayout]);
 
   const handleLayoutChange = useCallback(
     (currentLayout: readonly GridItem[]) => {
@@ -317,6 +380,20 @@ export function WidgetDashboard() {
     };
   }, [layout, activeWidgets]);
 
+  const snapshot = useMemo<DashboardSnapshot>(
+    () => ({
+      jobs: jobsData,
+      campaigns: campaignData,
+      loading: dataLoading,
+      error: dataError,
+      refreshedAt,
+      refresh: () => {
+        void loadDashboardData();
+      },
+    }),
+    [campaignData, dataError, dataLoading, jobsData, loadDashboardData, refreshedAt]
+  );
+
   return (
     <div className="flex h-full w-full min-w-0 flex-1 flex-col overflow-hidden">
       {/* Toolbar */}
@@ -328,6 +405,13 @@ export function WidgetDashboard() {
           </span>
           {message && (
             <span className="ml-2 text-[10px] text-[#00ff00]">{message}</span>
+          )}
+          {snapshot.error && <span className="ml-2 text-[10px] text-[#ff6b6b]">{snapshot.error}</span>}
+          {!snapshot.error && snapshot.loading && <span className="ml-2 text-[10px] text-[#8b949e]">Refreshing data...</span>}
+          {!snapshot.error && snapshot.refreshedAt && (
+            <span className="ml-2 text-[10px] text-[#8b949e]">
+              Data {new Date(snapshot.refreshedAt).toLocaleTimeString()}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -415,7 +499,7 @@ export function WidgetDashboard() {
                       editMode={editMode}
                       onRemove={() => removeWidget(id)}
                     >
-                      <Component />
+                      <Component snapshot={snapshot} />
                     </WidgetPanel>
                   </div>
                 );

@@ -27,16 +27,50 @@ function contextLabel(job: SearchJob) {
   return `${job.target_region} • ${job.refined_industry || job.original_industry}`;
 }
 
-function buildSearchExplorerContext(selectedJob: SearchJob | null, jobs: SearchJob[]): WorkspaceContext | null {
-  if (!selectedJob && jobs.length === 0) return null;
-
-  const active = selectedJob || jobs[0] || null;
-  if (!active) return null;
-
-  const exports = active.lead_exports || [];
-  const events = [...(active.job_events || [])].sort(
+function sortedEvents(job: SearchJob) {
+  return [...(job.job_events || [])].sort(
     (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
   );
+}
+
+function latestReportFromJob(job: SearchJob) {
+  const events = sortedEvents(job);
+  const latestReportEvent = [...events].reverse().find((event) => event.status === "report_ready");
+  return latestReportEvent?.metadata?.report;
+}
+
+function buildSessionSummaryArtifact(job: SearchJob): WorkspaceArtifact {
+  const exports = job.lead_exports || [];
+  const report = latestReportFromJob(job) as Record<string, unknown> | undefined;
+
+  return {
+    id: `session-${job.id}-summary`,
+    name: `${job.id.slice(0, 8)}.md`,
+    folder: "Sessions",
+    kind: "markdown",
+    meta: `${job.status.toUpperCase()} • ${contextLabel(job)}`,
+    content: [
+      `# Search Session ${job.id.slice(0, 8)}`,
+      "",
+      `- Job ID: ${job.id}`,
+      `- Status: ${job.status}`,
+      `- Created: ${new Date(job.created_at).toLocaleString()}`,
+      `- Target: ${contextLabel(job)}`,
+      `- Lead Limit: ${job.lead_limit}`,
+      `- Minimum Score: ${job.min_score}`,
+      `- Files: ${exports.length}`,
+      "",
+      report && typeof report.headline === "string" ? `## AI Headline\n${report.headline}` : "## AI Headline\nNo report generated yet.",
+      report && typeof report.executiveSummary === "string" ? `\n## Executive Summary\n${report.executiveSummary}` : "",
+    ]
+      .join("\n")
+      .trim(),
+  };
+}
+
+function buildActiveJobArtifacts(active: SearchJob): WorkspaceArtifact[] {
+  const exports = active.lead_exports || [];
+  const events = sortedEvents(active);
   const latestReportEvent = [...events].reverse().find((event) => event.status === "report_ready");
   const report = latestReportEvent?.metadata?.report;
 
@@ -135,6 +169,18 @@ function buildSearchExplorerContext(selectedJob: SearchJob | null, jobs: SearchJ
     });
   }
 
+  return artifacts;
+}
+
+function buildSearchExplorerContext(selectedJob: SearchJob | null, jobs: SearchJob[]): WorkspaceContext | null {
+  if (!selectedJob && jobs.length === 0) return null;
+
+  const active = selectedJob || jobs[0] || null;
+  if (!active) return null;
+
+  const sessionArtifacts = jobs.map((job) => buildSessionSummaryArtifact(job));
+  const activeArtifacts = buildActiveJobArtifacts(active);
+
   return {
     id: active.id,
     label: `Search Session ${active.id.slice(0, 8)}`,
@@ -146,7 +192,7 @@ function buildSearchExplorerContext(selectedJob: SearchJob | null, jobs: SearchJ
       description: contextLabel(job),
       status: job.status,
     })),
-    artifacts,
+    artifacts: [...sessionArtifacts, ...activeArtifacts],
   };
 }
 
@@ -155,6 +201,7 @@ export default function SearchPage() {
   const [activeTerminalJobId, setActiveTerminalJobId] = useState<string | undefined>(undefined);
   const [jobs, setJobs] = useState<SearchJob[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [sessionOpenToken, setSessionOpenToken] = useState(0);
 
   const selectedJob = useMemo(
     () => jobs.find((job) => job.id === selectedJobId) ?? jobs[0] ?? null,
@@ -173,7 +220,7 @@ export default function SearchPage() {
       subtitle="Single SSE stream, dual live lanes"
       activeTerminalJobId={activeTerminalJobId}
       explorerContext={explorerContext}
-      onSelectExplorerSession={(sessionId) => setSelectedJobId(sessionId)}
+      activeSessionOpenToken={sessionOpenToken}
       terminalSummary={terminalSummary}
       mainEditor={
         <AgenticChat
@@ -187,9 +234,14 @@ export default function SearchPage() {
           compact
           showFilesPane={false}
           selectedJobId={selectedJobId}
-          onSelectedJobIdChange={(jobId) => setSelectedJobId(jobId)}
+          onSelectedJobIdChange={(jobId) => {
+            setSelectedJobId(jobId);
+            if (jobId) setSessionOpenToken((value) => value + 1);
+          }}
           onSelectedJobChange={(job) => {
-            if (job?.id) setSelectedJobId(job.id);
+            if (job?.id) {
+              setSelectedJobId(job.id);
+            }
           }}
           onJobsChange={(nextJobs) => setJobs(nextJobs as SearchJob[])}
         />

@@ -678,17 +678,18 @@ class LeadDiscovery:
                 f'"{base}" "{market}" partnerships contact {noise_exclusions}',
                 f'"{base}" "{market}" decision maker contact {noise_exclusions}',
             ]
-            if is_architecture:
-                default_queries.extend(
-                    [
-                        f'"{base}" "{market}" commercial real estate developer contact {noise_exclusions}',
-                        f'"{base}" "{market}" hospitality project design consultant contact {noise_exclusions}',
-                        f'"{base}" "{market}" office fit out project contact {noise_exclusions}',
-                        f'"{base}" "{market}" architecture tender contact {noise_exclusions}',
-                        f'"{base}" "{market}" interior design firm project inquiry {noise_exclusions}',
-                        f'"{base}" "{market}" mixed use development architect contact {noise_exclusions}',
-                    ]
-                )
+
+        if is_architecture:
+            default_queries.extend(
+                [
+                    f'"{base}" "{market}" commercial real estate developer contact {noise_exclusions}',
+                    f'"{base}" "{market}" hospitality project design consultant contact {noise_exclusions}',
+                    f'"{base}" "{market}" office fit out project contact {noise_exclusions}',
+                    f'"{base}" "{market}" architecture tender contact {noise_exclusions}',
+                    f'"{base}" "{market}" interior design firm project inquiry {noise_exclusions}',
+                    f'"{base}" "{market}" mixed use development architect contact {noise_exclusions}',
+                ]
+            )
         if region == "Europe":
             for country in ("Germany", "France", "Netherlands", "Italy", "Spain", "Poland", "Sweden"):
                 if is_apparel:
@@ -716,21 +717,6 @@ class LeadDiscovery:
                             f'{base} retailer "supplier portal" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
                         ]
                     )
-                elif is_architecture:
-                    default_queries.extend(
-                        [
-                            f'"{base}" "{country}" architecture project request proposal {noise_exclusions}',
-                            f'"{base}" "{country}" property developer design consultancy contact {noise_exclusions}',
-                            f'"{base}" "{country}" commercial interior design project contact {noise_exclusions}',
-                        ]
-                    )
-                elif is_local_services:
-                    default_queries.extend(
-                        [
-                            f'"{base}" "{country}" cafe expansion contact {noise_exclusions}',
-                            f'"{base}" "{country}" retail unit for rent coffee shop {noise_exclusions}',
-                        ]
-                    )
                 else:
                     default_queries.extend(
                         [
@@ -738,6 +724,21 @@ class LeadDiscovery:
                             f'"{base}" "{country}" procurement vendor contact {noise_exclusions}',
                         ]
                     )
+                    if is_architecture:
+                        default_queries.extend(
+                            [
+                                f'"{base}" "{country}" architecture project request proposal {noise_exclusions}',
+                                f'"{base}" "{country}" property developer design consultancy contact {noise_exclusions}',
+                                f'"{base}" "{country}" commercial interior design project contact {noise_exclusions}',
+                            ]
+                        )
+                    if is_local_services:
+                        default_queries.extend(
+                            [
+                                f'"{base}" "{country}" cafe expansion contact {noise_exclusions}',
+                                f'"{base}" "{country}" retail unit for rent coffee shop {noise_exclusions}',
+                            ]
+                        )
 
         return list(dict.fromkeys(supplied_queries + default_queries))
 
@@ -796,22 +797,18 @@ class LeadDiscovery:
         is_architecture = self._is_architecture_industry(industry)
         is_local_services = self._is_local_services_industry(industry)
         queries = self._buyer_search_queries(region, industry)
-        if is_architecture:
+        if is_architecture and is_local_services:
+            queries = queries[:12]
+        elif is_architecture:
             queries = queries[:6]
-            page_depth = depth if depth is not None else 1
-            yahoo_depth = depth if depth is not None else 1
         elif is_local_services:
             queries = queries[:12]
-            page_depth = depth if depth is not None else 1
-            yahoo_depth = depth if depth is not None else 1
         elif is_apparel:
             queries = queries[:8]
-            page_depth = depth if depth is not None else 1
-            yahoo_depth = depth if depth is not None else 1
         else:
             queries = queries[:8]
-            page_depth = depth if depth is not None else 1
-            yahoo_depth = depth if depth is not None else 1
+        page_depth = depth if depth is not None else 1
+        yahoo_depth = depth if depth is not None else 1
         for query_index, query in enumerate(queries, start=1):
             slug = self._slug(query)
             query_page_depth = page_depth

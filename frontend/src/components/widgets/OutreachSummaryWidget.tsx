@@ -1,34 +1,49 @@
 "use client";
 
-import { Mail, MailOpen, MousePointerClick, Send, UserCheck } from "lucide-react";
+import { Mail, MailOpen, MessageSquare, Send, UserCheck } from "lucide-react";
+import { DashboardSnapshot } from "./dashboard-data";
 
-const OUTREACH_METRICS = [
-  { label: "Campaigns", value: 3, icon: Send, color: "#00ffff" },
-  { label: "Emails Sent", value: 142, icon: Mail, color: "#00ff00" },
-  { label: "Opened", value: 89, icon: MailOpen, color: "#7fff00" },
-  { label: "Clicked", value: 34, icon: MousePointerClick, color: "#ff9f43" },
-  { label: "Replied", value: 12, icon: UserCheck, color: "#a855f7" },
-];
+type OutreachSummaryWidgetProps = {
+  snapshot: DashboardSnapshot;
+};
 
-export function OutreachSummaryWidget() {
-  const openRate = ((OUTREACH_METRICS[2].value / OUTREACH_METRICS[1].value) * 100).toFixed(1);
-  const replyRate = ((OUTREACH_METRICS[4].value / OUTREACH_METRICS[1].value) * 100).toFixed(1);
+export function OutreachSummaryWidget({ snapshot }: OutreachSummaryWidgetProps) {
+  const campaigns = snapshot.campaigns || [];
+  const messages = campaigns.flatMap((campaign) => campaign.outreach_messages || []);
+  const leads = campaigns.flatMap((campaign) => campaign.outreach_leads || []);
+
+  const sent = messages.filter((message) => message.status === "sent" || message.status === "test_sent").length;
+  const queued = messages.filter((message) => message.status === "queued" || message.status === "sending").length;
+  const failed = messages.filter((message) => message.status === "failed").length;
+  const replied = leads.filter((lead) => lead.status === "replied").length;
+  const activeLeads = leads.length;
+
+  const metrics = [
+    { label: "Campaigns", value: campaigns.length, icon: Send, color: "#00ffff" },
+    { label: "Queued", value: queued, icon: MailOpen, color: "#ff9f43" },
+    { label: "Sent", value: sent, icon: Mail, color: "#00ff00" },
+    { label: "Replies", value: replied, icon: MessageSquare, color: "#7fff00" },
+    { label: "Failed", value: failed, icon: UserCheck, color: "#ff6b6b" },
+  ];
+
+  const sendRate = activeLeads > 0 ? ((sent / activeLeads) * 100).toFixed(1) : "0.0";
+  const replyRate = sent > 0 ? ((replied / sent) * 100).toFixed(1) : "0.0";
 
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-1">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5 border border-[#30363d] bg-[#0d1117] px-2 py-1">
-          <span className="text-[10px] uppercase tracking-wider text-vercel-muted">Open Rate</span>
-          <span className="text-xs font-mono font-bold text-[#00ff00]">{openRate}%</span>
+          <span className="text-[10px] uppercase tracking-wider text-vercel-muted">Send Rate</span>
+          <span className="text-xs font-mono font-bold text-[#00ff00]">{sendRate}%</span>
         </div>
         <div className="flex items-center gap-1.5 border border-[#30363d] bg-[#0d1117] px-2 py-1">
           <span className="text-[10px] uppercase tracking-wider text-vercel-muted">Reply Rate</span>
-          <span className="text-xs font-mono font-bold text-[#a855f7]">{replyRate}%</span>
+          <span className="text-xs font-mono font-bold text-[#00ffff]">{replyRate}%</span>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
-        {OUTREACH_METRICS.map((metric) => {
+        {metrics.map((metric) => {
           const Icon = metric.icon;
           return (
             <div

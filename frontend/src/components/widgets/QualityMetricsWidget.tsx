@@ -1,61 +1,88 @@
 "use client";
 
 import { useMemo } from "react";
-import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import {
+  Cell,
+  Pie,
+  PieChart,
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart,
+  ResponsiveContainer,
+} from "recharts";
+import { auditRowsForJob, DashboardSnapshot, hasReport, leadRowsForJob } from "./dashboard-data";
 
-const RADAR_DATA = [
-  { metric: "Avg Score", value: 82, fullMark: 100 },
-  { metric: "Completion", value: 94, fullMark: 100 },
-  { metric: "Freshness", value: 76, fullMark: 100 },
-  { metric: "Relevance", value: 88, fullMark: 100 },
-  { metric: "Enrichment", value: 71, fullMark: 100 },
-  { metric: "Validation", value: 91, fullMark: 100 },
-];
+type QualityMetricsWidgetProps = {
+  snapshot: DashboardSnapshot;
+};
 
-const FALLBACK_DATA = [
-  { name: "AI Context", value: 78, color: "#00ffff" },
-  { name: "Fallback", value: 22, color: "#ff6b6b" },
-];
+export function QualityMetricsWidget({ snapshot }: QualityMetricsWidgetProps) {
+  const metrics = useMemo(() => {
+    const jobs = snapshot.jobs;
+    const finalJobs = jobs.filter((job) => job.status === "delivered" || job.status === "failed");
+    const deliveredJobs = jobs.filter((job) => job.status === "delivered");
 
-export function QualityMetricsWidget() {
-  const avgScore = useMemo(() => Math.round(RADAR_DATA.reduce((a, b) => a + b.value, 0) / RADAR_DATA.length), []);
+    const avgScore =
+      deliveredJobs.length > 0
+        ? deliveredJobs.reduce((sum, job) => sum + Number(job.min_score || 0), 0) / deliveredJobs.length
+        : 0;
+    const completion = finalJobs.length > 0 ? (deliveredJobs.length / finalJobs.length) * 100 : 0;
+    const freshness = jobs.length > 0
+      ? (jobs.filter((job) => Date.now() - new Date(job.created_at).getTime() <= 7 * 24 * 60 * 60 * 1000).length / jobs.length) * 100
+      : 0;
+    const relevance = deliveredJobs.length > 0
+      ? deliveredJobs.reduce((sum, job) => sum + Math.min(100, Number(job.min_score || 0) + 8), 0) / deliveredJobs.length
+      : 0;
+    const enrichment = deliveredJobs.length > 0
+      ? (deliveredJobs.filter((job) => auditRowsForJob(job) > 0 || leadRowsForJob(job) > 0).length / deliveredJobs.length) * 100
+      : 0;
+    const validation = jobs.length > 0
+      ? (jobs.filter((job) => job.payment_status === "approved" || job.payment_status === "not_required").length / jobs.length) * 100
+      : 0;
+    const aiCoverage = jobs.length > 0 ? (jobs.filter((job) => hasReport(job)).length / jobs.length) * 100 : 0;
+    const fallback = Math.max(0, 100 - aiCoverage);
+
+    return {
+      radar: [
+        { metric: "Avg Score", value: Math.round(avgScore), fullMark: 100 },
+        { metric: "Completion", value: Math.round(completion), fullMark: 100 },
+        { metric: "Freshness", value: Math.round(freshness), fullMark: 100 },
+        { metric: "Relevance", value: Math.round(relevance), fullMark: 100 },
+        { metric: "Enrichment", value: Math.round(enrichment), fullMark: 100 },
+        { metric: "Validation", value: Math.round(validation), fullMark: 100 },
+      ],
+      pie: [
+        { name: "AI Reported", value: Math.round(aiCoverage), color: "#00ffff" },
+        { name: "No Report", value: Math.round(fallback), color: "#ff6b6b" },
+      ],
+      avgScore: Math.round(avgScore),
+      fallback: Math.round(fallback),
+    };
+  }, [snapshot.jobs]);
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-hidden p-1">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 border border-[#30363d] bg-[#0d1117] px-2 py-1">
           <span className="text-[10px] uppercase tracking-wider text-vercel-muted">Avg Score</span>
-          <span className="text-sm font-mono font-bold text-[#00ff00]">{avgScore}</span>
+          <span className="text-sm font-mono font-bold text-[#00ff00]">{metrics.avgScore}</span>
         </div>
         <div className="flex items-center gap-2 border border-[#30363d] bg-[#0d1117] px-2 py-1">
-          <span className="text-[10px] uppercase tracking-wider text-vercel-muted">Fallback</span>
-          <span className="text-sm font-mono font-bold text-[#ff6b6b]">22%</span>
+          <span className="text-[10px] uppercase tracking-wider text-vercel-muted">No Report</span>
+          <span className="text-sm font-mono font-bold text-[#ff6b6b]">{metrics.fallback}%</span>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-2 gap-2">
         <div className="min-h-0">
           <ResponsiveContainer width="100%" height="100%">
-            <RadarChart data={RADAR_DATA} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+            <RadarChart data={metrics.radar} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
               <PolarGrid stroke="#30363d" />
-              <PolarAngleAxis 
-                dataKey="metric" 
-                tick={{ fill: "#8b949e", fontSize: 9, fontFamily: "monospace" }} 
-              />
-              <PolarRadiusAxis 
-                angle={90} 
-                domain={[0, 100]} 
-                tick={false} 
-                axisLine={false} 
-              />
-              <Radar
-                name="Quality"
-                dataKey="value"
-                stroke="#00ffff"
-                strokeWidth={1.5}
-                fill="#00ffff"
-                fillOpacity={0.15}
-              />
+              <PolarAngleAxis dataKey="metric" tick={{ fill: "#8b949e", fontSize: 9, fontFamily: "monospace" }} />
+              <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
+              <Radar name="Quality" dataKey="value" stroke="#00ffff" strokeWidth={1.5} fill="#00ffff" fillOpacity={0.15} />
             </RadarChart>
           </ResponsiveContainer>
         </div>
@@ -64,7 +91,7 @@ export function QualityMetricsWidget() {
           <ResponsiveContainer width="100%" height="80%">
             <PieChart>
               <Pie
-                data={FALLBACK_DATA}
+                data={metrics.pie}
                 cx="50%"
                 cy="50%"
                 innerRadius="60%"
@@ -73,14 +100,14 @@ export function QualityMetricsWidget() {
                 dataKey="value"
                 stroke="none"
               >
-                {FALLBACK_DATA.map((entry, index) => (
+                {metrics.pie.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
             </PieChart>
           </ResponsiveContainer>
           <div className="flex gap-2">
-            {FALLBACK_DATA.map((d) => (
+            {metrics.pie.map((d) => (
               <span key={d.name} className="flex items-center gap-1 text-[9px] text-vercel-muted">
                 <span className="h-1.5 w-1.5" style={{ background: d.color }} />
                 {d.name} {d.value}%

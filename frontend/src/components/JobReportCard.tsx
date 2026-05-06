@@ -26,42 +26,42 @@ function chipTone(confidence: "low" | "medium" | "high") {
 
 export function JobReportCard({ report }: JobReportCardProps) {
   return (
-    <section className="ide-panel p-4">
+    <section className="ide-panel border-[#10a3a3] bg-[#33dfdf] p-4 text-black">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#00ffff]">AI run report</p>
-          <h3 className="mt-2 text-lg font-semibold text-vercel-text">{report.headline}</h3>
+          <p className="text-xs font-bold uppercase tracking-[0.24em] text-black/70">AI run report</p>
+          <h3 className="mt-2 text-lg font-semibold text-black">{report.headline}</h3>
         </div>
         <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${chipTone(report.confidence)}`}>
           {report.confidence} confidence
         </span>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-vercel-text/90">{report.executiveSummary}</p>
+      <p className="mt-3 text-sm leading-6 text-black/90">{report.executiveSummary}</p>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="border border-[#30363d] bg-black p-3">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Outcome</p>
-          <p className="mt-1 text-sm font-semibold text-vercel-text">{report.outcome}</p>
+        <div className="border border-black/20 bg-white/40 p-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-black/60">Outcome</p>
+          <p className="mt-1 text-sm font-semibold text-black">{report.outcome}</p>
         </div>
-        <div className="border border-[#30363d] bg-black p-3">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Final leads</p>
-          <p className="mt-1 text-sm font-semibold text-vercel-text">{report.leadCount}</p>
+        <div className="border border-black/20 bg-white/40 p-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-black/60">Final leads</p>
+          <p className="mt-1 text-sm font-semibold text-black">{report.leadCount}</p>
         </div>
-        <div className="border border-[#30363d] bg-black p-3">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Audit rows</p>
-          <p className="mt-1 text-sm font-semibold text-vercel-text">{report.auditCount}</p>
+        <div className="border border-black/20 bg-white/40 p-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-black/60">Audit rows</p>
+          <p className="mt-1 text-sm font-semibold text-black">{report.auditCount}</p>
         </div>
-        <div className="border border-[#30363d] bg-black p-3">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Assessment</p>
-          <p className="mt-1 text-sm font-semibold text-vercel-text">{report.qualityAssessment}</p>
+        <div className="border border-black/20 bg-white/40 p-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-black/60">Assessment</p>
+          <p className="mt-1 text-sm font-semibold text-black">{report.qualityAssessment}</p>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        <div className="border border-[#30363d] bg-black p-3">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Strongest patterns</p>
-          <ul className="mt-2 space-y-2 text-sm text-vercel-text">
+        <div className="border border-black/20 bg-white/40 p-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-black/60">Strongest patterns</p>
+          <ul className="mt-2 space-y-2 text-sm text-black">
             {report.strongestPatterns.map((item, index) => (
               <li key={`${item}-${index}`} className="flex gap-2">
                 <span className="text-cyan-300">•</span>
@@ -70,23 +70,23 @@ export function JobReportCard({ report }: JobReportCardProps) {
             ))}
           </ul>
         </div>
-        <div className="border border-[#30363d] bg-black p-3">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Concerns</p>
-          <ul className="mt-2 space-y-2 text-sm text-vercel-text">
+        <div className="border border-black/20 bg-white/40 p-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-black/60">Concerns</p>
+          <ul className="mt-2 space-y-2 text-sm text-black">
             {report.concerns.length > 0 ? report.concerns.map((item, index) => (
               <li key={`${item}-${index}`} className="flex gap-2">
                 <span className="text-amber-300">•</span>
                 <span>{item}</span>
               </li>
-            )) : <li className="text-vercel-muted">No major concerns flagged.</li>}
+            )) : <li className="text-black/65">No major concerns flagged.</li>}
           </ul>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        <div className="border border-[#30363d] bg-black p-3">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Next actions</p>
-          <ul className="mt-2 space-y-2 text-sm text-vercel-text">
+        <div className="border border-black/20 bg-white/40 p-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-black/60">Next actions</p>
+          <ul className="mt-2 space-y-2 text-sm text-black">
             {report.nextActions.map((item, index) => (
               <li key={`${item}-${index}`} className="flex gap-2">
                 <span className="text-emerald-300">•</span>
@@ -95,9 +95,9 @@ export function JobReportCard({ report }: JobReportCardProps) {
             ))}
           </ul>
         </div>
-        <div className="border border-[#30363d] bg-black p-3">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Follow-up searches</p>
-          <ul className="mt-2 space-y-2 text-sm text-vercel-text">
+        <div className="border border-black/20 bg-white/40 p-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-black/60">Follow-up searches</p>
+          <ul className="mt-2 space-y-2 text-sm text-black">
             {report.recommendedFollowUpSearches.map((item, index) => (
               <li key={`${item}-${index}`} className="flex gap-2">
                 <span className="text-violet-300">•</span>
@@ -109,9 +109,9 @@ export function JobReportCard({ report }: JobReportCardProps) {
       </div>
 
       {report.notableLeads.length > 0 && (
-        <div className="mt-4 border border-[#30363d] bg-black p-3">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Notable leads</p>
-          <p className="mt-2 text-sm leading-6 text-vercel-text">{report.notableLeads.join(" • ")}</p>
+        <div className="mt-4 border border-black/20 bg-white/40 p-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-black/60">Notable leads</p>
+          <p className="mt-2 text-sm leading-6 text-black">{report.notableLeads.join(" • ")}</p>
         </div>
       )}
 

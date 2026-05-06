@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { AuthPanel } from "./AuthPanel";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
+import { createZipBlob } from "../lib/zip";
 import { WorkspaceArtifact, WorkspaceContext, WorkspaceMode } from "./workspace-types";
 
 function goToSearch() {
@@ -31,7 +32,6 @@ type LeftSidebarProps = {
   explorerContext?: WorkspaceContext | null;
   activeArtifactId?: string | null;
   onOpenArtifact?: (artifact: WorkspaceArtifact) => void;
-  onSelectSession?: (sessionId: string) => void;
 };
 
 type FolderNode = {
@@ -56,6 +56,10 @@ function mimeTypeForArtifact(kind: WorkspaceArtifact["kind"]) {
   if (kind === "markdown") return "text/markdown";
   if (kind === "log" || kind === "text") return "text/plain";
   return "application/octet-stream";
+}
+
+function safeZipName(value: string) {
+  return value.replace(/[^a-z0-9-_]+/gi, "_").replace(/^_+|_+$/g, "") || "files";
 }
 
 function buildFolderTree(artifacts: WorkspaceArtifact[]) {
@@ -114,7 +118,6 @@ export function LeftSidebar({
   explorerContext,
   activeArtifactId,
   onOpenArtifact,
-  onSelectSession,
 }: LeftSidebarProps) {
   const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -177,6 +180,27 @@ export function LeftSidebar({
     return null;
   }
 
+  async function resolveArtifactBlob(artifact: WorkspaceArtifact) {
+    if (artifact.download?.kind === "report") {
+      return new Blob([artifact.content || "{}"], { type: "application/json" });
+    }
+
+    if (artifact.content && !artifact.download) {
+      return new Blob([artifact.content], { type: mimeTypeForArtifact(artifact.kind) });
+    }
+
+    const url = await resolveDownloadUrl(artifact);
+    if (!url) return null;
+    if (url.startsWith("blob:")) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Could not read temporary blob.");
+      return await response.blob();
+    }
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Could not fetch file (${response.status}).`);
+    return await response.blob();
+  }
+
   async function downloadArtifact(artifact: WorkspaceArtifact) {
     const key = `file:${artifact.id}`;
     setDownloading(key, true);
@@ -192,7 +216,12 @@ export function LeftSidebar({
         setTimeout(() => window.URL.revokeObjectURL(url), 2500);
         return;
       }
-      window.open(url, "_blank", "noopener,noreferrer");
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.download = artifact.download?.filename || artifact.name;
+      anchor.click();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Could not download file.");
     } finally {
@@ -206,19 +235,38 @@ export function LeftSidebar({
     setErrorMessage(null);
     try {
       const files = collectDownloadableArtifacts(folder);
+      if (files.length === 0) {
+        setErrorMessage("No downloadable files in this folder.");
+        return;
+      }
+
+      const entries: Array<{ path: string; data: Uint8Array }> = [];
       for (const artifact of files) {
-        const url = await resolveDownloadUrl(artifact);
-        if (!url) continue;
-        if (url.startsWith("blob:")) {
-          const anchor = document.createElement("a");
-          anchor.href = url;
-          anchor.download = artifact.download?.filename || artifact.name;
-          anchor.click();
-          setTimeout(() => window.URL.revokeObjectURL(url), 2500);
+        try {
+          const blob = await resolveArtifactBlob(artifact);
+          if (!blob) continue;
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          const filePath = `${artifact.folder}/${artifact.download?.filename || artifact.name}`
+            .replace(/^\/+/, "")
+            .replace(/\\/g, "/");
+          entries.push({ path: filePath, data: bytes });
+        } catch {
           continue;
         }
-        window.open(url, "_blank", "noopener,noreferrer");
       }
+
+      if (entries.length === 0) {
+        setErrorMessage("Could not package this folder. Some files may not be accessible yet.");
+        return;
+      }
+
+      const zip = createZipBlob(entries);
+      const zipUrl = window.URL.createObjectURL(zip);
+      const anchor = document.createElement("a");
+      anchor.href = zipUrl;
+      anchor.download = `${safeZipName(folder.name)}.zip`;
+      anchor.click();
+      setTimeout(() => window.URL.revokeObjectURL(zipUrl), 4000);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Could not download folder files.");
     } finally {
@@ -262,17 +310,23 @@ export function LeftSidebar({
             {node.artifacts.map((artifact) => {
               const fileKey = `file:${artifact.id}`;
               const canDownload = Boolean(artifact.download || artifact.externalUrl || artifact.content);
+              const isCsv = artifact.kind === "csv";
               return (
                 <div key={artifact.id} className="group flex items-center justify-between" style={{ paddingLeft: `${(depth + 1) * 12}px` }}>
                   <button
                     type="button"
                     onClick={() => onOpenArtifact?.(artifact)}
-                    className={`inline-flex min-w-0 items-center gap-1.5 text-left ${
-                      activeArtifactId === artifact.id ? "text-[#00ffff]" : "text-[#c9d1d9] hover:text-[#00ffff]"
+                    className={`inline-flex min-w-0 items-center gap-1.5 border px-1.5 py-1 text-left ${
+                      isCsv
+                        ? "border-[#00ffff]/40 bg-[#062126] text-[#00ffff] hover:border-[#00ffff] hover:bg-[#09333d]"
+                        : activeArtifactId === artifact.id
+                        ? "border-[#00ffff]/30 bg-[#101923] text-[#00ffff]"
+                        : "border-transparent text-[#c9d1d9] hover:border-[#30363d] hover:text-[#00ffff]"
                     }`}
                   >
                     {fileIcon(artifact.kind)}
                     <span className="truncate">{artifact.name}</span>
+                    {isCsv && <span className="ml-1 text-[9px] uppercase tracking-[0.12em] text-[#8cf5ff]">View</span>}
                   </button>
                   {canDownload && (
                     <button
@@ -325,34 +379,6 @@ export function LeftSidebar({
                   <p className="truncate text-[11px] text-[#8b949e]">{explorerContext.description}</p>
                 )}
               </div>
-
-              {(explorerContext.sessions || []).length > 0 && (
-                <div className="border-t border-[#30363d] pt-2">
-                  <p className="mb-2 text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">Sessions</p>
-                  <div className="space-y-1">
-                    {explorerContext.sessions?.map((session) => {
-                      const active = session.id === explorerContext.activeSessionId;
-                      return (
-                        <button
-                          key={session.id}
-                          type="button"
-                          onClick={() => onSelectSession?.(session.id)}
-                          className={`w-full rounded border px-2 py-1.5 text-left ${
-                            active
-                              ? "border-[#00ffff]/50 bg-[#0f1d27] text-[#00ffff]"
-                              : "border-[#30363d] bg-black/20 text-[#c9d1d9] hover:border-[#00ffff]/40 hover:text-[#00ffff]"
-                          }`}
-                        >
-                          <p className="truncate">{session.label}</p>
-                          {session.description && (
-                            <p className="truncate text-[10px] text-[#8b949e]">{session.description}</p>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
               <div className="border-t border-[#30363d] pt-2">
                 <p className="mb-2 text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">Files</p>

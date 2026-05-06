@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { LayoutDashboard, Mail, Search, Shield } from "lucide-react";
+import { DashboardSnapshot } from "./dashboard-data";
 
 const ACTIONS = [
   { label: "New Lead Search", href: "/search", icon: Search, color: "text-[#00ffff]", border: "border-[#00ffff]" },
@@ -10,7 +11,11 @@ const ACTIONS = [
   { label: "View All Jobs", href: "/search", icon: LayoutDashboard, color: "text-vercel-text", border: "border-[#30363d]" },
 ];
 
-export function QuickActionsWidget() {
+type QuickActionsWidgetProps = {
+  snapshot: DashboardSnapshot;
+};
+
+export function QuickActionsWidget(_props: QuickActionsWidgetProps) {
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-1">
       <div className="grid grid-cols-2 gap-2">

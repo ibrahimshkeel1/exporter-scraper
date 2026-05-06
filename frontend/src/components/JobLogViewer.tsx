@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Terminal, X } from "lucide-react";
 import { createBrowserSupabase } from "../lib/supabase-client";
+import { laneFromPayload } from "../lib/log-lanes";
 import { JobReportCard } from "./JobReportCard";
 
 export type JobEvent = {
@@ -54,16 +55,6 @@ function parseWorkerPayload(event: MessageEvent) {
 }
 
 type DiscoveryLane = "bing" | "duckduckgo" | "yahoo";
-
-function discoveryLaneForPayload(payload: { source: string; lane?: string; engine?: string }) {
-  if (payload.source === "enrichment" || payload.source === "scoring") return "enrichment";
-  const lane = (payload.lane || "").toLowerCase();
-  const engine = (payload.engine || "").toLowerCase();
-  if (lane === "bing" || engine === "bing") return "bing";
-  if (lane === "duckduckgo" || engine === "duckduckgo") return "duckduckgo";
-  if (lane === "yahoo" || engine === "yahoo") return "yahoo";
-  return "enrichment";
-}
 
 export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProps) {
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
@@ -123,7 +114,7 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
     let closed = false;
 
     const appendLog = (entry: WorkerLog) => {
-      const lane = discoveryLaneForPayload(entry);
+      const lane = laneFromPayload(entry);
       if (lane === "enrichment") {
         setEnrichmentLogs((current) => [...current, entry]);
       } else {
