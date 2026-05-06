@@ -4,9 +4,9 @@ import inspect
 import random
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from ipaddress import ip_address
-from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlsplit
+from urllib.parse import parse_qs, parse_qsl, quote_plus, urlencode, unquote, urljoin, urlsplit, urlunsplit
 
 
 @dataclass(frozen=True)
@@ -134,9 +134,9 @@ class LeadDiscovery:
         "yahoo": 6.0,
     }
     SEARCH_ENGINE_MAX_REQUESTS = {
-        "bing": 10,
-        "duckduckgo": 12,
-        "yahoo": 8,
+        "bing": 120,
+        "duckduckgo": 120,
+        "yahoo": 80,
     }
     SEARCH_ENGINE_COOLDOWN_SECONDS = {
         "bing": 90.0,
@@ -316,6 +316,91 @@ class LeadDiscovery:
     @staticmethod
     def _signal_slug(value):
         return re.sub(r"[^a-z0-9]+", "-", str(value or "").lower()).strip("-")[:36] or "signal"
+
+    @staticmethod
+    def _source_engine(source):
+        source_name_lower = source.name.lower()
+        source_engine = (source.search_engine or "").strip().lower()
+        if source_engine:
+            return source_engine
+        if "bing-" in source_name_lower:
+            return "bing"
+        if "duckduckgo-" in source_name_lower:
+            return "duckduckgo"
+        if "yahoo-" in source_name_lower:
+            return "yahoo"
+        return ""
+
+    @staticmethod
+    def _is_search_source(source):
+        return LeadDiscovery._source_engine(source) in {"bing", "duckduckgo", "yahoo"}
+
+    @staticmethod
+    def _search_source_name_for_page(source, page_number):
+        next_name = re.sub(
+            r"(?<=-)p\d+(?=-)",
+            f"p{page_number}",
+            source.name,
+            count=1,
+        )
+        if next_name != source.name:
+            return next_name
+        return f"{source.name}-p{page_number}"
+
+    @staticmethod
+    def _search_source_url_for_page(source, page_number):
+        engine = LeadDiscovery._source_engine(source)
+        parsed = urlsplit(source.url)
+        params = parse_qsl(parsed.query, keep_blank_values=True)
+        mutable_params = [
+            (key, value)
+            for key, value in params
+            if key.lower() not in {"first", "b", "s"}
+        ]
+
+        if engine == "bing":
+            mutable_params.append(("first", str(((page_number - 1) * 10) + 1)))
+        elif engine == "yahoo":
+            mutable_params.append(("b", str(((page_number - 1) * 10) + 1)))
+        elif engine == "duckduckgo":
+            mutable_params.append(("s", str((page_number - 1) * 30)))
+
+        return urlunsplit(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                urlencode(mutable_params, doseq=True),
+                parsed.fragment,
+            )
+        )
+
+    @staticmethod
+    def _search_source_for_page(source, page_number):
+        if page_number <= 1:
+            return source
+        return replace(
+            source,
+            name=LeadDiscovery._search_source_name_for_page(source, page_number),
+            url=LeadDiscovery._search_source_url_for_page(source, page_number),
+        )
+
+    def _max_search_pages(self, sources):
+        search_source_count = max(1, sum(1 for source in sources if self._is_search_source(source)))
+        estimated_pages = (self.limit // max(1, search_source_count * 5)) + 1
+        return max(3, min(25, estimated_pages))
+
+    def _expanded_discovery_sources(self, sources, max_search_pages=None):
+        sources = list(sources)
+        search_sources = [source for source in sources if self._is_search_source(source)]
+        max_pages = max_search_pages or self._max_search_pages(sources)
+
+        for source in sources:
+            yield source
+
+        for page_number in range(2, max_pages + 1):
+            for source in search_sources:
+                yield self._search_source_for_page(source, page_number)
 
     def _signal_search_sources(self, region, industry):
         signals = self.signal_map.get("signals", []) if isinstance(self.signal_map, dict) else []
@@ -892,13 +977,17 @@ class LeadDiscovery:
         signal_text = f"{title}\n{body_text}"
         return self._is_throttle_or_block_error(signal_text)
 
-    def _build_engine_runtime_state(self):
+    def _build_engine_runtime_state(self, request_budgets=None):
+        request_budgets = request_budgets or {}
         return {
             engine: {
                 "failures": 0,
                 "last_request_ts": 0.0,
                 "blocked_until_ts": 0.0,
                 "requests": 0,
+                "max_requests": int(
+                    request_budgets.get(engine) or self.SEARCH_ENGINE_MAX_REQUESTS.get(engine, 12)
+                ),
             }
             for engine in self.SEARCH_ENGINE_MIN_DELAY_SECONDS
         }
@@ -910,7 +999,7 @@ class LeadDiscovery:
         now = time.monotonic()
         if now < engine_state["blocked_until_ts"]:
             return False
-        max_requests = self.SEARCH_ENGINE_MAX_REQUESTS.get(engine, 12)
+        max_requests = engine_state.get("max_requests") or self.SEARCH_ENGINE_MAX_REQUESTS.get(engine, 12)
         if engine_state["requests"] >= max_requests:
             return False
         min_delay = self.SEARCH_ENGINE_MIN_DELAY_SECONDS.get(engine, 4.0)
@@ -951,6 +1040,19 @@ class LeadDiscovery:
         except Exception as callback_exc:
             print(f"Discovery event callback failed: {callback_exc}")
 
+    @staticmethod
+    async def _should_stop(callback):
+        if not callback:
+            return False
+        try:
+            result = callback()
+            if inspect.isawaitable(result):
+                result = await result
+            return bool(result)
+        except Exception as callback_exc:
+            print(f"Discovery stop callback failed: {callback_exc}")
+            return False
+
     async def run_discovery(
         self,
         page,
@@ -960,30 +1062,37 @@ class LeadDiscovery:
         on_engine_blocked=None,
         on_discovery_event=None,
         sources=None,
+        should_stop=None,
     ):
         print(
             f"Starting discovery for region: {region} | Industry: {industry} | Limit: {self.limit}"
         )
         if sources is None:
             sources = self.generate_sources(region, industry)
+        sources = list(sources)
+        max_search_pages = self._max_search_pages(sources)
+        search_source_counts = {}
+        for source in sources:
+            engine = self._source_engine(source)
+            if engine:
+                search_source_counts[engine] = search_source_counts.get(engine, 0) + 1
+        request_budgets = {
+            engine: max(
+                self.SEARCH_ENGINE_MAX_REQUESTS.get(engine, 12),
+                source_count * max_search_pages,
+            )
+            for engine, source_count in search_source_counts.items()
+        }
 
         yielded_count = 0
         current_chunk = []
-        engine_state = self._build_engine_runtime_state()
+        engine_state = self._build_engine_runtime_state(request_budgets=request_budgets)
         skipped_engines = set()
 
-        for source in sources:
-            if yielded_count >= self.limit:
+        for source in self._expanded_discovery_sources(sources, max_search_pages=max_search_pages):
+            if yielded_count >= self.limit or await self._should_stop(should_stop):
                 break
-            source_name_lower = source.name.lower()
-            source_engine = source.search_engine
-            if not source_engine:
-                if "bing-" in source_name_lower:
-                    source_engine = "bing"
-                elif "duckduckgo-" in source_name_lower:
-                    source_engine = "duckduckgo"
-                elif "yahoo-" in source_name_lower:
-                    source_engine = "yahoo"
+            source_engine = self._source_engine(source)
             if source_engine in skipped_engines:
                 print(f"Skipping {source.name} due to repeated {source_engine} failures earlier in this run.")
                 await self._emit_discovery_event(
@@ -1033,6 +1142,8 @@ class LeadDiscovery:
             if source.candidate_kind == "seed_list":
                 found_in_source = 0
                 for seed_url in self.seed_urls(region, source.name):
+                    if await self._should_stop(should_stop):
+                        break
                     candidate = self._candidate_from_url(seed_url, source, region, industry)
                     if not candidate:
                         continue
@@ -1113,6 +1224,8 @@ class LeadDiscovery:
                 await page.wait_for_timeout(random.randint(1500, 3000))
                 links = await self._extract_links_from_source(page, source)
                 for raw_href in links:
+                    if await self._should_stop(should_stop):
+                        break
                     clean_url = self._clean_candidate_url(raw_href, source.url)
                     if not clean_url:
                         continue

@@ -78,6 +78,61 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertTrue(any(source.name.startswith("duckduckgo-p1-") for source in sources))
         self.assertTrue(any(source.name.startswith("yahoo-p1-") for source in sources))
 
+    def test_search_source_for_page_builds_engine_offsets(self):
+        bing = DiscoverySource(
+            name="bing-p1-socks",
+            url="https://www.bing.com/search?q=socks&first=1",
+            selectors=(),
+            search_engine="bing",
+        )
+        yahoo = DiscoverySource(
+            name="yahoo-p1-socks",
+            url="https://search.yahoo.com/search?p=socks",
+            selectors=(),
+            search_engine="yahoo",
+        )
+        duckduckgo = DiscoverySource(
+            name="duckduckgo-p1-socks",
+            url="https://lite.duckduckgo.com/lite/?q=socks",
+            selectors=(),
+            search_engine="duckduckgo",
+        )
+
+        self.assertEqual(
+            LeadDiscovery._search_source_for_page(bing, 3).url,
+            "https://www.bing.com/search?q=socks&first=21",
+        )
+        self.assertEqual(
+            LeadDiscovery._search_source_for_page(yahoo, 2).url,
+            "https://search.yahoo.com/search?p=socks&b=11",
+        )
+        self.assertEqual(
+            LeadDiscovery._search_source_for_page(duckduckgo, 2).url,
+            "https://lite.duckduckgo.com/lite/?q=socks&s=30",
+        )
+
+    def test_expanded_discovery_sources_deepen_search_after_initial_pass(self):
+        seed = DiscoverySource(
+            name="seed-test",
+            url="https://example.com",
+            selectors=(),
+            candidate_kind="direct_url",
+        )
+        bing = DiscoverySource(
+            name="bing-p1-socks",
+            url="https://www.bing.com/search?q=socks&first=1",
+            selectors=(),
+            search_engine="bing",
+        )
+
+        expanded = list(self.discovery._expanded_discovery_sources([seed, bing], max_search_pages=3))
+
+        self.assertEqual(
+            [source.name for source in expanded],
+            ["seed-test", "bing-p1-socks", "bing-p2-socks", "bing-p3-socks"],
+        )
+        self.assertEqual(expanded[-1].url, "https://www.bing.com/search?q=socks&first=21")
+
     def test_seed_urls_are_source_specific(self):
         buyer_intent_urls = self.discovery.seed_urls("USA", "seed-usa-buyer-intent-pages")
         generic_urls = self.discovery.seed_urls("USA", "seed-usa-apparel-buyers")

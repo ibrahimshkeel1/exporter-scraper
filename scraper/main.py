@@ -637,6 +637,7 @@ async def run_scraper(
                 on_engine_blocked=on_engine_blocked,
                 on_discovery_event=on_discovery_event,
                 sources=sources,
+                should_stop=stop_event.is_set,
             ):
                 if stop_event.is_set():
                     break
