@@ -5,6 +5,9 @@ import { AgenticChat, DualLiveTerminal } from "../../components/AgenticChat";
 import { JobTable, JobTableSelection } from "../../components/JobTable";
 import { VSCodeLayout } from "../../components/VSCodeLayout";
 import { WorkspaceArtifact, WorkspaceContext } from "../../components/workspace-types";
+import { LeadJob } from "../../lib/types";
+
+type SearchJob = NonNullable<JobTableSelection>;
 
 function kindFromExport(format: string) {
   const normalized = format.toLowerCase();
@@ -14,46 +17,44 @@ function kindFromExport(format: string) {
   return "text" as const;
 }
 
-function buildSearchExplorerContext(job: JobTableSelection): WorkspaceContext | null {
-  if (!job) return null;
+function isAuditFile(file: NonNullable<LeadJob["lead_exports"]>[number]) {
+  const path = (file.storage_path || "").toLowerCase();
+  const format = (file.format || "").toLowerCase();
+  return path.includes("audit") || format.includes("audit");
+}
 
-  const exports = job.lead_exports || [];
-  const events = [...(job.job_events || [])].sort(
+function contextLabel(job: SearchJob) {
+  return `${job.target_region} • ${job.refined_industry || job.original_industry}`;
+}
+
+function buildSearchExplorerContext(selectedJob: SearchJob | null, jobs: SearchJob[]): WorkspaceContext | null {
+  if (!selectedJob && jobs.length === 0) return null;
+
+  const active = selectedJob || jobs[0] || null;
+  if (!active) return null;
+
+  const exports = active.lead_exports || [];
+  const events = [...(active.job_events || [])].sort(
     (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
   );
   const latestReportEvent = [...events].reverse().find((event) => event.status === "report_ready");
   const report = latestReportEvent?.metadata?.report;
 
-  const exportsSummary =
-    exports.length > 0
-      ? exports
-          .map((file) => {
-            const fileName = file.storage_path?.split("/").at(-1) || `${file.format.toLowerCase()}_export`;
-            const rows = file.row_count ?? "-";
-            return `- ${fileName} (${file.format.toUpperCase()}, ${rows} rows)`;
-          })
-          .join("\n")
-      : "- waiting for export files";
-
   const analysis = [
     "# AI Analysis",
-    `- Job: ${job.id}`,
-    `- Status: ${job.status}`,
-    `- Target Region: ${job.target_region}`,
-    `- Industry: ${job.refined_industry || job.original_industry}`,
-    `- Min Score: ${job.min_score}`,
+    `- Job: ${active.id}`,
+    `- Status: ${active.status}`,
+    `- Target Region: ${active.target_region}`,
+    `- Industry: ${active.refined_industry || active.original_industry}`,
+    `- Min Score: ${active.min_score}`,
     "",
-    "## Preflight",
-    "```json",
-    JSON.stringify(job.preflight || {}, null, 2),
-    "```",
-    "",
-    "## Job Config",
-    "```json",
-    JSON.stringify(job.job_config || {}, null, 2),
-    "```",
+    "## Notes",
+    `- Exports available: ${exports.length}`,
+    `- Event count: ${events.length}`,
   ].join("\n");
 
+  const preflightJson = JSON.stringify(active.preflight || {}, null, 2);
+  const jobConfigJson = JSON.stringify(active.job_config || {}, null, 2);
   const logContent =
     events.length > 0
       ? events
@@ -61,60 +62,90 @@ function buildSearchExplorerContext(job: JobTableSelection): WorkspaceContext | 
           .join("\n")
       : "No job events yet.";
 
-  const artifactFiles: WorkspaceArtifact[] = exports.map((file) => {
+  const fileArtifacts: WorkspaceArtifact[] = exports.map((file) => {
     const fileName = file.storage_path?.split("/").at(-1) || `${file.format.toLowerCase()}_export`;
-    const auditFile = file.storage_path?.toLowerCase().includes("audit");
+    const audit = isAuditFile(file);
     return {
-      id: `job-${job.id}-export-${file.id}`,
+      id: `job-${active.id}-export-${file.id}`,
       name: fileName,
-      folder: auditFile ? "Logs" : "Results",
+      folder: audit ? "Leads/Audit" : "Leads/Qualified",
       kind: kindFromExport(file.format),
       meta: `${file.format.toUpperCase()} • ${file.row_count ?? "-"} rows`,
-      content: `storage_path: ${file.storage_path || "N/A"}\npublic_url: ${file.public_url || "N/A"}\nformat: ${file.format}\nrow_count: ${file.row_count ?? "N/A"}`,
+      content: `Loading preview for ${fileName}...`,
       externalUrl: file.public_url || undefined,
+      download: {
+        kind: "export",
+        jobId: active.id,
+        exportId: file.id,
+        filename: fileName,
+      },
+      preview: {
+        kind: "export",
+        jobId: active.id,
+        exportId: file.id,
+        format: file.format,
+      },
     };
   });
 
   const artifacts: WorkspaceArtifact[] = [
     {
-      id: `job-${job.id}-results`,
-      name: "leads_found.csv",
-      folder: "Results",
-      kind: "csv" as const,
-      meta: `${exports.length} export file(s)`,
-      content: exportsSummary,
-    },
-    {
-      id: `job-${job.id}-analysis`,
+      id: `job-${active.id}-analysis-overview`,
       name: "ai_analysis.md",
-      folder: "Insights",
-      kind: "markdown" as const,
+      folder: "Analysis/Overview",
+      kind: "markdown",
       content: analysis,
     },
     {
-      id: `job-${job.id}-logs`,
-      name: "audit_trail.log",
-      folder: "Logs",
-      kind: "log" as const,
+      id: `job-${active.id}-analysis-preflight`,
+      name: "preflight.json",
+      folder: "Analysis/Config",
+      kind: "json",
+      content: preflightJson,
+    },
+    {
+      id: `job-${active.id}-analysis-job-config`,
+      name: "job_config.json",
+      folder: "Analysis/Config",
+      kind: "json",
+      content: jobConfigJson,
+    },
+    {
+      id: `job-${active.id}-audit-log`,
+      name: "audit_events.log",
+      folder: "Audit/Events",
+      kind: "log",
       content: logContent,
     },
-    ...artifactFiles,
+    ...fileArtifacts,
   ];
 
   if (report) {
     artifacts.push({
-      id: `job-${job.id}-report`,
+      id: `job-${active.id}-analysis-report`,
       name: "report.json",
-      folder: "Insights",
-      kind: "json" as const,
+      folder: "Analysis/Reports",
+      kind: "json",
       content: JSON.stringify(report, null, 2),
+      download: {
+        kind: "report",
+        jobId: active.id,
+        filename: `${active.id}_ai_report.json`,
+      },
     });
   }
 
   return {
-    id: job.id,
-    label: `Search Job ${job.id.slice(0, 8)}`,
-    description: `${job.target_region} • ${job.refined_industry || job.original_industry}`,
+    id: active.id,
+    label: `Search Session ${active.id.slice(0, 8)}`,
+    description: contextLabel(active),
+    activeSessionId: active.id,
+    sessions: jobs.map((job) => ({
+      id: job.id,
+      label: `${job.id.slice(0, 8)} • ${job.status}`,
+      description: contextLabel(job),
+      status: job.status,
+    })),
     artifacts,
   };
 }
@@ -122,9 +153,15 @@ function buildSearchExplorerContext(job: JobTableSelection): WorkspaceContext | 
 export default function SearchPage() {
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [activeTerminalJobId, setActiveTerminalJobId] = useState<string | undefined>(undefined);
-  const [selectedJob, setSelectedJob] = useState<JobTableSelection>(null);
+  const [jobs, setJobs] = useState<SearchJob[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
-  const explorerContext = useMemo(() => buildSearchExplorerContext(selectedJob), [selectedJob]);
+  const selectedJob = useMemo(
+    () => jobs.find((job) => job.id === selectedJobId) ?? jobs[0] ?? null,
+    [jobs, selectedJobId]
+  );
+
+  const explorerContext = useMemo(() => buildSearchExplorerContext(selectedJob, jobs), [selectedJob, jobs]);
   const terminalSummary = activeTerminalJobId
     ? `Scoring: LIVE | Enriching: active lanes | Job: ${activeTerminalJobId.slice(0, 8)}`
     : "Scoring: idle | Enriching: idle";
@@ -136,6 +173,7 @@ export default function SearchPage() {
       subtitle="Single SSE stream, dual live lanes"
       activeTerminalJobId={activeTerminalJobId}
       explorerContext={explorerContext}
+      onSelectExplorerSession={(sessionId) => setSelectedJobId(sessionId)}
       terminalSummary={terminalSummary}
       mainEditor={
         <AgenticChat
@@ -147,7 +185,13 @@ export default function SearchPage() {
         <JobTable
           refreshSignal={refreshSignal}
           compact
-          onSelectedJobChange={(job) => setSelectedJob(job)}
+          showFilesPane={false}
+          selectedJobId={selectedJobId}
+          onSelectedJobIdChange={(jobId) => setSelectedJobId(jobId)}
+          onSelectedJobChange={(job) => {
+            if (job?.id) setSelectedJobId(job.id);
+          }}
+          onJobsChange={(nextJobs) => setJobs(nextJobs as SearchJob[])}
         />
       }
       terminalContent={

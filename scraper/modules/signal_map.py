@@ -33,6 +33,30 @@ def _normalize_queries(values):
     return list(dict.fromkeys(cleaned))
 
 
+def _contains_any(text, terms):
+    lowered = str(text or "").lower()
+    return any(term in lowered for term in terms)
+
+
+def _should_allow_public_sector(industry, search_terms):
+    public_sector_terms = (
+        "college",
+        "education",
+        "government",
+        "municipal",
+        "public sector",
+        "school",
+        "state agency",
+        "university",
+    )
+    if _contains_any(industry, public_sector_terms):
+        return True
+    for term in search_terms or []:
+        if _contains_any(term, public_sector_terms):
+            return True
+    return False
+
+
 def _cluster_for_industry(industry):
     text = str(industry or "").lower()
     if any(term in text for term in ("architect", "interior design", "fit out", "fit-out", "planning")):
@@ -224,24 +248,91 @@ def build_signal_map(region, industry, search_terms=None):
         if len(token) >= 4:
             product_keywords.append(token)
 
+    allow_public_sector = _should_allow_public_sector(industry_text, search_terms or [])
+    is_local_services = cluster == "local_services_expansion"
+
+    buyer_keywords = [
+        "expansion",
+        "franchise",
+        "new location",
+        "project",
+        "procurement",
+        "request for proposal",
+        "vendor",
+        "supplier",
+        "tender",
+    ]
+    if is_local_services:
+        buyer_keywords.extend(
+            [
+                "branch opening",
+                "commercial rent",
+                "for lease",
+                "high footfall",
+                "location launch",
+                "new outlet",
+                "site selection",
+                "store opening",
+            ]
+        )
+
+    negative_keywords = [
+        "job board",
+        "directory listing",
+        "investor news only",
+        "definition",
+        "dictionary",
+        "documentation",
+        "example sentence",
+        "github",
+        "how to",
+        "repository",
+        "tutorial",
+        "vocabulary",
+    ]
+    if is_local_services:
+        negative_keywords.extend(
+            [
+                "coding interview",
+                "developer docs",
+                "open source repo",
+            ]
+        )
+
+    blocked_domains = [
+        "cambridge.org",
+        "dictionary.com",
+        "github.com",
+        "gitlab.com",
+        "huggingface.co",
+        "merriam-webster.com",
+        "stackexchange.com",
+        "stackoverflow.com",
+        "vocabulary.com",
+        "wiktionary.org",
+    ]
+    blocked_host_markers = [
+        "dictionary.",
+        "docs.",
+        "github.",
+        "gitlab.",
+        "huggingface.",
+        "learn.",
+        "reference.",
+        "tutorial.",
+        "wiki.",
+    ]
+    blocked_tlds = [] if allow_public_sector else [".edu", ".gov", ".mil", ".ac.uk"]
+
     scoring_context = {
         "product_keywords": _normalize_queries(product_keywords),
-        "buyer_keywords": _normalize_queries([
-            "expansion",
-            "franchise",
-            "new location",
-            "project",
-            "procurement",
-            "request for proposal",
-            "vendor",
-            "supplier",
-            "tender",
-        ]),
-        "negative_keywords": _normalize_queries([
-            "job board",
-            "directory listing",
-            "investor news only",
-        ]),
+        "buyer_keywords": _normalize_queries(buyer_keywords),
+        "negative_keywords": _normalize_queries(negative_keywords),
+        "blocked_domains": _normalize_queries(blocked_domains),
+        "blocked_host_markers": _normalize_queries(blocked_host_markers),
+        "blocked_tlds": _normalize_queries(blocked_tlds),
+        "quality_mode": "balanced_growth" if is_local_services else "balanced",
+        "search_intent": cluster,
     }
 
     return {

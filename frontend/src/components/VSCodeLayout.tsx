@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Group as PanelGroup,
   Panel,
@@ -8,11 +8,13 @@ import {
   PanelSize,
   Separator as PanelResizeHandle,
 } from "react-resizable-panels";
+import { Download, ExternalLink, Loader2 } from "lucide-react";
 import { ActivityBar } from "./ActivityBar";
 import { LeftSidebar } from "./LeftSidebar";
 import { RightSidebar } from "./RightSidebar";
 import { BottomPanel } from "./BottomPanel";
 import { WorkspaceArtifact, WorkspaceContext, WorkspaceMode } from "./workspace-types";
+import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 
 const MAIN_TAB_ID = "__main_editor__";
 const DEFAULT_LEFT_SIZE = 20;
@@ -21,6 +23,14 @@ const DEFAULT_TERMINAL_SIZE = 28;
 const MIN_LEFT_SIZE = 12;
 const MIN_RIGHT_SIZE = 16;
 const MIN_TERMINAL_SIZE = 14;
+
+function mimeTypeForArtifact(kind: WorkspaceArtifact["kind"]) {
+  if (kind === "json" || kind === "report") return "application/json";
+  if (kind === "csv") return "text/csv";
+  if (kind === "markdown") return "text/markdown";
+  if (kind === "log" || kind === "text") return "text/plain";
+  return "application/octet-stream";
+}
 
 type VSCodeLayoutProps = {
   mode: WorkspaceMode;
@@ -33,27 +43,169 @@ type VSCodeLayoutProps = {
   activeTerminalJobId?: string | null;
   explorerContext?: WorkspaceContext | null;
   renderArtifact?: (artifact: WorkspaceArtifact) => ReactNode;
+  onSelectExplorerSession?: (sessionId: string) => void;
 };
 
-function artifactPreview(artifact: WorkspaceArtifact) {
-  const body = artifact.content || "No inline preview available for this artifact.";
+function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
+  const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [downloadLoading, setDownloadLoading] = useState(false);
+  const [previewText, setPreviewText] = useState<string>(artifact.content || "No inline preview available for this artifact.");
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function authToken() {
+    if (!supabase) throw new Error("Supabase public env vars are not configured.");
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Sign in required.");
+    return token;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPreview() {
+      setPreviewError(null);
+      if (artifact.preview?.kind !== "export") {
+        setPreviewText(artifact.content || "No inline preview available for this artifact.");
+        return;
+      }
+
+      setPreviewLoading(true);
+      try {
+        const token = await authToken();
+        const response = await fetch(
+          `/api/jobs/${encodeURIComponent(artifact.preview.jobId)}/exports?mode=preview&exportId=${encodeURIComponent(artifact.preview.exportId)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Could not load preview.");
+        }
+        const text = typeof payload.preview === "string" ? payload.preview : "Preview is unavailable for this file.";
+        if (!cancelled) {
+          const suffix = payload.truncated ? "\n\n...preview truncated" : "";
+          setPreviewText(`${text}${suffix}`);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPreviewError(error instanceof Error ? error.message : "Could not load preview.");
+          setPreviewText(artifact.content || "No inline preview available for this artifact.");
+        }
+      } finally {
+        if (!cancelled) {
+          setPreviewLoading(false);
+        }
+      }
+    }
+
+    void loadPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [artifact.content, artifact.id, artifact.preview?.exportId, artifact.preview?.jobId, artifact.preview?.kind]);
+
+  async function downloadArtifact() {
+    setDownloadLoading(true);
+    setDownloadError(null);
+    try {
+      if (artifact.download?.kind === "external") {
+        window.open(artifact.download.url, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      if (artifact.download?.kind === "report") {
+        const reportText = artifact.content || "{}";
+        const blob = new Blob([reportText], { type: "application/json" });
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = artifact.download.filename || artifact.name;
+        anchor.click();
+        window.URL.revokeObjectURL(url);
+        return;
+      }
+
+      if (artifact.download?.kind === "export") {
+        const token = await authToken();
+        const response = await fetch(
+          `/api/jobs/${encodeURIComponent(artifact.download.jobId)}/exports?mode=url&exportId=${encodeURIComponent(artifact.download.exportId)}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const payload = await response.json();
+        if (!response.ok || !payload.url) {
+          throw new Error(payload.error || "Could not fetch download URL.");
+        }
+        window.open(payload.url, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      if (artifact.externalUrl) {
+        window.open(artifact.externalUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      if (artifact.content) {
+        const blob = new Blob([artifact.content], { type: mimeTypeForArtifact(artifact.kind) });
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = artifact.name;
+        anchor.click();
+        window.URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Could not download artifact.");
+    } finally {
+      setDownloadLoading(false);
+    }
+  }
+
   return (
     <div className="h-full overflow-auto bg-[#0d1117] p-4">
-      <div className="mb-3 border border-[#30363d] bg-black/35 p-3 text-xs">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">{artifact.folder}</p>
-        <p className="mt-1 font-mono text-[#00ffff]">{artifact.name}</p>
-        {artifact.meta && <p className="mt-1 text-[#8b949e]">{artifact.meta}</p>}
+      <div className="mb-3 flex items-start justify-between gap-3 border border-[#30363d] bg-black/35 p-3 text-xs">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">{artifact.folder}</p>
+          <p className="mt-1 font-mono text-[#00ffff]">{artifact.name}</p>
+          {artifact.meta && <p className="mt-1 text-[#8b949e]">{artifact.meta}</p>}
+        </div>
+        {(artifact.download || artifact.externalUrl || artifact.content) && (
+          <button
+            type="button"
+            onClick={() => void downloadArtifact()}
+            disabled={downloadLoading}
+            className="ide-btn inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
+          >
+            {downloadLoading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+            Download
+          </button>
+        )}
       </div>
+
+      {previewError && (
+        <div className="mb-3 border border-[#ff6b6b] bg-[#220b0b] px-3 py-2 text-xs text-[#ff6b6b]">
+          {previewError}
+        </div>
+      )}
+      {downloadError && (
+        <div className="mb-3 border border-[#ff6b6b] bg-[#220b0b] px-3 py-2 text-xs text-[#ff6b6b]">
+          {downloadError}
+        </div>
+      )}
+
       <pre className="whitespace-pre-wrap break-words border border-[#30363d] bg-black/40 p-3 text-xs leading-5 text-[#c9d1d9]">
-        {body}
+        {previewLoading ? "Loading preview..." : previewText}
       </pre>
       {artifact.externalUrl && (
         <a
           href={artifact.externalUrl}
           target="_blank"
           rel="noreferrer"
-          className="mt-3 inline-flex border border-[#30363d] bg-[#161b22] px-3 py-1.5 text-xs text-[#c9d1d9] hover:border-[#00ffff] hover:text-[#00ffff]"
+          className="mt-3 inline-flex items-center gap-1.5 border border-[#30363d] bg-[#161b22] px-3 py-1.5 text-xs text-[#c9d1d9] hover:border-[#00ffff] hover:text-[#00ffff]"
         >
+          <ExternalLink size={12} />
           Open External File
         </a>
       )}
@@ -72,6 +224,7 @@ export function VSCodeLayout({
   activeTerminalJobId,
   explorerContext,
   renderArtifact,
+  onSelectExplorerSession,
 }: VSCodeLayoutProps) {
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
@@ -108,11 +261,11 @@ export function VSCodeLayout({
     });
   }, [explorerContext]);
 
-  const collapsePanel = useCallback((ref: React.RefObject<PanelImperativeHandle | null>) => {
+  const collapsePanel = useCallback((ref: RefObject<PanelImperativeHandle | null>) => {
     ref.current?.collapse?.();
   }, []);
 
-  const expandPanel = useCallback((ref: React.RefObject<PanelImperativeHandle | null>, size: number) => {
+  const expandPanel = useCallback((ref: RefObject<PanelImperativeHandle | null>, size: number) => {
     ref.current?.expand?.();
     ref.current?.resize?.(`${size}%`);
   }, []);
@@ -265,6 +418,7 @@ export function VSCodeLayout({
               explorerContext={explorerContext}
               activeArtifactId={activeArtifactId}
               onOpenArtifact={openArtifact}
+              onSelectSession={onSelectExplorerSession}
             />
           </Panel>
 
@@ -317,7 +471,7 @@ export function VSCodeLayout({
 
                       <div className="flex min-h-0 flex-1 overflow-hidden bg-[#0d1117]" style={{ zoom: zoomLevel }}>
                         {activeArtifact
-                          ? (renderArtifact?.(activeArtifact) ?? artifactPreview(activeArtifact))
+                          ? (renderArtifact?.(activeArtifact) ?? <ArtifactPreviewPanel artifact={activeArtifact} />)
                           : mainEditor}
                       </div>
                     </div>

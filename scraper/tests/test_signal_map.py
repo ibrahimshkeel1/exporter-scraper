@@ -30,6 +30,8 @@ class SignalMapTests(unittest.TestCase):
         context = signal_map["scoring_context"]
         self.assertTrue(context["product_keywords"])
         self.assertIn("expansion", context["buyer_keywords"])
+        self.assertIn("github.com", context["blocked_domains"])
+        self.assertIn(".edu", context["blocked_tlds"])
 
 
 if __name__ == "__main__":

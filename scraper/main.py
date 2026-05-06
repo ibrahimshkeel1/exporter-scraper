@@ -152,11 +152,7 @@ def apply_job_config(args, config):
 
 def compute_discovery_limit(limit, test_mode=False, max_analyzed=None):
     if max_analyzed is not None:
-        hard_cap = max(limit, int(max_analyzed))
-        if test_mode:
-            default_test_limit = min(120, max(limit * 20, 80))
-            return max(limit, min(hard_cap, default_test_limit))
-        return hard_cap
+        return max(limit, int(max_analyzed))
 
     if test_mode:
         return min(120, max(limit * 20, 80))
@@ -181,7 +177,15 @@ def merge_search_terms(primary_terms, secondary_terms):
 
 def merge_scoring_context(base_context, override_context):
     merged = {}
-    for key in ("product_keywords", "buyer_keywords", "negative_keywords"):
+    list_keys = (
+        "product_keywords",
+        "buyer_keywords",
+        "negative_keywords",
+        "blocked_domains",
+        "blocked_host_markers",
+        "blocked_tlds",
+    )
+    for key in list_keys:
         merged_values = []
         for context in (base_context or {}, override_context or {}):
             for value in context.get(key, []) if isinstance(context, dict) else []:
@@ -190,7 +194,139 @@ def merge_scoring_context(base_context, override_context):
                     merged_values.append(text)
         if merged_values:
             merged[key] = merged_values
+    for key in ("quality_mode", "search_intent"):
+        for context in (override_context or {}, base_context or {}):
+            if isinstance(context, dict) and context.get(key):
+                merged[key] = context.get(key)
+                break
     return merged or None
+
+
+SEVERE_DISQUALIFICATION_MARKERS = (
+    "blocked noisy domain class",
+    "known false-positive domain",
+    "supplier-country domain",
+)
+
+
+def _candidate_rank_key(candidate):
+    return (
+        candidate.get("score", 0),
+        1 if candidate.get("passes_hard_checks", False) else 0,
+        1 if candidate.get("fetch_ok", False) else 0,
+        1 if candidate.get("lead_pack_status") == "sellable_a_plus" else 0,
+        len(candidate.get("high_quality_emails", [])),
+        len(candidate.get("emails", [])),
+        len(candidate.get("buyer_side_evidence", "")),
+    )
+
+
+def _candidate_disqualification_set(candidate):
+    return {
+        reason.strip().lower()
+        for reason in str(candidate.get("disqualification_reasons", "")).split(";")
+        if reason.strip()
+    }
+
+
+def _is_severe_disqualification(candidate):
+    reasons = _candidate_disqualification_set(candidate)
+    return any(marker in reason for marker in SEVERE_DISQUALIFICATION_MARKERS for reason in reasons)
+
+
+def _append_unique_backfill(selected, ranked_pool, limit, stage, predicate):
+    selected_domains = {
+        _normalize_domain_value(lead.get("domain", ""))
+        for lead in selected
+        if lead.get("domain")
+    }
+    added = 0
+    for candidate in ranked_pool:
+        if len(selected) >= limit:
+            break
+        domain = _normalize_domain_value(candidate.get("domain", ""))
+        if not domain or domain in selected_domains:
+            continue
+        if not predicate(candidate):
+            continue
+        candidate["pack_fill_stage"] = stage
+        if stage != "strict":
+            candidate["manual_review_required"] = True
+        selected.append(candidate)
+        selected_domains.add(domain)
+        added += 1
+    return added
+
+
+def build_lead_pack(scoring, scored_candidates, limit, min_score, fill_until_complete=False):
+    if not scored_candidates:
+        return [], min_score, []
+
+    ranked_pool = sorted(scored_candidates, key=_candidate_rank_key, reverse=True)
+    selected = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
+    for lead in selected:
+        lead["pack_fill_stage"] = "strict"
+
+    stage_events = [("strict", min_score, len(selected))]
+    effective_min_score = min_score
+
+    if fill_until_complete and len(selected) < limit:
+        for threshold in relaxed_score_thresholds(min_score)[1:]:
+            relaxed = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=threshold)
+            if len(relaxed) <= len(selected):
+                continue
+            selected = relaxed
+            for lead in selected:
+                lead["pack_fill_stage"] = "relaxed_threshold"
+            effective_min_score = threshold
+            stage_events.append(("relaxed_threshold", threshold, len(selected)))
+            if len(selected) >= limit:
+                break
+
+    if len(selected) < limit:
+        soft_floor = max(30, effective_min_score - 20)
+        added = _append_unique_backfill(
+            selected=selected,
+            ranked_pool=ranked_pool,
+            limit=limit,
+            stage="hard_check_backfill",
+            predicate=lambda candidate: (
+                candidate.get("passes_hard_checks", False)
+                and candidate.get("score", 0) >= soft_floor
+                and candidate.get("noisy_domain_hits", 0) == 0
+            ),
+        )
+        if added:
+            stage_events.append(("hard_check_backfill", soft_floor, len(selected)))
+
+    if len(selected) < limit:
+        exploratory_floor = max(20, effective_min_score - 35)
+        added = _append_unique_backfill(
+            selected=selected,
+            ranked_pool=ranked_pool,
+            limit=limit,
+            stage="exploratory_backfill",
+            predicate=lambda candidate: (
+                candidate.get("fetch_ok", False)
+                and candidate.get("score", 0) >= exploratory_floor
+                and not _is_severe_disqualification(candidate)
+            ),
+        )
+        if added:
+            stage_events.append(("exploratory_backfill", exploratory_floor, len(selected)))
+
+    if len(selected) < limit:
+        added = _append_unique_backfill(
+            selected=selected,
+            ranked_pool=ranked_pool,
+            limit=limit,
+            stage="forced_backfill",
+            predicate=lambda candidate: bool(_normalize_domain_value(candidate.get("domain", ""))),
+        )
+        if added:
+            stage_events.append(("forced_backfill", 0, len(selected)))
+
+    return selected[:limit], effective_min_score, stage_events
 
 
 def _parse_proxy_entry(proxy_value):
@@ -493,6 +629,67 @@ def apply_recent_dedupe(scoring, scored_candidates, min_score, limit, recent_dom
     return filtered, dropped
 
 
+def apply_recent_domain_suppression(leads, recent_domains, limit, preserve_target=False):
+    if not leads:
+        return [], 0, 0
+
+    recent_set = {_normalize_domain_value(domain) for domain in recent_domains if domain}
+    filtered = []
+    deferred = []
+    seen = set()
+    dropped = 0
+
+    for lead in leads:
+        domain = _normalize_domain_value(lead.get("domain", ""))
+        if not domain or domain in seen:
+            continue
+        seen.add(domain)
+        if domain in recent_set:
+            dropped += 1
+            deferred.append(lead)
+            continue
+        filtered.append(lead)
+        if len(filtered) >= limit:
+            return filtered, dropped, 0
+
+    restored = 0
+    if preserve_target and len(filtered) < limit and deferred:
+        for lead in deferred:
+            domain = _normalize_domain_value(lead.get("domain", ""))
+            if not domain:
+                continue
+            lead["pack_fill_stage"] = lead.get("pack_fill_stage", "strict")
+            lead["manual_review_required"] = True
+            filtered.append(lead)
+            restored += 1
+            if len(filtered) >= limit:
+                break
+
+    return filtered[:limit], dropped, restored
+
+
+def pad_lead_pack_with_repeats(leads, limit):
+    if not leads or len(leads) >= limit:
+        return leads, 0
+    padded = list(leads)
+    repeat_index = 0
+    while len(padded) < limit:
+        source = leads[repeat_index % len(leads)]
+        clone = dict(source)
+        clone["pack_fill_stage"] = "repeat_backfill"
+        clone["manual_review_required"] = True
+        clone["repeat_source_domain"] = source.get("domain", "")
+        existing_reasons = str(clone.get("disqualification_reasons", "")).strip()
+        repeat_reason = "repeated lead used to satisfy guaranteed pack size"
+        if existing_reasons:
+            clone["disqualification_reasons"] = f"{existing_reasons}; {repeat_reason}"
+        else:
+            clone["disqualification_reasons"] = repeat_reason
+        padded.append(clone)
+        repeat_index += 1
+    return padded, len(padded) - len(leads)
+
+
 async def run_scraper(
     region,
     industry,
@@ -590,6 +787,7 @@ async def run_scraper(
         require_email=not allow_no_email,
         require_buyer_evidence=not allow_weak_buyer_evidence,
         scoring_context=merged_scoring_context,
+        industry=industry,
     )
 
     worker_count = 2 if test_mode else 4
@@ -790,6 +988,7 @@ async def run_scraper(
             limit=discovery_limit,
             search_terms=merged_search_terms,
             signal_map=signal_map,
+            scoring_context=merged_scoring_context,
         )
         source_groups = partition_discovery_sources(discovery_template.generate_sources(region, industry))
         active_discovery_groups = list(source_groups.items())
@@ -881,6 +1080,7 @@ async def run_scraper(
                     limit=lane_limit,
                     search_terms=merged_search_terms,
                     signal_map=signal_map,
+                    scoring_context=merged_scoring_context,
                 )
                 async def lane_rotate(engine, source_url, reason, lane_name=lane_name):
                     return await rotate_proxy_on_block(lane_name, engine, source_url, reason)
@@ -924,28 +1124,29 @@ async def run_scraper(
         for lane_name, lane_browser in discovery_browsers.items():
             await lane_browser.close()
 
-    if fill_until_complete and len(top_leads) < limit and scored_candidates:
-        for threshold in relaxed_score_thresholds(min_score)[1:]:
-            candidate_leads = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=threshold)
-            if len(candidate_leads) <= len(top_leads):
-                continue
-            top_leads.clear()
-            top_leads.extend(candidate_leads)
-            effective_min_score = threshold
-            emit_progress(
-                "scoring",
-                "Relaxed quality threshold to fill the lead pack.",
-                status_output=status_output,
-                job_id=job_id,
-                source="scoring",
-                analyzed_count=len(scored_candidates),
-                qualified_count=len(top_leads),
-                target_count=limit,
-                min_score=threshold,
-                effective_min_score=threshold,
-            )
-            if len(top_leads) >= limit:
-                break
+    top_leads, effective_min_score, pack_stage_events = build_lead_pack(
+        scoring=scoring,
+        scored_candidates=scored_candidates,
+        limit=limit,
+        min_score=min_score,
+        fill_until_complete=fill_until_complete,
+    )
+    for stage_name, stage_floor, lead_count in pack_stage_events:
+        if stage_name == "strict":
+            continue
+        emit_progress(
+            "scoring",
+            "Adjusted quality gate to protect target lead count.",
+            status_output=status_output,
+            job_id=job_id,
+            source="scoring",
+            stage=stage_name,
+            stage_floor=stage_floor,
+            qualified_count=lead_count,
+            target_count=limit,
+            analyzed_count=len(scored_candidates),
+            effective_min_score=effective_min_score,
+        )
 
     emit_progress(
         "enriched",
@@ -973,17 +1174,16 @@ async def run_scraper(
         return
 
     print(
-        f"Quality filter: {len(top_leads)}/{limit} qualified leads from {len(scored_candidates)} enriched candidates"
+        f"Lead-pack selection: {len(top_leads)}/{limit} selected leads from {len(scored_candidates)} enriched candidates"
     )
 
     recent_domains_path = _recent_domains_file(output)
     recent_domains = load_recent_domains(recent_domains_path, max_items=500)
-    top_leads, dropped_as_repeats = apply_recent_dedupe(
-        scoring=scoring,
-        scored_candidates=scored_candidates,
-        min_score=effective_min_score,
-        limit=limit,
+    top_leads, dropped_as_repeats, restored_repeats = apply_recent_domain_suppression(
+        leads=top_leads,
         recent_domains=recent_domains,
+        limit=limit,
+        preserve_target=fill_until_complete,
     )
     if dropped_as_repeats:
         emit_progress(
@@ -996,7 +1196,22 @@ async def run_scraper(
             recent_memory_size=len(recent_domains),
             qualified_count=len(top_leads),
             target_count=limit,
+            restored_repeats=restored_repeats,
         )
+    repeated_fill_count = 0
+    if fill_until_complete and len(top_leads) < limit and top_leads:
+        top_leads, repeated_fill_count = pad_lead_pack_with_repeats(top_leads, limit)
+        if repeated_fill_count:
+            emit_progress(
+                "scoring",
+                "Repeated top leads to satisfy guaranteed pack size.",
+                status_output=status_output,
+                job_id=job_id,
+                source="scoring",
+                repeated_fill_count=repeated_fill_count,
+                qualified_count=len(top_leads),
+                target_count=limit,
+            )
 
     emit_progress(
         "exporting",
@@ -1137,7 +1352,7 @@ async def run_hunt_first_a_plus(
     run_id = f"hunt-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
     start_time = time.perf_counter()
     discovery = LeadDiscovery(limit=max_analyzed)
-    scoring = LeadScoring(require_email=True, require_buyer_evidence=True)
+    scoring = LeadScoring(require_email=True, require_buyer_evidence=True, industry=industry)
     analyzed_candidates = []
     analyzed_domains = set()
     found_lead = None

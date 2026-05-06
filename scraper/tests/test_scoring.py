@@ -115,6 +115,57 @@ class LeadScoringTests(unittest.TestCase):
         self.assertFalse(scored["qualified"])
         self.assertIn("supplier-country domain", scored["disqualification_reasons"])
 
+    def test_supplier_country_domain_is_allowed_for_local_market_jobs(self):
+        candidate = {
+            "domain": "factory.com.pk",
+            "region": "Lahore",
+            "url": "https://factory.com.pk",
+            "content": "Coffee shop expansion branch opening with contact details.",
+            "emails": ["info@factory.com.pk"],
+            "high_quality_emails": ["info@factory.com.pk"],
+            "email_quality": "business",
+            "social_urls": [],
+            "linkedin_url": None,
+            "fetch_ok": True,
+            "fetch_status_codes": [200],
+            "crawled_pages": ["https://factory.com.pk"],
+        }
+        scoring = LeadScoring(
+            require_email=False,
+            require_buyer_evidence=False,
+            scoring_context={
+                "product_keywords": ["coffee shop", "cafe", "espresso"],
+                "buyer_keywords": ["branch opening", "expansion", "new outlet"],
+            },
+            industry="coffee shops",
+        )
+        scored = scoring.evaluate_candidate(candidate)
+        self.assertNotIn("supplier-country domain", scored["disqualification_reasons"])
+
+    def test_blocked_domain_marker_from_context_disqualifies_noise_site(self):
+        scoring = LeadScoring(
+            require_email=False,
+            require_buyer_evidence=False,
+            scoring_context={
+                "blocked_host_markers": ["dictionary."],
+            },
+        )
+        candidate = {
+            "domain": "dictionary.example.com",
+            "url": "https://dictionary.example.com",
+            "content": "Coffee definition and example sentence.",
+            "emails": [],
+            "high_quality_emails": [],
+            "email_quality": "none",
+            "social_urls": [],
+            "linkedin_url": None,
+            "fetch_ok": True,
+            "fetch_status_codes": [200],
+            "crawled_pages": ["https://dictionary.example.com"],
+        }
+        scored = scoring.evaluate_candidate(candidate)
+        self.assertIn("blocked noisy domain class", scored["disqualification_reasons"])
+
     def test_failed_followup_paths_do_not_create_buyer_evidence(self):
         candidate = {
             "domain": "samplebrand.com",

@@ -26,6 +26,10 @@ import { OutreachSummaryWidget } from "./OutreachSummaryWidget";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 
+const GRID_BREAKPOINTS = { lg: 1200, md: 996, sm: 768, xs: 480 } as const;
+const GRID_COLS = { lg: 12, md: 10, sm: 6, xs: 4 } as const;
+type GridBreakpoint = keyof typeof GRID_COLS;
+
 const WIDGET_COMPONENTS: Record<WidgetType, React.FC> = {
   "active-agents": ActiveAgentStatusWidget,
   "lead-funnel": LeadFunnelWidget,
@@ -42,9 +46,9 @@ function generateId(type: WidgetType) {
   return `${type}--${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function layoutToGridItems(layout: DashboardLayout, activeTypes: WidgetType[]): GridItem[] {
+function layoutToGridItems(layout: DashboardLayout, activeWidgetIds: string[]): GridItem[] {
   return layout
-    .filter((item) => activeTypes.some((t) => item.i.startsWith(t)))
+    .filter((item) => activeWidgetIds.includes(item.i))
     .map((item) => {
       const type = item.i.split("--")[0] as WidgetType;
       const config = WIDGET_REGISTRY[type];
@@ -56,6 +60,73 @@ function layoutToGridItems(layout: DashboardLayout, activeTypes: WidgetType[]): 
         maxH: config?.maxH,
       };
     });
+}
+
+function minWidthForType(type: WidgetType, cols: number) {
+  const config = WIDGET_REGISTRY[type];
+  return Math.max(1, Math.min(config?.minW ?? 1, cols));
+}
+
+function normalizeForBreakpoint(items: GridItem[], breakpoint: GridBreakpoint): GridItem[] {
+  const cols = GRID_COLS[breakpoint];
+  const referenceCols = GRID_COLS.lg;
+  return items.map((item) => {
+    const type = item.i.split("--")[0] as WidgetType;
+    const minW = minWidthForType(type, cols);
+    const scaledW = Math.round((item.w / referenceCols) * cols);
+    const w = Math.max(minW, Math.min(cols, scaledW || minW));
+    const scaledX = Math.round((item.x / referenceCols) * cols);
+    const x = Math.max(0, Math.min(cols - w, scaledX));
+    return {
+      ...item,
+      x,
+      w,
+      minW,
+      minH: item.minH ?? 2,
+    };
+  });
+}
+
+function densePack(items: GridItem[], cols: number): GridItem[] {
+  const colHeights = Array.from({ length: cols }, () => 0);
+  const ordered = [...items].sort((a, b) => (a.y === b.y ? a.x - b.x : a.y - b.y));
+  const packed: GridItem[] = [];
+
+  for (const item of ordered) {
+    const minW = Math.max(1, Math.min(item.minW ?? 1, cols));
+    const w = Math.max(minW, Math.min(item.w, cols));
+    const h = Math.max(item.minH ?? 1, item.h);
+
+    let bestX = 0;
+    let bestY = Number.POSITIVE_INFINITY;
+
+    for (let x = 0; x <= cols - w; x += 1) {
+      const y = Math.max(...colHeights.slice(x, x + w));
+      if (y < bestY || (y === bestY && x < bestX)) {
+        bestY = y;
+        bestX = x;
+      }
+    }
+
+    for (let x = bestX; x < bestX + w; x += 1) {
+      colHeights[x] = bestY + h;
+    }
+
+    packed.push({
+      ...item,
+      x: bestX,
+      y: bestY,
+      w,
+      h,
+    });
+  }
+
+  return packed;
+}
+
+function buildBreakpointLayout(items: GridItem[], breakpoint: GridBreakpoint) {
+  const normalized = normalizeForBreakpoint(items, breakpoint);
+  return densePack(normalized, GRID_COLS[breakpoint]);
 }
 
 export function WidgetDashboard() {
@@ -237,9 +308,14 @@ export function WidgetDashboard() {
   }, []);
 
   const gridLayouts = useMemo(() => {
-    const items = layoutToGridItems(layout, activeTypes);
-    return { lg: items, md: items, sm: items, xs: items };
-  }, [layout, activeTypes]);
+    const items = layoutToGridItems(layout, activeWidgets);
+    return {
+      lg: buildBreakpointLayout(items, "lg"),
+      md: buildBreakpointLayout(items, "md"),
+      sm: buildBreakpointLayout(items, "sm"),
+      xs: buildBreakpointLayout(items, "xs"),
+    };
+  }, [layout, activeWidgets]);
 
   return (
     <div className="flex h-full w-full min-w-0 flex-1 flex-col overflow-hidden">
@@ -319,8 +395,8 @@ export function WidgetDashboard() {
               className="layout"
               width={gridWidth}
               layouts={gridLayouts}
-              breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
-              cols={{ lg: 12, md: 10, sm: 6, xs: 4 }}
+              breakpoints={GRID_BREAKPOINTS}
+              cols={GRID_COLS}
               rowHeight={60}
               margin={[8, 8]}
               containerPadding={[0, 0]}

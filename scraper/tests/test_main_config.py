@@ -11,9 +11,12 @@ if SCRAPER_DIR not in sys.path:
 
 from main import (
     apply_job_config,
+    apply_recent_domain_suppression,
     apply_recent_dedupe,
+    build_lead_pack,
     compute_discovery_limit,
     load_recent_domains,
+    pad_lead_pack_with_repeats,
     relaxed_score_thresholds,
     resolve_proxy_pool,
     save_recent_domains,
@@ -54,6 +57,9 @@ class MainConfigTests(unittest.TestCase):
 
     def test_test_mode_respects_smaller_explicit_cap(self):
         self.assertEqual(compute_discovery_limit(limit=1, test_mode=True, max_analyzed=8), 8)
+
+    def test_explicit_cap_is_not_reduced_by_test_mode(self):
+        self.assertEqual(compute_discovery_limit(limit=10, test_mode=True, max_analyzed=900), 900)
 
     def test_default_limits_are_preserved_without_explicit_cap(self):
         self.assertEqual(compute_discovery_limit(limit=10, test_mode=True), 120)
@@ -145,6 +151,48 @@ class MainConfigTests(unittest.TestCase):
 
         self.assertEqual(dropped, 1)
         self.assertEqual([lead["domain"] for lead in filtered], ["newco.com", "fresh.com"])
+
+    def test_apply_recent_domain_suppression_can_restore_for_target(self):
+        leads = [
+            {"domain": "repeat.com", "score": 90},
+            {"domain": "newco.com", "score": 89},
+        ]
+        filtered, dropped, restored = apply_recent_domain_suppression(
+            leads=leads,
+            recent_domains=["repeat.com"],
+            limit=2,
+            preserve_target=True,
+        )
+        self.assertEqual(dropped, 1)
+        self.assertEqual(restored, 1)
+        self.assertEqual(len(filtered), 2)
+
+    def test_pad_lead_pack_with_repeats_reaches_limit(self):
+        leads, repeated = pad_lead_pack_with_repeats([{"domain": "alpha.com"}], limit=3)
+        self.assertEqual(repeated, 2)
+        self.assertEqual(len(leads), 3)
+        self.assertEqual(leads[1]["pack_fill_stage"], "repeat_backfill")
+
+    def test_build_lead_pack_uses_backfill_when_quality_is_short(self):
+        class DummyScoring:
+            @staticmethod
+            def rank_and_filter(candidates, limit, min_score):
+                return []
+
+        scored_candidates = [
+            {"domain": "alpha.com", "score": 52, "passes_hard_checks": True, "fetch_ok": True, "noisy_domain_hits": 0},
+            {"domain": "beta.com", "score": 48, "passes_hard_checks": False, "fetch_ok": True, "noisy_domain_hits": 0},
+        ]
+        leads, effective_min_score, events = build_lead_pack(
+            scoring=DummyScoring(),
+            scored_candidates=scored_candidates,
+            limit=2,
+            min_score=75,
+            fill_until_complete=True,
+        )
+        self.assertEqual(effective_min_score, 75)
+        self.assertEqual(len(leads), 2)
+        self.assertTrue(any(event[0] in {"hard_check_backfill", "exploratory_backfill", "forced_backfill"} for event in events))
 
 
 if __name__ == "__main__":

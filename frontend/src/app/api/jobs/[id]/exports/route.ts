@@ -15,6 +15,7 @@ type ExportPayload = {
 };
 
 type LeadExportRow = {
+  id?: string;
   format: string;
   storage_path: string | null;
   public_url: string | null;
@@ -58,6 +59,19 @@ function pickByFormat(rows: LeadExportRow[], format: string) {
   return matches[0];
 }
 
+function pickById(rows: LeadExportRow[], exportId: string | null) {
+  if (!exportId) return null;
+  return rows.find((row) => row.id === exportId) || null;
+}
+
+function canPreviewAsText(row: LeadExportRow) {
+  const path = (row.storage_path || "").toLowerCase();
+  const format = (row.format || "").toLowerCase();
+  if (format === "csv" || format === "json" || format === "txt" || format === "log" || format === "md") return true;
+  if (path.endsWith(".csv") || path.endsWith(".json") || path.endsWith(".txt") || path.endsWith(".log") || path.endsWith(".md")) return true;
+  return false;
+}
+
 export async function GET(request: NextRequest, context: RouteContext) {
   const { user, error } = await getUserFromRequest(request);
   if (!user) {
@@ -67,6 +81,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const { id } = await context.params;
   const supabase = createAdminSupabase();
   const format = request.nextUrl.searchParams.get("format") || "csv";
+  const exportId = request.nextUrl.searchParams.get("exportId");
   const mode = request.nextUrl.searchParams.get("mode") || "redirect";
 
   const { data: job, error: jobError } = await supabase
@@ -84,9 +99,37 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "No exports available yet." }, { status: 404 });
   }
 
-  const selected = pickByFormat(rows, format);
+  const selected = exportId ? pickById(rows, exportId) : pickByFormat(rows, format);
   if (!selected) {
-    return NextResponse.json({ error: `No export found for format '${format}'.` }, { status: 404 });
+    const message = exportId ? `No export found for id '${exportId}'.` : `No export found for format '${format}'.`;
+    return NextResponse.json({ error: message }, { status: 404 });
+  }
+
+  if (mode === "preview") {
+    if (!selected.storage_path) {
+      return NextResponse.json({ error: "Preview is unavailable because storage path is missing." }, { status: 404 });
+    }
+    if (!canPreviewAsText(selected)) {
+      return NextResponse.json({
+        preview: `Preview unavailable for ${(selected.format || "file").toUpperCase()}.\nPath: ${selected.storage_path}`,
+        format: selected.format,
+        truncated: false,
+      });
+    }
+    const { data: blob, error: downloadError } = await supabase.storage.from("lead-exports").download(selected.storage_path);
+    if (downloadError || !blob) {
+      return NextResponse.json({ error: downloadError?.message || "Could not download export for preview." }, { status: 500 });
+    }
+    const text = await blob.text();
+    const lines = text.split(/\r?\n/);
+    const MAX_LINES = 220;
+    const sliced = lines.slice(0, MAX_LINES).join("\n");
+    return NextResponse.json({
+      preview: sliced,
+      format: selected.format,
+      truncated: lines.length > MAX_LINES,
+      lineCount: lines.length,
+    });
   }
 
   if (selected.public_url) {

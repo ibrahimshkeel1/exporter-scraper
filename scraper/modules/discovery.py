@@ -88,19 +88,40 @@ class LeadDiscovery:
         "godaddy.",
         "wordpress.",
         "sentry.",
+        "dictionary.",
+        "docs.",
+        "github.",
+        "gitlab.",
+        "huggingface.",
+        "wiktionary.",
+        "wikisource.",
     )
     EXCLUDED_ROOT_DOMAINS = {
+        "cambridge.org",
         "cloudflare.com",
+        "dictionary.com",
+        "github.com",
+        "gitlab.com",
+        "huggingface.co",
         "localsearch.com",
+        "merriam-webster.com",
         "networkadvertising.org",
         "nike.com",
+        "stackoverflow.com",
         "thryv.com",
         "baidu.com",
         "zhihu.com",
         "cookie-script.com",
-        "merriam-webster.com",
+        "vocabulary.com",
         "visable.com",
+        "wiktionary.org",
     }
+    EXCLUDED_DOMAIN_SUFFIXES = (
+        ".ac.uk",
+        ".edu",
+        ".gov",
+        ".mil",
+    )
     EXCLUDED_PATH_PARTS = (
         "/cart",
         "/checkout",
@@ -110,6 +131,7 @@ class LeadDiscovery:
         "/privacy",
         "/search",
         "/terms",
+        "/wiki/",
         ".pdf",
     )
     EXPORTER_COUNTRY_SUFFIXES = (
@@ -144,11 +166,49 @@ class LeadDiscovery:
         "yahoo": 60.0,
     }
 
-    def __init__(self, limit=30, search_terms=None, signal_map=None):
+    def __init__(self, limit=30, search_terms=None, signal_map=None, scoring_context=None):
         self.limit = limit
         self.search_terms = [term for term in (search_terms or []) if term]
         self.signal_map = signal_map or {}
+        self.scoring_context = scoring_context if isinstance(scoring_context, dict) else {}
         self.seen_domains = set()
+        self.dynamic_excluded_root_domains = {
+            self._normalize_domain_value(value)
+            for value in self.scoring_context.get("blocked_domains", []) if str(value or "").strip()
+        }
+        self.dynamic_excluded_host_parts = tuple(
+            str(value or "").strip().lower()
+            for value in self.scoring_context.get("blocked_host_markers", [])
+            if str(value or "").strip()
+        )
+        self.dynamic_excluded_domain_suffixes = tuple(
+            str(value or "").strip().lower()
+            for value in self.scoring_context.get("blocked_tlds", [])
+            if str(value or "").strip()
+        )
+        public_sector_terms = (
+            "college",
+            "education",
+            "government",
+            "municipal",
+            "public sector",
+            "school",
+            "state agency",
+            "university",
+        )
+        context_terms = [str(term or "").lower() for term in self.search_terms]
+        context_terms.extend(str(term or "").lower() for term in self.scoring_context.get("product_keywords", []))
+        context_terms.extend(str(term or "").lower() for term in self.scoring_context.get("buyer_keywords", []))
+        context_terms.append(str(self.scoring_context.get("search_intent", "")).lower())
+        combined_context = " ".join(context_terms)
+        self.allow_public_sector_domains = any(term in combined_context for term in public_sector_terms)
+
+    @staticmethod
+    def _normalize_domain_value(value):
+        domain = str(value or "").strip().lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        return domain
 
     @staticmethod
     def _looks_like_ip(host):
@@ -247,9 +307,16 @@ class LeadDiscovery:
         if source.candidate_kind == "direct_url":
             return True
         domain = self._normalize_domain(candidate_url)
-        if domain in self.EXCLUDED_ROOT_DOMAINS:
+        if domain in self.EXCLUDED_ROOT_DOMAINS or domain in self.dynamic_excluded_root_domains:
             return False
         if any(part in host for part in self.EXCLUDED_HOST_PARTS):
+            return False
+        if any(part in host for part in self.dynamic_excluded_host_parts):
+            return False
+        domain_suffixes = list(self.dynamic_excluded_domain_suffixes)
+        if not self.allow_public_sector_domains:
+            domain_suffixes.extend(self.EXCLUDED_DOMAIN_SUFFIXES)
+        if any(domain.endswith(suffix) for suffix in domain_suffixes):
             return False
         path = parsed.path.lower()
         if any(part in path for part in self.EXCLUDED_PATH_PARTS):
@@ -485,6 +552,31 @@ class LeadDiscovery:
         return any(term in lowered for term in architecture_terms)
 
     @staticmethod
+    def _is_local_services_industry(industry):
+        lowered = (industry or "").lower()
+        local_services_terms = (
+            "bakery",
+            "barista",
+            "cafe",
+            "coffee",
+            "coffeehouse",
+            "food",
+            "franchise",
+            "hospitality",
+            "restaurant",
+            "retail shop",
+            "storefront",
+        )
+        return any(term in lowered for term in local_services_terms)
+
+    @staticmethod
+    def _noise_exclusion_suffix():
+        return (
+            "-dictionary -definition -github -gitlab -wikipedia -wiktionary "
+            "-reddit -youtube -documentation -tutorial -pdf"
+        )
+
+    @staticmethod
     def _canonical_region(region):
         value = str(region or "").strip().lower()
         if value in {"usa", "us", "u.s.", "u.s.a.", "united states", "united states of america", "america", "american"}:
@@ -524,6 +616,8 @@ class LeadDiscovery:
         supplied_queries = []
         is_apparel = self._is_apparel_industry(industry)
         is_architecture = self._is_architecture_industry(industry)
+        is_local_services = self._is_local_services_industry(industry)
+        noise_exclusions = self._noise_exclusion_suffix()
         for term in self.search_terms:
             normalized = term.strip()
             if not normalized:
@@ -534,10 +628,10 @@ class LeadDiscovery:
                 normalized = f"{normalized} {market}"
             if is_apparel:
                 normalized = f"{normalized} -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter"
-            supplied_queries.append(f"{normalized} contact email")
+            supplied_queries.append(f"{normalized} contact email {noise_exclusions}")
             if region == "International" and not mentions_market:
                 for extra_market in markets[1:4]:
-                    supplied_queries.append(f"{term.strip()} {extra_market} contact email")
+                    supplied_queries.append(f"{term.strip()} {extra_market} contact email {noise_exclusions}")
 
         if is_apparel:
             default_queries = [
@@ -562,26 +656,37 @@ class LeadDiscovery:
                 f'"{base} brand" "supplier portal" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
                 f'"{base} brand" "buying office" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter',
             ]
+        elif is_local_services:
+            default_queries = [
+                f'"{base}" "{market}" coffee shop expansion contact {noise_exclusions}',
+                f'"{base}" "{market}" new outlet opening soon contact {noise_exclusions}',
+                f'"{base}" "{market}" cafe branch opening contact {noise_exclusions}',
+                f'"{base}" "{market}" franchise expansion contact {noise_exclusions}',
+                f'"{base}" "{market}" commercial space for lease cafe {noise_exclusions}',
+                f'"{base}" "{market}" retail unit for rent coffee shop {noise_exclusions}',
+                f'"{base}" "{market}" high footfall location cafe contact {noise_exclusions}',
+                f'"{base}" "{market}" site selection real estate coffee chain {noise_exclusions}',
+                f'"{base}" "{market}" specialty cafe contact email {noise_exclusions}',
+                f'"{base}" "{market}" restaurant and cafe expansion news contact {noise_exclusions}',
+            ]
         else:
             default_queries = [
-                f'"{base}" "{market}" projects contact email',
-                f'"{base}" "{market}" companies contact',
-                f'"{base}" "{market}" firms contact',
-                f'"{base}" "{market}" services contact',
-                f'"{base}" "{market}" request proposal',
-                f'"{base}" "{market}" procurement vendor contact',
-                f'"{base}" "{market}" partnerships contact',
-                f'"{base}" "{market}" decision maker contact',
+                f'"{base}" "{market}" projects contact email {noise_exclusions}',
+                f'"{base}" "{market}" companies contact {noise_exclusions}',
+                f'"{base}" "{market}" firms contact {noise_exclusions}',
+                f'"{base}" "{market}" services contact {noise_exclusions}',
+                f'"{base}" "{market}" partnerships contact {noise_exclusions}',
+                f'"{base}" "{market}" decision maker contact {noise_exclusions}',
             ]
             if is_architecture:
                 default_queries.extend(
                     [
-                        f'"{base}" "{market}" commercial real estate developer contact',
-                        f'"{base}" "{market}" hospitality project design consultant contact',
-                        f'"{base}" "{market}" office fit out request for proposal',
-                        f'"{base}" "{market}" architecture tender procurement contact',
-                        f'"{base}" "{market}" interior design firm project inquiry',
-                        f'"{base}" "{market}" mixed use development architect contact',
+                        f'"{base}" "{market}" commercial real estate developer contact {noise_exclusions}',
+                        f'"{base}" "{market}" hospitality project design consultant contact {noise_exclusions}',
+                        f'"{base}" "{market}" office fit out project contact {noise_exclusions}',
+                        f'"{base}" "{market}" architecture tender contact {noise_exclusions}',
+                        f'"{base}" "{market}" interior design firm project inquiry {noise_exclusions}',
+                        f'"{base}" "{market}" mixed use development architect contact {noise_exclusions}',
                     ]
                 )
         if region == "Europe":
@@ -597,9 +702,9 @@ class LeadDiscovery:
                 else:
                     default_queries.extend(
                         [
-                            f'"{base}" "{country}" projects contact email',
-                            f'"{base}" "{country}" companies contact',
-                            f'"{base}" "{country}" procurement vendor contact',
+                            f'"{base}" "{country}" projects contact email {noise_exclusions}',
+                            f'"{base}" "{country}" companies contact {noise_exclusions}',
+                            f'"{base}" "{country}" procurement vendor contact {noise_exclusions}',
                         ]
                     )
         elif region == "International":
@@ -614,39 +719,37 @@ class LeadDiscovery:
                 elif is_architecture:
                     default_queries.extend(
                         [
-                            f'"{base}" "{country}" architecture project request proposal',
-                            f'"{base}" "{country}" property developer design consultancy contact',
-                            f'"{base}" "{country}" commercial interior design project contact',
+                            f'"{base}" "{country}" architecture project request proposal {noise_exclusions}',
+                            f'"{base}" "{country}" property developer design consultancy contact {noise_exclusions}',
+                            f'"{base}" "{country}" commercial interior design project contact {noise_exclusions}',
+                        ]
+                    )
+                elif is_local_services:
+                    default_queries.extend(
+                        [
+                            f'"{base}" "{country}" cafe expansion contact {noise_exclusions}',
+                            f'"{base}" "{country}" retail unit for rent coffee shop {noise_exclusions}',
                         ]
                     )
                 else:
                     default_queries.extend(
                         [
-                            f'"{base}" "{country}" projects contact email',
-                            f'"{base}" "{country}" procurement vendor contact',
+                            f'"{base}" "{country}" projects contact email {noise_exclusions}',
+                            f'"{base}" "{country}" procurement vendor contact {noise_exclusions}',
                         ]
                     )
 
         return list(dict.fromkeys(supplied_queries + default_queries))
 
-    def _search_sources(self, region, industry):
+    def _search_source_pages(self, query, slug, page_depth, yahoo_depth):
+        encoded = quote_plus(query)
         sources = []
-        is_apparel = self._is_apparel_industry(industry)
-        is_architecture = self._is_architecture_industry(industry)
-        queries = self._buyer_search_queries(region, industry)
-        if is_architecture:
-            queries = queries[:6]
-        elif is_apparel:
-            queries = queries[:8]
-        else:
-            queries = queries[:6]
-        for query_index, query in enumerate(queries, start=1):
-            slug = self._slug(query)
-            encoded = quote_plus(query)
+        for page_index in range(1, page_depth + 1):
+            bing_offset = (page_index - 1) * 10 + 1
             sources.append(
                 DiscoverySource(
-                    name=f"bing-p1-{slug}",
-                    url=f"https://www.bing.com/search?q={encoded}&first=1",
+                    name=f"bing-p{page_index}-{slug}",
+                    url=f"https://www.bing.com/search?q={encoded}&first={bing_offset}",
                     selectors=(
                         "li.b_algo h2 a[href]",
                         "ol#b_results a[href]",
@@ -656,10 +759,11 @@ class LeadDiscovery:
                     search_engine="bing",
                 )
             )
+            duck_offset = (page_index - 1) * 30
             sources.append(
                 DiscoverySource(
-                    name=f"duckduckgo-p1-{slug}",
-                    url=f"https://lite.duckduckgo.com/lite/?q={encoded}",
+                    name=f"duckduckgo-p{page_index}-{slug}",
+                    url=f"https://lite.duckduckgo.com/lite/?q={encoded}&s={duck_offset}",
                     selectors=(
                         "a.result-link[href]",
                         "a[href*='uddg=']",
@@ -669,11 +773,12 @@ class LeadDiscovery:
                     search_engine="duckduckgo",
                 )
             )
-            if query_index <= 4:
+            if page_index <= yahoo_depth:
+                yahoo_offset = (page_index - 1) * 10 + 1
                 sources.append(
                     DiscoverySource(
-                        name=f"yahoo-p1-{slug}",
-                        url=f"https://search.yahoo.com/search?p={encoded}",
+                        name=f"yahoo-p{page_index}-{slug}",
+                        url=f"https://search.yahoo.com/search?p={encoded}&b={yahoo_offset}",
                         selectors=(
                             "div#web h3.title a[href]",
                             "h3.title a[href]",
@@ -683,6 +788,46 @@ class LeadDiscovery:
                         search_engine="yahoo",
                     )
                 )
+        return sources
+
+    def _search_sources(self, region, industry):
+        sources = []
+        is_apparel = self._is_apparel_industry(industry)
+        is_architecture = self._is_architecture_industry(industry)
+        is_local_services = self._is_local_services_industry(industry)
+        queries = self._buyer_search_queries(region, industry)
+        if is_architecture:
+            queries = queries[:6]
+            page_depth = 1
+            yahoo_depth = 1
+        elif is_local_services:
+            queries = queries[:12]
+            page_depth = 3
+            yahoo_depth = 2
+        elif is_apparel:
+            queries = queries[:8]
+            page_depth = 2
+            yahoo_depth = 1
+        else:
+            queries = queries[:8]
+            page_depth = 2
+            yahoo_depth = 1
+        for query_index, query in enumerate(queries, start=1):
+            slug = self._slug(query)
+            query_page_depth = page_depth
+            query_yahoo_depth = yahoo_depth
+            if is_local_services and query_index > 6:
+                query_page_depth = 2
+            if is_local_services and query_index > 8:
+                query_yahoo_depth = 1
+            sources.extend(
+                self._search_source_pages(
+                    query=query,
+                    slug=slug,
+                    page_depth=query_page_depth,
+                    yahoo_depth=query_yahoo_depth,
+                )
+            )
         return sources
 
     def generate_sources(self, region, industry):

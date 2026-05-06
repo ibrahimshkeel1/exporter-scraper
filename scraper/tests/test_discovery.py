@@ -188,6 +188,42 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertEqual(candidate["signal_confidence_score"], 0.88)
         self.assertEqual(candidate["why_now"], "Recent expansion signal.")
 
+    def test_local_services_queries_focus_on_location_and_leasing(self):
+        discovery = LeadDiscovery(limit=10, search_terms=["coffee shops in lahore"])
+        queries = discovery._buyer_search_queries("Lahore", "coffee shops")
+        query_text = " ".join(queries).lower()
+
+        self.assertIn("for lease", query_text)
+        self.assertIn("new outlet", query_text)
+        self.assertNotIn("request proposal", query_text)
+
+    def test_local_services_sources_include_pagination(self):
+        discovery = LeadDiscovery(limit=10, search_terms=["coffee shops in lahore"])
+        sources = discovery._search_sources("Lahore", "coffee shops")
+        names = [source.name for source in sources]
+
+        self.assertTrue(any(name.startswith("bing-p2-") for name in names))
+        self.assertTrue(any(name.startswith("duckduckgo-p3-") for name in names))
+        self.assertTrue(any(name.startswith("yahoo-p2-") for name in names))
+
+    def test_discovery_respects_dynamic_blocklist_from_scoring_context(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            scoring_context={
+                "blocked_domains": ["cambridge.org"],
+                "blocked_host_markers": ["docs."],
+            },
+        )
+        source = DiscoverySource(
+            name="bing-p1-test",
+            url="https://www.bing.com/search?q=coffee+shops",
+            selectors=("a[href]",),
+            discovery_method="search",
+            candidate_kind="website",
+        )
+        self.assertFalse(discovery._is_valid_candidate_url("https://cambridge.org/dictionary/english/coffee", source))
+        self.assertFalse(discovery._is_valid_candidate_url("https://docs.example.com/contact", source))
+
 
 if __name__ == "__main__":
     unittest.main()

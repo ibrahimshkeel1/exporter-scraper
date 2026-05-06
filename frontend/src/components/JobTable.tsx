@@ -12,12 +12,24 @@ type JobTableProps = {
   refreshSignal: number;
   compact?: boolean;
   onSelectedJobChange?: (job: JobTableSelection) => void;
+  onJobsChange?: (jobs: LeadJob[]) => void;
+  selectedJobId?: string | null;
+  onSelectedJobIdChange?: (jobId: string | null) => void;
+  showFilesPane?: boolean;
 };
 
 type LeadExportFile = NonNullable<LeadJob["lead_exports"]>[number];
 export type JobTableSelection = (LeadJob & { job_events?: JobEvent[] }) | null;
 
-export function JobTable({ refreshSignal, compact = false, onSelectedJobChange }: JobTableProps) {
+export function JobTable({
+  refreshSignal,
+  compact = false,
+  onSelectedJobChange,
+  onJobsChange,
+  selectedJobId: controlledSelectedJobId,
+  onSelectedJobIdChange,
+  showFilesPane = true,
+}: JobTableProps) {
   const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
   const [jobs, setJobs] = useState<LeadJob[]>([]);
   const [message, setMessage] = useState("");
@@ -27,7 +39,16 @@ export function JobTable({ refreshSignal, compact = false, onSelectedJobChange }
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobsCollapsed, setJobsCollapsed] = useState(false);
   const [filesCollapsed, setFilesCollapsed] = useState(false);
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [internalSelectedJobId, setInternalSelectedJobId] = useState<string | null>(null);
+
+  const selectedJobId = controlledSelectedJobId !== undefined ? controlledSelectedJobId : internalSelectedJobId;
+
+  function setSelectedJobId(nextJobId: string | null) {
+    if (controlledSelectedJobId === undefined) {
+      setInternalSelectedJobId(nextJobId);
+    }
+    onSelectedJobIdChange?.(nextJobId);
+  }
 
   async function loadJobs() {
     setLoading(true);
@@ -35,6 +56,7 @@ export function JobTable({ refreshSignal, compact = false, onSelectedJobChange }
     if (!supabase) {
       setLoading(false);
       setJobs([]);
+      onJobsChange?.([]);
       setMessage("Supabase public env vars are not configured.");
       return;
     }
@@ -43,6 +65,7 @@ export function JobTable({ refreshSignal, compact = false, onSelectedJobChange }
     if (!token) {
       setLoading(false);
       setJobs([]);
+      onJobsChange?.([]);
       setMessage("Sign in to see jobs.");
       return;
     }
@@ -54,11 +77,14 @@ export function JobTable({ refreshSignal, compact = false, onSelectedJobChange }
     setLoading(false);
 
     if (!response.ok) {
+      onJobsChange?.([]);
       setMessage(payload.error ?? "Could not load jobs.");
       return;
     }
 
-    setJobs(payload.jobs ?? []);
+    const fetchedJobs = (payload.jobs ?? []) as LeadJob[];
+    setJobs(fetchedJobs);
+    onJobsChange?.(fetchedJobs);
   }
 
   async function downloadExport(file: LeadExportFile) {
@@ -109,7 +135,11 @@ export function JobTable({ refreshSignal, compact = false, onSelectedJobChange }
   }, [refreshSignal]);
 
   useEffect(() => {
-    if (!selectedJobId && jobs.length > 0) {
+    if (jobs.length === 0) {
+      if (selectedJobId !== null) setSelectedJobId(null);
+      return;
+    }
+    if (!selectedJobId) {
       setSelectedJobId(jobs[0].id);
       return;
     }
@@ -130,7 +160,7 @@ export function JobTable({ refreshSignal, compact = false, onSelectedJobChange }
         <div className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-vercel-text">Jobs</h2>
-            <p className="text-[11px] text-vercel-muted">Right rail: queue, exports, audit files</p>
+            <p className="text-[11px] text-vercel-muted">Session queue and status</p>
           </div>
           <button className="ide-btn inline-flex items-center gap-1 px-2 py-1 text-[10px]" type="button" onClick={() => void loadJobs()} disabled={loading}>
             <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
@@ -175,80 +205,82 @@ export function JobTable({ refreshSignal, compact = false, onSelectedJobChange }
               )}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setFilesCollapsed((value) => !value)}
-                className="flex w-full items-center justify-between border-b border-[#30363d] bg-[#0d1117] px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-[#8b949e]"
-              >
-                <span>Files & Audit</span>
-                {filesCollapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              </button>
-              {!filesCollapsed && (
-                <div className="min-h-0 h-full overflow-y-auto p-3">
-                  {!selectedJob && <p className="text-xs text-vercel-muted">Select a job to view files.</p>}
-                  {selectedJob && (
-                    <div className="space-y-3">
-                      <div className="border border-[#30363d] bg-black p-2 text-xs text-vercel-text">
-                        <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8b949e]">Selected Job</p>
-                        <p>{selectedJob.target_region} | {selectedJob.refined_industry || selectedJob.original_industry}</p>
-                        {selectedJob.error_message && <p className="mt-1 text-[#ff6b6b]">{selectedJob.error_message}</p>}
-                      </div>
+            {showFilesPane && (
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setFilesCollapsed((value) => !value)}
+                  className="flex w-full items-center justify-between border-b border-[#30363d] bg-[#0d1117] px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-[#8b949e]"
+                >
+                  <span>Files & Audit</span>
+                  {filesCollapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                </button>
+                {!filesCollapsed && (
+                  <div className="min-h-0 h-full overflow-y-auto p-3">
+                    {!selectedJob && <p className="text-xs text-vercel-muted">Select a job to view files.</p>}
+                    {selectedJob && (
+                      <div className="space-y-3">
+                        <div className="border border-[#30363d] bg-black p-2 text-xs text-vercel-text">
+                          <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8b949e]">Selected Job</p>
+                          <p>{selectedJob.target_region} | {selectedJob.refined_industry || selectedJob.original_industry}</p>
+                          {selectedJob.error_message && <p className="mt-1 text-[#ff6b6b]">{selectedJob.error_message}</p>}
+                        </div>
 
-                      <div className="space-y-2">
-                        {(selectedJob.lead_exports || []).length > 0 ? (
-                          selectedJob.lead_exports?.map((file) => {
-                            const isAudit = file.storage_path?.includes("audit");
-                            return (
-                              <button
-                                className="ide-btn inline-flex w-full items-center justify-between gap-2 px-3 py-2 text-xs"
-                                key={file.id}
-                                type="button"
-                                onClick={() => void downloadExport(file)}
-                              >
-                                <span className="inline-flex items-center gap-2">
-                                  {isAudit ? <FileSpreadsheet size={12} /> : <FileJson2 size={12} />}
-                                  {file.storage_path?.split("/").at(-1) || file.format.toUpperCase()}
-                                </span>
-                                <span className="text-[#8b949e]">{file.row_count ?? "-"} rows</span>
-                              </button>
-                            );
-                          })
-                        ) : (
-                          <p className="text-xs text-vercel-muted">
-                            {selectedJob.status === "failed" ? "No delivered files. Check logs." : "Waiting for delivery files."}
-                          </p>
-                        )}
-                      </div>
+                        <div className="space-y-2">
+                          {(selectedJob.lead_exports || []).length > 0 ? (
+                            selectedJob.lead_exports?.map((file) => {
+                              const isAudit = file.storage_path?.includes("audit");
+                              return (
+                                <button
+                                  className="ide-btn inline-flex w-full items-center justify-between gap-2 px-3 py-2 text-xs"
+                                  key={file.id}
+                                  type="button"
+                                  onClick={() => void downloadExport(file)}
+                                >
+                                  <span className="inline-flex items-center gap-2">
+                                    {isAudit ? <FileSpreadsheet size={12} /> : <FileJson2 size={12} />}
+                                    {file.storage_path?.split("/").at(-1) || file.format.toUpperCase()}
+                                  </span>
+                                  <span className="text-[#8b949e]">{file.row_count ?? "-"} rows</span>
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <p className="text-xs text-vercel-muted">
+                              {selectedJob.status === "failed" ? "No delivered files. Check logs." : "Waiting for delivery files."}
+                            </p>
+                          )}
+                        </div>
 
-                      {selectedJob.status === "delivered" &&
-                        !(((selectedJob as any).job_events || []) as JobEvent[]).some((event) => event.status === "report_ready") && (
+                        {selectedJob.status === "delivered" &&
+                          !(((selectedJob as any).job_events || []) as JobEvent[]).some((event) => event.status === "report_ready") && (
+                            <button
+                              type="button"
+                              onClick={() => void requestReport(selectedJob.id)}
+                              disabled={reportJobId === selectedJob.id}
+                              className="ide-btn inline-flex w-full items-center justify-center gap-1.5 border-[#00ff00] px-3 py-1.5 text-xs font-medium text-[#00ff00] disabled:opacity-60"
+                            >
+                              {reportJobId === selectedJob.id ? "Generating..." : "Generate Analysis"}
+                            </button>
+                          )}
+
+                        {selectedJob && (
                           <button
-                            type="button"
-                            onClick={() => void requestReport(selectedJob.id)}
-                            disabled={reportJobId === selectedJob.id}
-                            className="ide-btn inline-flex w-full items-center justify-center gap-1.5 border-[#00ff00] px-3 py-1.5 text-xs font-medium text-[#00ff00] disabled:opacity-60"
+                            onClick={() => {
+                              setActiveJobId(selectedJob.id);
+                              setActiveLogs((selectedJob as any).job_events || []);
+                            }}
+                            className="ide-btn ide-btn-primary inline-flex w-full items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium"
                           >
-                            {reportJobId === selectedJob.id ? "Generating..." : "Generate Analysis"}
+                            <TerminalSquare size={14} /> View Logs
                           </button>
                         )}
-
-                      {selectedJob && (
-                        <button
-                          onClick={() => {
-                            setActiveJobId(selectedJob.id);
-                            setActiveLogs((selectedJob as any).job_events || []);
-                          }}
-                          className="ide-btn ide-btn-primary inline-flex w-full items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium"
-                        >
-                          <TerminalSquare size={14} /> View Logs
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

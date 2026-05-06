@@ -2,10 +2,11 @@ import re
 
 
 class LeadScoring:
-    def __init__(self, require_email=True, require_buyer_evidence=True, scoring_context=None):
+    def __init__(self, require_email=True, require_buyer_evidence=True, scoring_context=None, industry=None):
         self.require_email = require_email
         self.require_buyer_evidence = require_buyer_evidence
         scoring_context = scoring_context or {}
+        self.industry = str(industry or "").lower()
         self.weights = {
             "product_fit": 20,
             "buyer_intent": 30,
@@ -162,6 +163,21 @@ class LeadScoring:
             "nike.com",
             "thryv.com",
         }
+        self.blocked_domain_markers = [
+            "dictionary.",
+            "docs.",
+            "github.",
+            "gitlab.",
+            "huggingface.",
+            "wiktionary.",
+            "wikipedia.",
+        ]
+        self.blocked_tlds = [
+            ".ac.uk",
+            ".edu",
+            ".gov",
+            ".mil",
+        ]
         self.exporter_country_suffixes = (
             ".bd",
             ".cn",
@@ -189,7 +205,7 @@ class LeadScoring:
             "sialkot",
             "vietnam",
         ]
-        self.noisy_domain_markers = [
+        apparel_noisy_markers = [
             "apparelnews.net",
             "fashionnetwork.com",
             "fiber2fashion.com",
@@ -197,7 +213,42 @@ class LeadScoring:
             "just-style.com",
             "textileworld.com",
         ]
+        generic_noisy_markers = [
+            "cambridge.org",
+            "dictionary.com",
+            "merriam-webster.com",
+            "vocabulary.com",
+            "wiktionary.org",
+        ]
+        self.noisy_domain_markers = (
+            apparel_noisy_markers + generic_noisy_markers
+            if self._is_apparel_context(self.industry)
+            else generic_noisy_markers
+        )
+        self.soft_negative_keywords = {
+            "article",
+            "editorial",
+            "magazine",
+            "news",
+            "newsletter",
+            "publication",
+        }
+        self.quality_mode = str(scoring_context.get("quality_mode", "balanced")).strip().lower() or "balanced"
         self._apply_scoring_context(scoring_context)
+
+    @staticmethod
+    def _is_apparel_context(industry):
+        apparel_terms = (
+            "activewear",
+            "apparel",
+            "clothing",
+            "fashion",
+            "garment",
+            "streetwear",
+            "textile",
+        )
+        text = str(industry or "").lower()
+        return any(term in text for term in apparel_terms)
 
     @staticmethod
     def _normalize_keywords(values):
@@ -210,10 +261,22 @@ class LeadScoring:
             keywords.extend(piece for piece in re.split(r"[^a-z0-9]+", text) if len(piece) >= 4)
         return list(dict.fromkeys(keywords))
 
+    @staticmethod
+    def _normalize_terms(values):
+        terms = []
+        for value in values or []:
+            text = str(value).lower().strip()
+            if text and text not in terms:
+                terms.append(text)
+        return terms
+
     def _apply_scoring_context(self, scoring_context):
         product_keywords = self._normalize_keywords(scoring_context.get("product_keywords", []))
         buyer_keywords = self._normalize_keywords(scoring_context.get("buyer_keywords", []))
         negative_keywords = self._normalize_keywords(scoring_context.get("negative_keywords", []))
+        blocked_domains = self._normalize_terms(scoring_context.get("blocked_domains", []))
+        blocked_host_markers = self._normalize_terms(scoring_context.get("blocked_host_markers", []))
+        blocked_tlds = self._normalize_terms(scoring_context.get("blocked_tlds", []))
 
         if product_keywords:
             self.product_keywords = list(dict.fromkeys(product_keywords + self.product_keywords))
@@ -222,6 +285,12 @@ class LeadScoring:
             self.moderate_buyer_keywords = list(dict.fromkeys(buyer_keywords + self.moderate_buyer_keywords))
         if negative_keywords:
             self.negative_keywords = list(dict.fromkeys(negative_keywords + self.negative_keywords))
+        if blocked_domains:
+            self.blocked_domains = set(self.blocked_domains) | set(blocked_domains)
+        if blocked_host_markers:
+            self.blocked_domain_markers = list(dict.fromkeys(blocked_host_markers + self.blocked_domain_markers))
+        if blocked_tlds:
+            self.blocked_tlds = list(dict.fromkeys(blocked_tlds + self.blocked_tlds))
 
     @staticmethod
     def _keyword_hits(content, keywords):
@@ -234,6 +303,28 @@ class LeadScoring:
         # fetched-page evidence.
         urls = [candidate.get("url", ""), candidate.get("discovery_url", "")]
         return " ".join((url or "").replace("-", " ").replace("_", " ") for url in urls).lower()
+
+    @staticmethod
+    def _normalize_domain(domain):
+        value = str(domain or "").strip().lower()
+        if value.startswith("www."):
+            value = value[4:]
+        return value
+
+    @staticmethod
+    def _region_for_buyer_filter(region):
+        value = str(region or "").strip().lower()
+        if value in {"usa", "us", "u.s.", "u.s.a.", "united states", "united states of america", "america", "american"}:
+            return "USA"
+        if value in {"uk", "u.k.", "united kingdom", "britain", "great britain", "england"}:
+            return "UK"
+        if value in {"eu", "europe", "european union"}:
+            return "Europe"
+        return str(region or "")
+
+    def _domain_has_blocked_marker(self, domain):
+        normalized = self._normalize_domain(domain)
+        return any(marker in normalized for marker in self.blocked_domain_markers)
 
     def _buyer_type(self, strong_hits, moderate_hits):
         all_hits = " ".join(strong_hits + moderate_hits)
@@ -281,7 +372,7 @@ class LeadScoring:
         return ok_pages[0] if ok_pages else candidate.get("url", "")
 
     def _pitch_angle(self, buyer_type, product_hits):
-        products = ", ".join(product_hits[:3]) if product_hits else "apparel/textile"
+        products = ", ".join(product_hits[:3]) if product_hits else "your offer"
         if buyer_type in {"importer", "distributor", "wholesaler"}:
             return f"Open with export capacity, reliable MOQ, and landed-cost advantage for {products}."
         if buyer_type == "procurement/sourcing":
@@ -324,7 +415,7 @@ class LeadScoring:
         return linkedin_url or ""
 
     def _lead_summary(self, domain, buyer_type, product_hits, buyer_side_hits, contact_route):
-        products = ", ".join(product_hits[:3]) if product_hits else "apparel/textile"
+        products = ", ".join(product_hits[:3]) if product_hits else "your offer"
         if buyer_side_hits and contact_route in {"decision_email", "business_email"}:
             return f"{domain} is a contactable {buyer_type} lead for {products} with buyer-side evidence."
         if buyer_side_hits and contact_route == "contact_form":
@@ -334,7 +425,7 @@ class LeadScoring:
         return f"{domain} needs manual review before paid-lead use."
 
     def _closeability_notes(self, buyer_side_hits, ambiguous_hits, contact_route, product_hits):
-        product_text = ", ".join(product_hits[:3]) if product_hits else "apparel/textile"
+        product_text = ", ".join(product_hits[:3]) if product_hits else "your offer"
         if buyer_side_hits and contact_route in {"decision_email", "business_email"}:
             return (
                 f"Contactable buyer-side lead. Lead has {', '.join(buyer_side_hits[:3])} "
@@ -357,6 +448,7 @@ class LeadScoring:
         reasons = []
         disqualification_reasons = []
         domain = (candidate.get("domain") or "").lower()
+        normalized_region = self._region_for_buyer_filter(candidate.get("region") or "USA")
         content = (candidate.get("content") or "").lower()
         path_text = self._path_text(candidate)
         signal_text = f"{content} {path_text}"
@@ -380,6 +472,8 @@ class LeadScoring:
         procurement_side_hits = self._keyword_hits(signal_text, self.procurement_side_keywords)
         supplier_country_hits = self._keyword_hits(signal_text, self.supplier_country_markers)
         negative_hits = self._keyword_hits(signal_text, self.negative_keywords)
+        soft_negative_hits = [hit for hit in negative_hits if hit in self.soft_negative_keywords]
+        hard_negative_hits = [hit for hit in negative_hits if hit not in self.soft_negative_keywords]
         noisy_domain_hits = sum(
             1
             for page_url in candidate.get("crawled_pages", [])
@@ -394,8 +488,8 @@ class LeadScoring:
             reasons.append(f"Product fit moderate ({product_hits[0]})")
         else:
             product_score = 0
-            disqualification_reasons.append("no apparel/textile product evidence")
-            reasons.append("No apparel/textile product evidence")
+            disqualification_reasons.append("no primary offer/product evidence")
+            reasons.append("No primary offer/product evidence")
 
         has_strong_buyer_evidence = bool(strong_buyer_hits)
         has_buyer_evidence = has_strong_buyer_evidence
@@ -476,17 +570,25 @@ class LeadScoring:
         if domain in self.blocked_domains:
             penalty += 45
             disqualification_reasons.append("known false-positive domain")
-        if domain.endswith(self.exporter_country_suffixes):
+        if self._domain_has_blocked_marker(domain) or any(
+            self._normalize_domain(domain).endswith(suffix) for suffix in self.blocked_tlds
+        ):
+            penalty += 45
+            disqualification_reasons.append("blocked noisy domain class")
+        if normalized_region in {"USA", "UK", "Europe"} and domain.endswith(self.exporter_country_suffixes):
             penalty += 45
             disqualification_reasons.append("supplier-country domain, not a target buyer market")
-        if candidate.get("region") in {"USA", "UK", "Europe"} and supplier_country_hits:
+        if normalized_region in {"USA", "UK", "Europe"} and supplier_country_hits:
             penalty += 35
             disqualification_reasons.append("supplier-country location evidence, not a target buyer market")
         if noisy_domain_hits:
             penalty += min(noisy_domain_hits * 15, 30)
             disqualification_reasons.append("noisy industry publication/directory source")
-        if negative_hits:
-            penalty += min(len(negative_hits) * 5, 20)
+        if hard_negative_hits:
+            penalty += min(len(hard_negative_hits) * 5, 20)
+        if soft_negative_hits:
+            soft_multiplier = 1 if self.quality_mode == "balanced_growth" else 2
+            penalty += min(len(soft_negative_hits) * soft_multiplier, 8)
         if platform_hits:
             penalty += 20
             disqualification_reasons.append("platform/marketplace/directory, not a direct buyer")
@@ -547,7 +649,7 @@ class LeadScoring:
         candidate["outreach_contact"] = outreach_contact
         candidate["evidence_url"] = self._best_evidence_url(candidate)
         candidate["negative_evidence"] = ", ".join(
-            negative_hits + platform_hits + supplier_competitor_hits + supplier_country_hits
+            hard_negative_hits + soft_negative_hits + platform_hits + supplier_competitor_hits + supplier_country_hits
         )
         candidate["disqualification_reasons"] = "; ".join(dict.fromkeys(disqualification_reasons))
         candidate["recommended_pitch_angle"] = self._pitch_angle(buyer_type, product_hits)
