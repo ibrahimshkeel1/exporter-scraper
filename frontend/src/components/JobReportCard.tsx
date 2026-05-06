@@ -26,7 +26,7 @@ function chipTone(confidence: "low" | "medium" | "high") {
 
 export function JobReportCard({ report }: JobReportCardProps) {
   return (
-    <section className="ide-panel border-[#10a3a3] bg-[#33dfdf] p-4 text-black">
+    <section className="ide-panel border-[#2dd4bf] bg-[#2dd4bf] p-4 text-black">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.24em] text-black/70">AI run report</p>

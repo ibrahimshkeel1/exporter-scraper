@@ -778,7 +778,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
                   className={`ide-panel px-3 py-2 text-sm leading-6 ${
                     message.role === "user"
                       ? "bg-transparent text-[#00ffff]"
-                      : "border-[#10a3a3] bg-[#33dfdf] text-black"
+                      : "border-[#2dd4bf] bg-[#2dd4bf] text-black"
                   }`}
                 >
                   <span className={`mr-2 ${message.role === "user" ? "text-[#8b949e]" : "text-black/70"}`}>
@@ -973,7 +973,7 @@ function ConfigWidget({
 
   if (localStartedConfig) {
     return (
-      <div className="ide-panel space-y-2 border-[#10a3a3] bg-[#33dfdf] px-3 py-3 text-sm text-black">
+      <div className="ide-panel space-y-2 border-[#2dd4bf] bg-[#2dd4bf] px-3 py-3 text-sm text-black">
         <p className="font-semibold">Job started with this brief config:</p>
         <p className="text-xs uppercase tracking-[0.14em] text-black/70">
           {localStartedConfig.leadCount} leads • {localStartedConfig.market} • min score {localStartedConfig.minScore}

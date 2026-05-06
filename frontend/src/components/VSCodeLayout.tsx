@@ -321,7 +321,7 @@ function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
         <pre
           className={`whitespace-pre-wrap break-words border p-3 text-xs leading-5 ${
             aiStyledArtifact
-              ? "border-[#10a3a3] bg-[#33dfdf] text-black"
+              ? "border-[#2dd4bf] bg-[#2dd4bf] text-black"
               : "border-[#30363d] bg-black/40 text-[#c9d1d9]"
           }`}
         >
