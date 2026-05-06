@@ -360,13 +360,14 @@ export function VSCodeLayout({
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
   const terminalPanelRef = useRef<PanelImperativeHandle | null>(null);
   const lastSessionTabRef = useRef<{ id: string | null; token: number }>({ id: null, token: -1 });
-  const autoCollapsedTabRef = useRef<string | null>(null);
+  const terminalManuallyChangedRef = useRef(false);
 
-  const rightDefaultOpen = mode === "search" || mode === "dashboard";
+  const rightDefaultOpen = true;
+  const hasTerminalContent = Boolean(terminalContent);
 
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(rightDefaultOpen);
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(hasTerminalContent);
   const [focusMode, setFocusMode] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [leftSize, setLeftSize] = useState(DEFAULT_LEFT_SIZE);
@@ -376,10 +377,19 @@ export function VSCodeLayout({
   const [activeTabId, setActiveTabId] = useState(MAIN_TAB_ID);
 
   useEffect(() => {
-    if (!terminalContent) {
+    if (!hasTerminalContent) {
       setTerminalOpen(false);
+      terminalManuallyChangedRef.current = false;
+      return;
     }
-  }, [terminalContent]);
+    if (!terminalManuallyChangedRef.current) {
+      setTerminalOpen(true);
+      window.requestAnimationFrame(() => {
+        terminalPanelRef.current?.expand?.();
+        terminalPanelRef.current?.resize?.(`${Math.max(MIN_TERMINAL_SIZE, terminalSize)}%`);
+      });
+    }
+  }, [activeTerminalJobId, hasTerminalContent, terminalSize]);
 
   useEffect(() => {
     if (!explorerContext || explorerContext.artifacts.length === 0) {
@@ -413,16 +423,6 @@ export function VSCodeLayout({
     setOpenArtifacts((current) => (current.some((entry) => entry.id === sessionArtifact.id) ? current : [...current, sessionArtifact]));
     setActiveTabId(sessionArtifact.id);
   }, [activeSessionOpenToken, explorerContext]);
-
-  useEffect(() => {
-    if (activeTabId === MAIN_TAB_ID || !rightOpen) return;
-    if (autoCollapsedTabRef.current === activeTabId) return;
-    autoCollapsedTabRef.current = activeTabId;
-    const currentSize = rightPanelRef.current?.getSize?.();
-    if (currentSize?.asPercentage && currentSize.asPercentage > MIN_RIGHT_SIZE) setRightSize(currentSize.asPercentage);
-    rightPanelRef.current?.collapse?.();
-    setRightOpen(false);
-  }, [activeTabId, rightOpen]);
 
   const collapsePanel = useCallback((ref: RefObject<PanelImperativeHandle | null>) => {
     ref.current?.collapse?.();
@@ -460,7 +460,8 @@ export function VSCodeLayout({
   }, [collapsePanel, expandPanel, focusMode, rightOpen, rightSize]);
 
   const toggleTerminal = useCallback(() => {
-    if (!terminalContent) return;
+    if (!hasTerminalContent) return;
+    terminalManuallyChangedRef.current = true;
     if (terminalOpen) {
       const currentSize = terminalPanelRef.current?.getSize?.();
       if (currentSize?.asPercentage && currentSize.asPercentage > MIN_TERMINAL_SIZE) setTerminalSize(currentSize.asPercentage);
@@ -471,7 +472,7 @@ export function VSCodeLayout({
       setTerminalOpen(true);
       if (focusMode) setFocusMode(false);
     }
-  }, [collapsePanel, expandPanel, focusMode, terminalContent, terminalOpen, terminalSize]);
+  }, [collapsePanel, expandPanel, focusMode, hasTerminalContent, terminalOpen, terminalSize]);
 
   const zoomIn = useCallback(() => {
     setZoomLevel((value) => Math.min(1.5, Math.round((value + 0.1) * 10) / 10));
@@ -598,7 +599,7 @@ export function VSCodeLayout({
           <PanelResizeHandle className="ide-panel-handle ide-panel-handle-x" />
 
           <Panel id="workspace" minSize="40%" className="min-w-0">
-            <PanelGroup orientation="vertical" className="min-h-0">
+            <PanelGroup orientation="vertical" className="min-h-0 w-full">
               <Panel id="editor-row" defaultSize={terminalContent ? "72%" : "100%"} minSize="28%" className="min-h-0">
                 <PanelGroup orientation="horizontal" className="min-h-0 min-w-0">
                   <Panel id="editor-main" minSize="50%" className="min-w-0">
@@ -642,7 +643,7 @@ export function VSCodeLayout({
                         )}
                       </div>
 
-                      <div className="flex min-h-0 flex-1 overflow-hidden bg-[#0d1117]" style={{ zoom: zoomLevel }}>
+                      <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-[#0d1117]" style={{ zoom: zoomLevel }}>
                         {activeArtifact
                           ? (renderArtifact?.(activeArtifact) ?? <ArtifactPreviewPanel artifact={activeArtifact} />)
                           : mainEditor}

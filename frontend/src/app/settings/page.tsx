@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { VSCodeLayout } from "../../components/VSCodeLayout";
 import { AuthPanel } from "../../components/AuthPanel";
+import { DualLiveTerminal } from "../../components/AgenticChat";
+import { JobTable } from "../../components/JobTable";
 import { WorkspaceContext } from "../../components/workspace-types";
+import { mergeWorkspaceContexts, useLeadSessionWorkspace } from "../../components/lead-session-workspace";
 
 function readBooleanSetting(key: string, fallback: boolean) {
   if (typeof window === "undefined") return fallback;
@@ -18,6 +21,7 @@ function writeBooleanSetting(key: string, value: boolean) {
 }
 
 export default function SettingsPage() {
+  const workspace = useLeadSessionWorkspace();
   const [autoRefreshJobs, setAutoRefreshJobs] = useState(true);
   const [compactDashboard, setCompactDashboard] = useState(false);
   const [persistWidgetLayout, setPersistWidgetLayout] = useState(true);
@@ -57,9 +61,13 @@ export default function SettingsPage() {
     }),
     [autoRefreshJobs, compactDashboard, persistWidgetLayout]
   );
+  const explorerContext = useMemo(
+    () => mergeWorkspaceContexts(workspace.explorerContext, localContext, "Settings"),
+    [localContext, workspace.explorerContext]
+  );
 
   const mainEditor = (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-4 overflow-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
+    <div className="grid h-full min-h-0 w-full grid-cols-1 gap-4 overflow-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
       <section className="ide-panel h-fit space-y-4 p-4">
         <div>
           <p className="text-[10px] uppercase tracking-[0.18em] text-[#8b949e]">Preferences</p>
@@ -107,27 +115,26 @@ export default function SettingsPage() {
     </div>
   );
 
-  const jobsPanel = (
-    <div className="flex h-full flex-col overflow-hidden border-l border-[#30363d] bg-[#0d1117]">
-      <div className="border-b border-[#30363d] bg-[#161b22] px-3 py-2">
-        <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">Environment</p>
-      </div>
-      <div className="space-y-2 overflow-auto p-3 text-xs text-[#c9d1d9]">
-        <p>Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
-        <p>Language: {typeof navigator !== "undefined" ? navigator.language : "N/A"}</p>
-        <p>Viewport scaling: managed by IDE zoom controls.</p>
-      </div>
-    </div>
-  );
-
   return (
     <VSCodeLayout
       mode="settings"
       title="Settings"
       subtitle="User and workspace preferences"
-      explorerContext={localContext}
+      activeTerminalJobId={workspace.terminalJobId}
+      explorerContext={explorerContext}
+      activeSessionOpenToken={workspace.sessionOpenToken}
+      terminalSummary={workspace.terminalSummary}
       mainEditor={mainEditor}
-      jobsPanel={jobsPanel}
+      jobsPanel={<JobTable refreshSignal={0} compact showFilesPane={false} {...workspace.jobTableProps} />}
+      terminalContent={
+        workspace.terminalJobId ? (
+          <DualLiveTerminal jobId={workspace.terminalJobId} initialEvents={workspace.terminalEvents} />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-xs text-[#8b949e]">
+            Select a lead session to inspect logs.
+          </div>
+        )
+      }
     />
   );
 }

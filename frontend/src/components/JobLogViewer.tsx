@@ -56,6 +56,29 @@ function parseWorkerPayload(event: MessageEvent) {
 
 type DiscoveryLane = "bing" | "duckduckgo" | "yahoo";
 
+function workerLogFromJobEvent(event: JobEvent): WorkerLog | null {
+  const metadata = event.metadata || {};
+  const message =
+    typeof metadata.message === "string"
+      ? metadata.message
+      : typeof event.message === "string"
+      ? event.message
+      : "";
+  if (!message) return null;
+
+  return {
+    message,
+    source: typeof metadata.source === "string" ? metadata.source : "worker",
+    status: typeof metadata.status === "string" ? metadata.status : event.status || "terminal",
+    time: event.created_at ? new Date(event.created_at).toLocaleTimeString([], { hour12: false }) : logTime(),
+    engine: typeof metadata.engine === "string" ? metadata.engine : "",
+    lane: typeof metadata.lane === "string" ? metadata.lane : "",
+    proxyBefore: typeof metadata.proxy_before === "string" ? metadata.proxy_before : "",
+    proxyAfter: typeof metadata.proxy_after === "string" ? metadata.proxy_after : "",
+    reason: typeof metadata.reason === "string" ? metadata.reason : "",
+  };
+}
+
 export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProps) {
   const [events, setEvents] = useState<JobEvent[]>(initialEvents);
   const [discoveryLogs, setDiscoveryLogs] = useState<Record<DiscoveryLane, WorkerLog[]>>({
@@ -81,8 +104,20 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
 
   useEffect(() => {
     setEvents(initialEvents);
-    setDiscoveryLogs({ bing: [], duckduckgo: [], yahoo: [] });
-    setEnrichmentLogs([]);
+    const seededDiscoveryLogs: Record<DiscoveryLane, WorkerLog[]> = { bing: [], duckduckgo: [], yahoo: [] };
+    const seededEnrichmentLogs: WorkerLog[] = [];
+    for (const event of initialEvents) {
+      const entry = workerLogFromJobEvent(event);
+      if (!entry) continue;
+      const lane = laneFromPayload(entry);
+      if (lane === "enrichment") {
+        seededEnrichmentLogs.push(entry);
+      } else {
+        seededDiscoveryLogs[lane].push(entry);
+      }
+    }
+    setDiscoveryLogs(seededDiscoveryLogs);
+    setEnrichmentLogs(seededEnrichmentLogs);
     setState("connecting");
   }, [jobId, initialEvents]);
 

@@ -54,6 +54,13 @@ const initialMessages: AgenticMessage[] = [
   },
 ];
 
+type HistoricalJobEvent = {
+  status?: string;
+  message?: string;
+  created_at?: string;
+  metadata?: Record<string, unknown>;
+};
+
 function normalizeRegion(value: string) {
   const lower = value.trim().toLowerCase();
   if (["usa", "us", "u.s.", "u.s.a.", "united states", "united states of america", "america", "american"].includes(lower)) {
@@ -92,9 +99,32 @@ function parseWorkerPayload(event: MessageEvent) {
   }
 }
 
+function workerLogFromJobEvent(event: HistoricalJobEvent): WorkerLog | null {
+  const metadata = event.metadata || {};
+  const message =
+    typeof metadata.message === "string"
+      ? metadata.message
+      : typeof event.message === "string"
+      ? event.message
+      : "";
+  if (!message) return null;
+
+  return {
+    message,
+    source: typeof metadata.source === "string" ? metadata.source : "worker",
+    status: typeof metadata.status === "string" ? metadata.status : event.status || "terminal",
+    time: event.created_at ? new Date(event.created_at).toLocaleTimeString([], { hour12: false }) : logTime(),
+    engine: typeof metadata.engine === "string" ? metadata.engine : "",
+    lane: typeof metadata.lane === "string" ? metadata.lane : "",
+    proxyBefore: typeof metadata.proxy_before === "string" ? metadata.proxy_before : "",
+    proxyAfter: typeof metadata.proxy_after === "string" ? metadata.proxy_after : "",
+    reason: typeof metadata.reason === "string" ? metadata.reason : "",
+  };
+}
+
 type DiscoveryLane = "bing" | "duckduckgo" | "yahoo";
 
-export function DualLiveTerminal({ jobId }: { jobId: string }) {
+export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string; initialEvents?: HistoricalJobEvent[] }) {
   const [discoveryLogs, setDiscoveryLogs] = useState<Record<DiscoveryLane, WorkerLog[]>>({
     bing: [],
     duckduckgo: [],
@@ -115,8 +145,20 @@ export function DualLiveTerminal({ jobId }: { jobId: string }) {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
 
-    setDiscoveryLogs({ bing: [], duckduckgo: [], yahoo: [] });
-    setEnrichmentLogs([]);
+    const seededDiscoveryLogs: Record<DiscoveryLane, WorkerLog[]> = { bing: [], duckduckgo: [], yahoo: [] };
+    const seededEnrichmentLogs: WorkerLog[] = [];
+    for (const event of initialEvents) {
+      const entry = workerLogFromJobEvent(event);
+      if (!entry) continue;
+      const lane = laneFromPayload(entry);
+      if (lane === "enrichment") {
+        seededEnrichmentLogs.push(entry);
+      } else {
+        seededDiscoveryLogs[lane].push(entry);
+      }
+    }
+    setDiscoveryLogs(seededDiscoveryLogs);
+    setEnrichmentLogs(seededEnrichmentLogs);
     setState("connecting");
 
     const pushLog = (entry: WorkerLog) => {
@@ -170,7 +212,7 @@ export function DualLiveTerminal({ jobId }: { jobId: string }) {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       eventSource?.close();
     };
-  }, [jobId]);
+  }, [jobId, initialEvents]);
 
   useEffect(() => {
     if (discoveryBingRef.current) discoveryBingRef.current.scrollTop = discoveryBingRef.current.scrollHeight;
@@ -200,7 +242,7 @@ export function DualLiveTerminal({ jobId }: { jobId: string }) {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-2 overflow-hidden xl:grid-cols-3 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 w-full grid-cols-1 gap-2 overflow-hidden xl:grid-cols-3 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
       <section className="ide-terminal grid min-h-0 grid-cols-1 gap-2 overflow-hidden p-2 xl:col-span-3 xl:grid-cols-3">
         {[
           { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
@@ -364,6 +406,32 @@ function ReportDownloads({
       </div>
       {downloadError && <p className="text-xs text-amber-300">{downloadError}</p>}
     </div>
+  );
+}
+
+function AiGlyph({ active = false }: { active?: boolean }) {
+  return (
+    <span className="relative inline-flex h-6 w-6 flex-shrink-0 items-center justify-center border border-black/20 bg-black/10">
+      {active && <span className="absolute inset-0 animate-ping border border-black/40" />}
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        className={`h-4 w-4 ${active ? "animate-pulse" : ""}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M12 3.5v3" />
+        <path d="M7 8.5h10a3 3 0 0 1 3 3v4a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-4a3 3 0 0 1 3-3Z" />
+        <path d="M9 13h.01" />
+        <path d="M15 13h.01" />
+        <path d="M10 16c1.1.7 2.9.7 4 0" />
+        <path d="M5 11H3" />
+        <path d="M21 11h-2" />
+      </svg>
+    </span>
   );
 }
 
@@ -758,7 +826,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
   }, [activeTerminalJobId, onActiveJobChange]);
 
   return (
-    <section className="ide-panel flex h-full min-h-0 flex-col">
+    <section className="ide-panel flex h-full min-h-0 w-full flex-col">
       <header className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
         <div>
           <p className="text-[10px] uppercase tracking-[0.18em] text-[#8b949e]">Agentic Lead Search</p>
@@ -775,15 +843,17 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
             <div key={message.id}>
               {message.type === "text" && (
                 <div
-                  className={`ide-panel px-3 py-2 text-sm leading-6 forced-teal-bg ${
+                  className={`flex items-start gap-2 border px-3 py-2 text-sm leading-6 ${
                     message.role === "user"
-                      ? "bg-transparent text-[#00ffff]"
+                      ? "border-[#30363d] bg-[#1f242d] text-[#00ffff]"
                       : "border-[#2dd4bf] bg-[#2dd4bf] text-black"
                   }`}
                 >
-                  <span className={`mr-2 ${message.role === "user" ? "text-[#8b949e]" : "text-black/70"}`}>
-                    {message.role === "user" ? ">" : "ai>"}
-                  </span>
+                  {message.role === "user" ? (
+                    <span className="mt-0.5 font-mono text-[#8b949e]">&gt;</span>
+                  ) : (
+                    <AiGlyph />
+                  )}
                   <span className="whitespace-pre-wrap">{message.content}</span>
                 </div>
               )}
@@ -852,8 +922,8 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
           ))}
 
           {isThinking && (
-            <div className="ide-panel inline-flex items-center gap-2 px-3 py-2 text-sm text-[#00ffff]">
-              <Loader2 size={14} className="animate-spin" />
+            <div className="inline-flex items-center gap-2 border border-[#2dd4bf] bg-[#2dd4bf] px-3 py-2 text-sm text-black">
+              <AiGlyph active />
               analyzing request...
             </div>
           )}

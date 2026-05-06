@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, MailCheck, Play, RefreshCw, Sparkles, Upload } from "lucide-react";
 import { VSCodeLayout } from "../../components/VSCodeLayout";
+import { DualLiveTerminal } from "../../components/AgenticChat";
 import { JobTable } from "../../components/JobTable";
 import { WorkspaceContext } from "../../components/workspace-types";
+import { mergeWorkspaceContexts, useLeadSessionWorkspace } from "../../components/lead-session-workspace";
 import { createBrowserSupabase, isSupabaseConfigured } from "../../lib/supabase-client";
 import { OutreachCampaign, OutreachLeadInput, parsePastedLeads } from "../../lib/outreach";
 
@@ -156,6 +158,7 @@ function buildOutreachExplorerContext(campaign: OutreachCampaign | null): Worksp
 
 export default function OutreachPage() {
   const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
+  const leadWorkspace = useLeadSessionWorkspace();
   const [form, setForm] = useState<FormState>(initialForm);
   const [pastedLeads, setPastedLeads] = useState("Acme Textiles, Sarah Khan, sarah@example.com, https://example.com, USA apparel buyer");
   const [importedLeads, setImportedLeads] = useState<OutreachLeadInput[]>([]);
@@ -285,10 +288,14 @@ export default function OutreachPage() {
   const generated = campaign?.generated_templates || null;
   const leads = campaign?.outreach_leads || [];
   const messages = campaign?.outreach_messages || [];
-  const explorerContext = useMemo(() => buildOutreachExplorerContext(campaign), [campaign]);
+  const campaignExplorerContext = useMemo(() => buildOutreachExplorerContext(campaign), [campaign]);
+  const explorerContext = useMemo(
+    () => mergeWorkspaceContexts(leadWorkspace.explorerContext, campaignExplorerContext, "Outreach"),
+    [campaignExplorerContext, leadWorkspace.explorerContext]
+  );
 
   const mainEditor = (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(360px,440px)_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 w-full grid-cols-1 gap-4 xl:grid-cols-[minmax(360px,440px)_minmax(0,1fr)]">
       <section className="min-h-0 overflow-y-auto rounded-xl border border-white/10 bg-[#090d12] p-4">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
@@ -509,9 +516,21 @@ export default function OutreachPage() {
       mode="outreach"
       title="Auto Email Automation"
       subtitle="Local n8n test flow, test-recipient safe"
+      activeTerminalJobId={leadWorkspace.terminalJobId}
       explorerContext={explorerContext}
+      activeSessionOpenToken={leadWorkspace.sessionOpenToken}
+      terminalSummary={leadWorkspace.terminalSummary}
       mainEditor={mainEditor}
-      jobsPanel={<JobTable refreshSignal={0} compact />}
+      jobsPanel={<JobTable refreshSignal={0} compact showFilesPane={false} {...leadWorkspace.jobTableProps} />}
+      terminalContent={
+        leadWorkspace.terminalJobId ? (
+          <DualLiveTerminal jobId={leadWorkspace.terminalJobId} initialEvents={leadWorkspace.terminalEvents} />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-xs text-[#8b949e]">
+            Select a recent lead session to inspect logs.
+          </div>
+        )
+      }
     />
   );
 }
