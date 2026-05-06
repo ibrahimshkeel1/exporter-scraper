@@ -775,7 +775,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
             <div key={message.id}>
               {message.type === "text" && (
                 <div
-                  className={`ide-panel px-3 py-2 text-sm leading-6 ${
+                  className={`ide-panel px-3 py-2 text-sm leading-6 forced-teal-bg ${
                     message.role === "user"
                       ? "bg-transparent text-[#00ffff]"
                       : "border-[#2dd4bf] bg-[#2dd4bf] text-black"

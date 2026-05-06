@@ -239,11 +239,16 @@ export default function SearchPage() {
             if (jobId) setSessionOpenToken((value) => value + 1);
           }}
           onSelectedJobChange={(job) => {
-            if (job?.id) {
+            if (job?.id && selectedJobId !== job.id) {
               setSelectedJobId(job.id);
             }
           }}
-          onJobsChange={(nextJobs) => setJobs(nextJobs as SearchJob[])}
+          onJobsChange={(nextJobs) => {
+            setJobs(nextJobs as SearchJob[]);
+            if (nextJobs.length > 0 && !selectedJobId) {
+              setSelectedJobId(nextJobs[0].id);
+            }
+          }}
         />
       }
       terminalContent={

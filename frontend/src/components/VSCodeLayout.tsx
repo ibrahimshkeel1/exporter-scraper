@@ -86,7 +86,7 @@ function CsvPreviewPanel({ content }: { content: string }) {
   const visible = filtered.slice(0, 300);
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 w-full flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="search"
@@ -101,11 +101,11 @@ function CsvPreviewPanel({ content }: { content: string }) {
         </span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto border border-[#30363d] bg-black/30">
+      <div className="min-h-0 w-full flex-1 overflow-auto border border-[#30363d] bg-black/30">
         {headers.length === 0 ? (
           <div className="p-3 text-xs text-[#8b949e]">No CSV rows to preview.</div>
         ) : (
-          <table className="w-full min-w-[740px] border-collapse text-left text-xs">
+          <table className="w-full border-collapse text-left text-xs">
             <thead className="sticky top-0 z-10 bg-[#10161f]">
               <tr>
                 {headers.map((header, index) => (
@@ -119,8 +119,8 @@ function CsvPreviewPanel({ content }: { content: string }) {
               {visible.map((row, rowIndex) => (
                 <tr key={`row-${rowIndex}`} className="border-b border-[#1c2128] align-top">
                   {headers.map((_, cellIndex) => (
-                    <td key={`cell-${rowIndex}-${cellIndex}`} className="max-w-[420px] px-2 py-1.5 text-[#c9d1d9]">
-                      <span className="block max-h-[3.8rem] overflow-hidden whitespace-pre-wrap break-words" title={row[cellIndex] || ""}>
+                    <td key={`cell-${rowIndex}-${cellIndex}`} className="px-2 py-1.5 text-[#c9d1d9]">
+                      <span className="block overflow-hidden whitespace-pre-wrap break-words" title={row[cellIndex] || ""}>
                         {row[cellIndex] || ""}
                       </span>
                     </td>
@@ -280,9 +280,9 @@ function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
       artifact.folder.toLowerCase().includes("analysis"));
 
   return (
-    <div className="h-full overflow-auto bg-[#0d1117] p-4">
+    <div className="h-full w-full overflow-auto bg-[#0d1117] p-4">
       <div className="mb-3 flex items-start justify-between gap-3 border border-[#30363d] bg-black/35 p-3 text-xs">
-        <div>
+        <div className="flex-1">
           <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">{artifact.folder}</p>
           <p className="mt-1 font-mono text-[#00ffff]">{artifact.name}</p>
           {artifact.meta && <p className="mt-1 text-[#8b949e]">{artifact.meta}</p>}
@@ -319,7 +319,7 @@ function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
         <CsvPreviewPanel content={previewText} />
       ) : (
         <pre
-          className={`whitespace-pre-wrap break-words border p-3 text-xs leading-5 ${
+          className={`whitespace-pre-wrap break-words border p-3 text-xs leading-5 w-full ${
             aiStyledArtifact
               ? "border-[#2dd4bf] bg-[#2dd4bf] text-black"
               : "border-[#30363d] bg-black/40 text-[#c9d1d9]"
@@ -524,6 +524,17 @@ export function VSCodeLayout({
   const openArtifact = useCallback((artifact: WorkspaceArtifact) => {
     setOpenArtifacts((current) => {
       if (current.some((entry) => entry.id === artifact.id)) return current;
+      return [...current, artifact];
+    });
+    setActiveTabId(artifact.id);
+  }, []);
+
+  const toggleArtifact = useCallback((artifact: WorkspaceArtifact) => {
+    setOpenArtifacts((current) => {
+      if (current.some((entry) => entry.id === artifact.id)) {
+        setActiveTabId(artifact.id);
+        return current;
+      }
       return [...current, artifact];
     });
     setActiveTabId(artifact.id);
