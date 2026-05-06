@@ -9,6 +9,7 @@ export default function HomePage() {
         <a className="text-lg font-semibold text-vercel-text" href="/">ExportFlow</a>
         <div className="flex items-center gap-2">
           <a className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-vercel-text hover:bg-white/10" href="/dashboard">Dashboard</a>
+          <a className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-vercel-text hover:bg-white/10" href="/search">Search</a>
           <a className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-vercel-text hover:bg-white/10" href="/outreach">Outreach</a>
           <a className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-vercel-text hover:bg-white/10" href="/admin">Admin</a>
         </div>
@@ -21,7 +22,7 @@ export default function HomePage() {
             ExportFlow turns a niche and target market into scored buyer leads for USA, UK, and Europe. Gemini reviews the brief, n8n queues the worker, and the VPS scraper delivers XLSX, CSV, or JSON.
           </p>
           <div className="flex flex-wrap items-center gap-4 mt-4">
-            <a className="group inline-flex items-center gap-2 bg-vercel-accent text-black hover:bg-white rounded-md px-6 py-3 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.2)]" href="/dashboard">
+            <a className="group inline-flex items-center gap-2 bg-vercel-accent text-black hover:bg-white rounded-md px-6 py-3 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_15px_rgba(255,255,255,0.1)] hover:shadow-[0_0_20px_rgba(255,255,255,0.2)]" href="/search">
               Start a lead job <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" aria-hidden="true" />
             </a>
             <a className="inline-flex items-center gap-2 bg-black/50 backdrop-blur-md border border-white/10 text-vercel-text hover:bg-white/5 rounded-md px-6 py-3 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98]" href="/admin">

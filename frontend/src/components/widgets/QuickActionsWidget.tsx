@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { LayoutDashboard, Mail, Plus, Search, Settings, Shield } from "lucide-react";
+import { LayoutDashboard, Mail, Search, Shield } from "lucide-react";
 
 const ACTIONS = [
-  { label: "New Lead Search", href: "/dashboard/search", icon: Search, color: "text-[#00ffff]", border: "border-[#00ffff]" },
+  { label: "New Lead Search", href: "/search", icon: Search, color: "text-[#00ffff]", border: "border-[#00ffff]" },
   { label: "New Outreach", href: "/outreach", icon: Mail, color: "text-[#00ff00]", border: "border-[#00ff00]" },
   { label: "Admin Console", href: "/admin", icon: Shield, color: "text-[#ff6b6b]", border: "border-[#ff6b6b]" },
-  { label: "View All Jobs", href: "/dashboard/search", icon: LayoutDashboard, color: "text-vercel-text", border: "border-[#30363d]" },
+  { label: "View All Jobs", href: "/search", icon: LayoutDashboard, color: "text-vercel-text", border: "border-[#30363d]" },
 ];
 
 export function QuickActionsWidget() {

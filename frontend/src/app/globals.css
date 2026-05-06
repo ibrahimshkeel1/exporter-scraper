@@ -115,6 +115,31 @@ body {
   overflow: hidden;
 }
 
+.ide-panel-handle {
+  position: relative;
+  background: #0f141b;
+  transition: background-color 120ms ease;
+}
+
+.ide-panel-handle:hover {
+  background: #13212e;
+}
+
+.ide-panel-handle[data-panel-resize-handle-state="drag"],
+.ide-panel-handle[data-resize-handle-state="drag"] {
+  background: #00ffff;
+}
+
+.ide-panel-handle-x {
+  width: 4px;
+  cursor: col-resize;
+}
+
+.ide-panel-handle-y {
+  height: 4px;
+  cursor: row-resize;
+}
+
 /* react-grid-layout VS Code aesthetic overrides */
 .react-grid-layout {
   position: relative;

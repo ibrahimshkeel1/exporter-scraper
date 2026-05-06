@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2, MailCheck, Play, RefreshCw, Sparkles, Upload } from "lucide-react";
 import { VSCodeLayout } from "../../components/VSCodeLayout";
 import { JobTable } from "../../components/JobTable";
+import { WorkspaceContext } from "../../components/workspace-types";
 import { createBrowserSupabase, isSupabaseConfigured } from "../../lib/supabase-client";
 import { OutreachCampaign, OutreachLeadInput, parsePastedLeads } from "../../lib/outreach";
 
@@ -84,6 +85,73 @@ function statusClass(status: string) {
   if (["failed"].includes(status)) return "border-red-400/30 bg-red-400/10 text-red-200";
   if (["generating", "launching", "sending", "queued"].includes(status)) return "border-cyan-300/30 bg-cyan-300/10 text-cyan-100";
   return "border-white/10 bg-white/5 text-vercel-muted";
+}
+
+function buildOutreachExplorerContext(campaign: OutreachCampaign | null): WorkspaceContext | null {
+  if (!campaign) return null;
+  const leads = campaign.outreach_leads || [];
+  const queuedMessages = campaign.outreach_messages || [];
+
+  const leadRows =
+    leads.length > 0
+      ? leads
+          .map((lead) => `${lead.company_name || "Unknown"}, ${lead.contact_name || "-"}, ${lead.email || "-"}, ${lead.status}`)
+          .join("\n")
+      : "No leads attached yet.";
+  const queueLog =
+    queuedMessages.length > 0
+      ? queuedMessages
+          .map((msg) => `[${new Date(msg.created_at).toLocaleString()}] ${msg.step} -> ${msg.status} :: ${msg.subject || "(no subject)"}`)
+          .join("\n")
+      : "No outreach messages queued yet.";
+
+  return {
+    id: campaign.id,
+    label: `Campaign ${campaign.id.slice(0, 8)}`,
+    description: `${campaign.status} • ${campaign.outreach_leads?.length || 0} leads`,
+    artifacts: [
+      {
+        id: `outreach-${campaign.id}-leads`,
+        name: "leads_found.csv",
+        folder: "Results",
+        kind: "csv",
+        content: leadRows,
+      },
+      {
+        id: `outreach-${campaign.id}-analysis`,
+        name: "ai_analysis.md",
+        folder: "Insights",
+        kind: "markdown",
+        content: [
+          "# Outreach Analysis",
+          `- Campaign: ${campaign.id}`,
+          `- Status: ${campaign.status}`,
+          `- Target buyer: ${campaign.target_buyer}`,
+          `- Tone: ${campaign.tone}`,
+          "",
+          "## Business Plan",
+          campaign.business_plan || "N/A",
+          "",
+          "## Offer",
+          campaign.offer || "N/A",
+        ].join("\n"),
+      },
+      {
+        id: `outreach-${campaign.id}-log`,
+        name: "audit_trail.log",
+        folder: "Logs",
+        kind: "log",
+        content: queueLog,
+      },
+      {
+        id: `outreach-${campaign.id}-templates`,
+        name: "templates.json",
+        folder: "Insights",
+        kind: "json",
+        content: JSON.stringify(campaign.generated_templates || {}, null, 2),
+      },
+    ],
+  };
 }
 
 export default function OutreachPage() {
@@ -217,6 +285,7 @@ export default function OutreachPage() {
   const generated = campaign?.generated_templates || null;
   const leads = campaign?.outreach_leads || [];
   const messages = campaign?.outreach_messages || [];
+  const explorerContext = useMemo(() => buildOutreachExplorerContext(campaign), [campaign]);
 
   const mainEditor = (
     <div className="grid h-full min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(360px,440px)_minmax(0,1fr)]">
@@ -440,6 +509,7 @@ export default function OutreachPage() {
       mode="outreach"
       title="Auto Email Automation"
       subtitle="Local n8n test flow, test-recipient safe"
+      explorerContext={explorerContext}
       mainEditor={mainEditor}
       jobsPanel={<JobTable refreshSignal={0} compact />}
     />

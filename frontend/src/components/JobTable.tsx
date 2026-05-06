@@ -11,11 +11,13 @@ import { LeadJob } from "../lib/types";
 type JobTableProps = {
   refreshSignal: number;
   compact?: boolean;
+  onSelectedJobChange?: (job: JobTableSelection) => void;
 };
 
 type LeadExportFile = NonNullable<LeadJob["lead_exports"]>[number];
+export type JobTableSelection = (LeadJob & { job_events?: JobEvent[] }) | null;
 
-export function JobTable({ refreshSignal, compact = false }: JobTableProps) {
+export function JobTable({ refreshSignal, compact = false, onSelectedJobChange }: JobTableProps) {
   const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
   const [jobs, setJobs] = useState<LeadJob[]>([]);
   const [message, setMessage] = useState("");
@@ -117,6 +119,10 @@ export function JobTable({ refreshSignal, compact = false }: JobTableProps) {
   }, [jobs, selectedJobId]);
 
   const selectedJob = jobs.find((job) => job.id === selectedJobId) ?? null;
+
+  useEffect(() => {
+    onSelectedJobChange?.((selectedJob as LeadJob & { job_events?: JobEvent[] }) ?? null);
+  }, [onSelectedJobChange, selectedJob]);
 
   if (compact) {
     return (

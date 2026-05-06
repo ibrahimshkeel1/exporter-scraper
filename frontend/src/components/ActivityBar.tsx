@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { LayoutDashboard, Mail, Shield, Settings, PanelLeft, PanelRight, SquareTerminal, Focus, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { LayoutDashboard, Mail, Search, Shield, Settings, PanelLeft, PanelRight, SquareTerminal, Focus, ZoomIn, ZoomOut } from "lucide-react";
+import { WorkspaceMode } from "./workspace-types";
 
 type ActivityBarProps = {
-  mode: "dashboard" | "outreach" | "admin";
+  mode: WorkspaceMode;
   onToggleLeft: () => void;
   onToggleRight: () => void;
   onToggleTerminal: () => void;
@@ -19,6 +20,7 @@ type ActivityBarProps = {
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, mode: "dashboard" as const },
+  { href: "/search", label: "Search", icon: Search, mode: "search" as const },
   { href: "/outreach", label: "Outreach", icon: Mail, mode: "outreach" as const },
   { href: "/admin", label: "Admin", icon: Shield, mode: "admin" as const },
 ];
@@ -123,8 +125,10 @@ export function ActivityBar({
 
       <div className="border-t border-[#30363d] py-2">
         <Link
-          href="/dashboard"
-          className="inline-flex h-10 w-10 items-center justify-center text-[#8b949e] hover:text-[#00ffff]"
+          href="/settings"
+          className={`inline-flex h-10 w-10 items-center justify-center ${
+            mode === "settings" ? "text-[#00ffff]" : "text-[#8b949e] hover:text-[#00ffff]"
+          }`}
           title="Settings"
         >
           <Settings size={18} />
