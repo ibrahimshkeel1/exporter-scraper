@@ -104,11 +104,11 @@ export function normalizeOutreachLead(input: OutreachLeadInput): OutreachLeadInp
   }
 
   return {
-    contact_name: contactName || undefined,
-    company_name: companyName || undefined,
-    email: email || undefined,
-    website: website || undefined,
-    notes: notes || undefined,
+    contact_name: contactName || null || undefined,
+    company_name: companyName || null || undefined,
+    email: email || null || undefined,
+    website: website || null || undefined,
+    notes: notes || null || undefined,
     source: input.source || "pasted",
     evidence: input.evidence || {}
   };

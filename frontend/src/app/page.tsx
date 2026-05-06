@@ -9,6 +9,7 @@ export default function HomePage() {
         <a className="text-lg font-semibold text-vercel-text" href="/">ExportFlow</a>
         <div className="flex items-center gap-2">
           <a className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-vercel-text hover:bg-white/10" href="/dashboard">Dashboard</a>
+          <a className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-vercel-text hover:bg-white/10" href="/outreach">Outreach</a>
           <a className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-vercel-text hover:bg-white/10" href="/admin">Admin</a>
         </div>
       </header>
@@ -25,6 +26,9 @@ export default function HomePage() {
             </a>
             <a className="inline-flex items-center gap-2 bg-black/50 backdrop-blur-md border border-white/10 text-vercel-text hover:bg-white/5 rounded-md px-6 py-3 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98]" href="/admin">
               Admin queue
+            </a>
+            <a className="inline-flex items-center gap-2 bg-black/50 backdrop-blur-md border border-cyan-300/30 text-cyan-100 hover:bg-cyan-300/10 rounded-md px-6 py-3 text-sm font-medium transition-all hover:scale-[1.02] active:scale-[0.98]" href="/outreach">
+              Auto email test
             </a>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 mt-10 pt-8 border-t border-white/10">

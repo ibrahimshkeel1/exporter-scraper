@@ -1,0 +1,11 @@
+
+  Important: because I removed frontend/node_modules, if you ever need local frontend commands again, run:
+
+  cd "C:\Users\Ibrahim\Desktop\webdev\frontend"
+  npm install
+
+
+
+
+
+

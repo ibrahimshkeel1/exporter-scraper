@@ -77,7 +77,7 @@ export function testSender() {
     name: process.env.OUTREACH_TEST_SENDER_NAME || "ExportFlow",
     accessToken: process.env.OUTREACH_TEST_GMAIL_ACCESS_TOKEN || "",
     testMode: String(process.env.OUTREACH_TEST_MODE || "true").toLowerCase() !== "false",
-    testRecipient: process.env.OUTREACH_TEST_RECIPIENT || ""
+    testRecipient: process.env.OUTREACH_TEST_RECIPIENT || "ibrahimshkeel1@gmail.com"
   };
 }
 
