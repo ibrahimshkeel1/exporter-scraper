@@ -100,3 +100,148 @@ body {
   letter-spacing: 0.08em;
   font-size: 11px;
 }
+
+/* react-resizable-panels custom styles */
+[data-panel-resize-handle-id] {
+  z-index: 10;
+}
+
+[data-panel-resize-handle-state="drag"] {
+  z-index: 20;
+}
+
+/* Ensure panels don't overflow */
+[data-panel] {
+  overflow: hidden;
+}
+
+/* react-grid-layout VS Code aesthetic overrides */
+.react-grid-layout {
+  position: relative;
+}
+
+.react-grid-item {
+  transition: all 200ms ease;
+  transition-property: left, top;
+}
+
+.react-grid-item.cssTransforms {
+  transition-property: transform;
+}
+
+.react-grid-item.resizing {
+  z-index: 100;
+  box-shadow: 0 0 0 1px var(--color-matrix-cyan), 0 0 20px rgba(0, 255, 255, 0.15);
+}
+
+.react-grid-item.react-grid-placeholder {
+  background: rgba(0, 255, 255, 0.08) !important;
+  border: 1px dashed var(--color-matrix-cyan) !important;
+  opacity: 1 !important;
+}
+
+.react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+  z-index: 10;
+}
+
+.react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--color-vercel-border);
+  border-bottom: 2px solid var(--color-vercel-border);
+  transition: border-color 120ms ease;
+}
+
+.react-grid-item:hover .react-resizable-handle::after {
+  border-right-color: var(--color-matrix-cyan);
+  border-bottom-color: var(--color-matrix-cyan);
+}
+
+.react-grid-item > .react-resizable-handle.react-resizable-handle-se {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+
+/* Hide resize handle when not in edit mode */
+.react-grid-item:not(.static) .react-resizable-handle {
+  display: block;
+}
+
+.react-grid-item.static .react-resizable-handle {
+  display: none;
+}
+
+/* ========== VS Code Style Custom Scrollbars ========== */
+
+/* WebKit / Blink (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #424242;
+  border: 2px solid #0d1117;
+  border-radius: 0;
+  min-height: 40px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4f4f4f;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #00ffff;
+}
+
+::-webkit-scrollbar-corner {
+  background: #0d1117;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #424242 #0d1117;
+}
+
+/* Scrollbar inside widget panels - slightly more subtle */
+.ide-panel ::-webkit-scrollbar,
+.ide-terminal ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ide-panel ::-webkit-scrollbar-thumb,
+.ide-terminal ::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border: 1px solid #0d1117;
+}
+
+.ide-panel ::-webkit-scrollbar-thumb:hover,
+.ide-terminal ::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}
+
+.ide-panel ::-webkit-scrollbar-thumb:active,
+.ide-terminal ::-webkit-scrollbar-thumb:active {
+  background: #00ffff;
+}
