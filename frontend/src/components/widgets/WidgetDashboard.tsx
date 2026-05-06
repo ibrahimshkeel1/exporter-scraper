@@ -242,7 +242,7 @@ export function WidgetDashboard() {
   }, [layout, activeTypes]);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full w-full min-w-0 flex-1 flex-col overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
         <div className="flex items-center gap-2">
