@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Check, Copy, Download, Loader2, Mail, Send, Sparkles, Terminal, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, Check, Copy, Download, Loader2, Mail, Send, Sparkles, Terminal } from "lucide-react";
 import { leadPacks } from "../lib/pricing";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 import { TargetingPreflight } from "../lib/types";
@@ -19,6 +19,7 @@ export type AgenticMessage = {
 
 type AgenticChatProps = {
   onJobCreated?: () => void;
+  onActiveJobChange?: (jobId: string | undefined) => void;
 };
 
 type WorkerLog = {
@@ -94,7 +95,7 @@ function discoveryLaneForPayload(payload: { source: string; lane?: string; engin
   return "enrichment";
 }
 
-function DualLiveTerminal({ jobId }: { jobId: string }) {
+export function DualLiveTerminal({ jobId }: { jobId: string }) {
   const [discoveryLogs, setDiscoveryLogs] = useState<Record<DiscoveryLane, WorkerLog[]>>({
     bing: [],
     duckduckgo: [],
@@ -367,13 +368,12 @@ function ReportDownloads({
   );
 }
 
-export function AgenticChat({ onJobCreated }: AgenticChatProps) {
+export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProps) {
   const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
   const [messages, setMessages] = useState<AgenticMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [sessionLoaded, setSessionLoaded] = useState(false);
-  const [showLiveLanes, setShowLiveLanes] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const reportRequestedRef = useRef<Set<string>>(new Set());
 
@@ -700,6 +700,10 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
     | undefined;
   const visibleMessages = messages.filter((message) => message.type !== "terminal");
 
+  useEffect(() => {
+    onActiveJobChange?.(activeTerminalJobId);
+  }, [activeTerminalJobId, onActiveJobChange]);
+
   return (
     <section className="ide-panel flex h-full min-h-0 flex-col">
       <header className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
@@ -708,16 +712,6 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
           <h2 className="text-sm font-semibold text-vercel-text">Live discovery + enrichment workspace</h2>
         </div>
         <div className="inline-flex items-center gap-2">
-          {activeTerminalJobId && (
-            <button
-              type="button"
-              onClick={() => setShowLiveLanes((value) => !value)}
-              className="ide-btn inline-flex h-7 items-center gap-1 px-2 text-[10px] uppercase tracking-[0.1em]"
-            >
-              {showLiveLanes ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-              {showLiveLanes ? "Collapse Lanes" : "Expand Lanes"}
-            </button>
-          )}
           <span className="ide-status">{sessionLoaded ? "session synced" : "loading session"}</span>
         </div>
       </header>
@@ -789,16 +783,6 @@ export function AgenticChat({ onJobCreated }: AgenticChatProps) {
           )}
         </div>
 
-        {activeTerminalJobId && showLiveLanes && (
-          <div className="min-h-[240px] max-h-[52vh] shrink-0 overflow-hidden border-t border-[#30363d] bg-[#0d1117] p-2">
-            <p className="mb-2 shrink-0 text-[11px] uppercase tracking-[0.15em] text-[#8b949e]">
-              Live worker lanes for {activeTerminalJobId.slice(0, 8)}
-            </p>
-            <div className="min-h-0 h-[calc(100%-1.25rem)] overflow-hidden">
-              <DualLiveTerminal jobId={activeTerminalJobId} />
-            </div>
-          </div>
-        )}
       </div>
 
       <footer className="border-t border-[#30363d] bg-[#161b22] p-3">

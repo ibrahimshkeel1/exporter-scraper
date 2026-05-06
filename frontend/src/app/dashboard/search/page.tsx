@@ -1,22 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { WidgetDashboard } from "../../components/widgets/WidgetDashboard";
-import { JobTable } from "../../components/JobTable";
-import { VSCodeLayout } from "../../components/VSCodeLayout";
-import { AgenticChat, DualLiveTerminal } from "../../components/AgenticChat";
+import { AgenticChat, DualLiveTerminal } from "../../../components/AgenticChat";
+import { JobTable } from "../../../components/JobTable";
+import { VSCodeLayout } from "../../../components/VSCodeLayout";
 
-export default function DashboardPage() {
+export default function DashboardSearchPage() {
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [activeTerminalJobId, setActiveTerminalJobId] = useState<string | undefined>(undefined);
 
   return (
     <VSCodeLayout
       mode="dashboard"
-      title="Dashboard Hub"
-      subtitle="Widget grid — drag, resize, customize"
+      title="Agentic Lead Search"
+      subtitle="Single SSE stream, dual live lanes"
       activeTerminalJobId={activeTerminalJobId}
-      mainEditor={<WidgetDashboard />}
+      mainEditor={
+        <AgenticChat
+          onJobCreated={() => setRefreshSignal((value) => value + 1)}
+          onActiveJobChange={(jobId) => setActiveTerminalJobId(jobId)}
+        />
+      }
       jobsPanel={<JobTable refreshSignal={refreshSignal} compact />}
       terminalContent={
         activeTerminalJobId ? (
