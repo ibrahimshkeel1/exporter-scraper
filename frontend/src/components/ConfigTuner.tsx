@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, CopyPlus, Play, Save, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { DualLiveTerminal } from "./AgenticChat";
+import { isSupabaseConfigured } from "../lib/supabase-client";
 
 type SpecialistConfigMeta = {
   slug: string;
@@ -68,6 +70,19 @@ function addYamlListItem(yaml: string, sectionKey: string, value: string) {
   return `${yaml.slice(0, insertAt)}${" ".repeat(indent)}- ${JSON.stringify(value)}\n${yaml.slice(insertAt)}`;
 }
 
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!text.trim()) {
+    return {} as T;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(text.slice(0, 300) || `Unexpected response (${response.status})`);
+  }
+}
+
 export function ConfigTuner() {
   const [configs, setConfigs] = useState<SpecialistConfigMeta[]>([]);
   const [selectedSlug, setSelectedSlug] = useState("");
@@ -100,11 +115,18 @@ export function ConfigTuner() {
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const liveTerminalRef = useRef<HTMLDivElement | null>(null);
 
   const selectedConfig = useMemo(
     () => configs.find((config) => config.slug === selectedSlug),
     [configs, selectedSlug],
   );
+  const canShowLiveTerminal = Boolean(lastJobId) && isSupabaseConfigured();
+
+  useEffect(() => {
+    if (!lastJobId) return;
+    liveTerminalRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [lastJobId]);
 
   const addStep = (type: TuneStep["type"], stepMessage: string) => {
     setTuneSteps((prev) => [
@@ -211,7 +233,7 @@ export function ConfigTuner() {
           refinedIndustry,
         }),
       });
-      const result: TuneResult = await response.json();
+      const result = await readJsonResponse<TuneResult>(response);
       if (!response.ok || result.error) throw new Error(result.error || "Tune analysis failed.");
 
       setTuneResult({ ...result, suggestions: result.suggestions || [], warnings: result.warnings || [] });
@@ -290,7 +312,7 @@ export function ConfigTuner() {
           refinedIndustry,
         }),
       });
-      const result: CriticResult = await response.json();
+      const result = await readJsonResponse<CriticResult>(response);
       if (!response.ok || result.error) throw new Error(result.error || "Critic check failed.");
 
       setCriticResult(result);
@@ -546,6 +568,29 @@ export function ConfigTuner() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {lastJobId && (
+        <div ref={liveTerminalRef} className="rounded border border-[#30363d] bg-[#0d1117] p-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xs font-semibold text-[#8b949e]">Live tuning terminal</h3>
+              <p className="mt-0.5 font-mono text-[10px] text-[#00ffff]">job {lastJobId.slice(0, 8)}</p>
+            </div>
+            {!canShowLiveTerminal && (
+              <span className="text-[10px] text-[#8b949e]">Live logs need browser Supabase env vars.</span>
+            )}
+          </div>
+          {canShowLiveTerminal ? (
+            <div className="h-[34rem] min-h-0 overflow-hidden">
+              <DualLiveTerminal jobId={lastJobId} initialEvents={[]} />
+            </div>
+          ) : (
+            <div className="border border-[#30363d] bg-black px-3 py-2 text-xs text-[#8b949e]">
+              Waiting for browser Supabase configuration before opening live logs.
+            </div>
+          )}
         </div>
       )}
 

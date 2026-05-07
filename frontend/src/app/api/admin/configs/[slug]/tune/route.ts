@@ -115,10 +115,10 @@ export async function POST(
 
     switch (action) {
       case "analyze": {
-        return handleAnalyze(slug, configYaml, jobSummary, auditSummary, scenario, region, refinedIndustry);
+        return await handleAnalyze(slug, configYaml, jobSummary, auditSummary, scenario, region, refinedIndustry);
       }
       case "critic": {
-        return handleCritic(slug, configYaml, jobSummary, scenario, region, refinedIndustry);
+        return await handleCritic(slug, configYaml, jobSummary, scenario, region, refinedIndustry);
       }
       default: {
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
