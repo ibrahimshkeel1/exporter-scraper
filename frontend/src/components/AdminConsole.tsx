@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, KeyRound, RefreshCw, RotateCcw, X, TerminalSquare } from "lucide-react";
+import { Check, KeyRound, RefreshCw, RotateCcw, X, TerminalSquare, SlidersHorizontal } from "lucide-react";
 import { StatusPill } from "./StatusPill";
 import { JobLogViewer, JobEvent } from "./JobLogViewer";
 import { LeadJob } from "../lib/types";
@@ -84,12 +84,21 @@ export function AdminConsole() {
         <div className="mb-3 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-vercel-text">Operator Console</h2>
-            <p className="text-xs text-vercel-muted">Queue control, retries, and delivery overrides.</p>
+            <p className="text-xs text-vercel-muted">Queue control, retries, delivery overrides, and config tuning.</p>
           </div>
-          <button className="ide-btn inline-flex items-center gap-2 px-3 py-2 text-xs" type="button" onClick={loadJobs} disabled={loading || !password}>
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            Refresh
-          </button>
+          <div className="flex gap-2">
+            <a
+              href="/admin/config-tuning"
+              className="ide-btn inline-flex items-center gap-2 px-3 py-2 text-xs no-underline"
+            >
+              <SlidersHorizontal size={14} />
+              Config Tuning
+            </a>
+            <button className="ide-btn inline-flex items-center gap-2 px-3 py-2 text-xs" type="button" onClick={loadJobs} disabled={loading || !password}>
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">

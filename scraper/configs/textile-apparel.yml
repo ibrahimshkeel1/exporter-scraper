@@ -1,0 +1,936 @@
+# ============================================================
+# Specialist Config: Textile & Apparel Importers
+# ============================================================
+# Extracted from signal_map.py, discovery.py, scoring.py, enrichment.py
+# This is the A+ config — DO NOT degrade its performance.
+# Tuning iterations should only ADD, never remove.
+
+slug: textile-apparel
+display_name: "Textile & Apparel Importers"
+version: 4
+quality_tier: "A+"
+
+# --------------------------------------------------
+# ROUTER CLASSIFICATION
+# Keywords that trigger this config
+# --------------------------------------------------
+triggers:
+  keywords:
+    - activewear
+    - apparel
+    - boutique
+    - clothing
+    - denim
+    - fabric
+    - fashion
+    - garment
+    - jeans
+    - "private label"
+    - "private label clothing"
+    - sportswear
+    - streetwear
+    - textile
+    - towel
+    - leather
+    - home textile
+    - knitwear
+    - hosiery
+    - woven
+    - uniform
+    - shirt
+    - dress
+    - bags
+    - lingerie
+    - swimwear
+    - footwear
+    - accessories
+    - shoes
+
+# --------------------------------------------------
+# DISCOVERY
+# --------------------------------------------------
+discovery:
+
+  # --- Product Seed Terms ---
+  product_seeds:
+    - denim
+    - jeans
+    - home textile
+    - activewear
+    - sportswear
+    - streetwear
+    - garment
+    - fabric
+    - fashion
+    - apparel
+    - clothing
+    - textile
+    - towel
+    - leather
+
+  # --- Search Query Templates ---
+  # {base} = product seed, {market} = target market
+  search_queries:
+    # Core apparel buyer queries (extracted from _buyer_search_queries)
+    - '{base} importer wholesaler distributor "{market}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} wholesale buyer retailer "{market}" contact email -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} private label clothing brand sourcing "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} procurement vendor application retailer "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} boutique retailer wholesale distributor "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} supplier application "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} vendor portal "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} wholesale account "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} trade account "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} stockist "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} line sheet "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} buying office "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} sourcing manager "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '"{base} importer" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '"{base} wholesaler" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '"{base} distributor" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '"{base} retailer" "vendor application" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '"{base} brand" "wholesale" "contact" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '"{base} brand" "supplier portal" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '"{base} brand" "buying office" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+
+  # --- Per-Region Extra Search Queries ---
+  region_extra_queries:
+    europe:
+      - '{base} importer wholesaler distributor "{country}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+      - '{base} retailer "supplier portal" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+      - '{base} brand "vendor application" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    international:
+      - '{base} importer wholesaler distributor "{country}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+      - '{base} retailer "supplier portal" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+
+  # --- Noise Exclusions appended to all queries ---
+  noise_exclusion_suffixes:
+    - -dictionary
+    - -definition
+    - -wikipedia
+    - -wiktionary
+    - -reddit
+    - -youtube
+
+  # --- Supplier Country Exclusions (appended to apparel queries) ---
+  supplier_country_exclusions:
+    - "-Pakistan"
+    - "-India"
+    - "-Bangladesh"
+    - "-China"
+    - "-manufacturer"
+    - "-factory"
+    - "-exporter"
+
+  # --- Seed URLs — Known Buyer/Retailer Sites ---
+  seed_urls:
+    usa:
+      buyer_intent:
+        - url: "https://www.ssactivewear.com/contact"
+          label: "S&S Activewear (wholesale clothing)"
+        - url: "https://www.alphabroder.com/pages/contact-us"
+          label: "Alphabroder (wholesale distributor)"
+        - url: "https://www.sanmar.com/contactus/"
+          label: "SanMar (wholesale apparel)"
+        - url: "https://www.tscapparel.com/contact"
+          label: "TSC Apparel"
+        - url: "https://www.bodekandrhodes.com/contact-us"
+          label: "Bodek and Rhodes"
+        - url: "https://www.apparelcandy.com/pages/contact-us"
+          label: "Apparel Candy"
+        - url: "https://www.wholesalefashionsquare.com/pages/contact-us"
+          label: "Wholesale Fashion Square"
+        - url: "https://www.bloomwholesale.com/pages/contact-us"
+          label: "Bloom Wholesale"
+        - url: "https://www.orangeshine.com/contact-us"
+          label: "OrangeShine"
+        - url: "https://www.lashowroom.com/contact"
+          label: "LA Showroom"
+        - url: "https://www.kohls.com/feature/supplier-information.jsp"
+          label: "Kohl's Supplier"
+        - url: "https://corporate.target.com/suppliers"
+          label: "Target Suppliers"
+        - url: "https://www.costco.com/vendor-inquiries.html"
+          label: "Costco Vendor"
+        - url: "https://www.burlington.com/vendors/"
+          label: "Burlington Vendors"
+        - url: "https://www.rossstores.com/contact-us/vendors/"
+          label: "Ross Stores Vendors"
+        - url: "https://www.tjx.com/responsibility/responsible-business/vendor-relations"
+          label: "TJX Vendor Relations"
+        - url: "https://www.belk.com/suppliers/"
+          label: "Belk Suppliers"
+        - url: "https://www.nordstromsupplier.com/"
+          label: "Nordstrom Supplier"
+        - url: "https://www.macysnet.com/"
+          label: "Macy's Vendor Network"
+      apparel_buyers:
+        - url: "https://www.spirithoods.com/"
+          label: "SpiritHoods"
+        - url: "https://teancup.com/"
+          label: "TeanCup"
+        - url: "https://www.mensusa.com/"
+          label: "MensUSA"
+        - url: "https://mezonhandbags.com/"
+          label: "Mezon Handbags"
+        - url: "https://www.laapparelstore.com/"
+          label: "LA Apparel Store"
+        - url: "https://www.stevenalan.com/"
+          label: "Steven Alan"
+        - url: "https://www.urbanoutfitters.com/"
+          label: "Urban Outfitters"
+        - url: "https://www.jamesperse.com/"
+          label: "James Perse"
+        - url: "https://www.bedheadpjs.com/"
+          label: "BedHead PJs"
+        - url: "https://www.fashiongo.net/"
+          label: "FashionGo"
+        - url: "https://www.appareldeals.com/"
+          label: "Apparel Deals"
+        - url: "https://724fashion.com/"
+          label: "724 Fashion"
+        - url: "https://www.dnaclothing.com/"
+          label: "DNA Clothing"
+        - url: "https://www.apparelzoo.com/"
+          label: "Apparel Zoo"
+        - url: "https://www.farfetch.com/"
+          label: "Farfetch"
+        - url: "https://www.laroseboutique.com/"
+          label: "La Rose Boutique"
+        - url: "https://www.americanapparel.com/"
+          label: "American Apparel"
+        - url: "https://www.revolve.com/"
+          label: "Revolve"
+        - url: "https://www.freepeople.com/"
+          label: "Free People"
+        - url: "https://www.nordstrom.com/"
+          label: "Nordstrom"
+        - url: "https://www.macys.com/"
+          label: "Macy's"
+        - url: "https://www.bloomingdales.com/"
+          label: "Bloomingdale's"
+        - url: "https://www.saksfifthavenue.com/"
+          label: "Saks Fifth Avenue"
+        - url: "https://www.anthropologie.com/"
+          label: "Anthropologie"
+        - url: "https://www.tillys.com/"
+          label: "Tillys"
+        - url: "https://www.pacsun.com/"
+          label: "PacSun"
+        - url: "https://www.zumiez.com/"
+          label: "Zumiez"
+        - url: "https://www.backcountry.com/"
+          label: "Backcountry"
+        - url: "https://www.rei.com/"
+          label: "REI"
+        - url: "https://www.dickssportinggoods.com/"
+          label: "Dick's Sporting Goods"
+    uk:
+      buyer_intent:
+        - url: "https://www.nextplc.co.uk/suppliers"
+          label: "Next PLC Suppliers"
+        - url: "https://www.marksandspencer.com/c/suppliers"
+          label: "M&S Suppliers"
+        - url: "https://www.johnlewispartnership.co.uk/work-with-us/suppliers.html"
+          label: "John Lewis Partnership"
+        - url: "https://corporate.primark.com/en-gb/our-products/suppliers"
+          label: "Primark Suppliers"
+        - url: "https://www.asosplc.com/fashion-with-integrity/our-supply-chain/"
+          label: "ASOS Supply Chain"
+        - url: "https://www.dunelm.com/info/about/suppliers"
+          label: "Dunelm Suppliers"
+        - url: "https://www.jdsports.co.uk/page/supplier-information/"
+          label: "JD Sports Supplier"
+        - url: "https://www.sportsdirect.com/customerservices/otherinformation/suppliers"
+          label: "Sports Direct Suppliers"
+      apparel_buyers:
+        - url: "https://www.whisperingsmith.com/pages/contact-us"
+          label: "Whispering Smith"
+        - url: "https://www.qclothing.co.uk/contact-us"
+          label: "Q Clothing"
+        - url: "https://www.parisian.co.uk/contact-us"
+          label: "Parisian"
+        - url: "https://www.citygoddess.co.uk/contact-us"
+          label: "City Goddess"
+        - url: "https://www.europafashions.co.uk/contact-us"
+          label: "Europa Fashions"
+        - url: "https://www.j5fashion.com/contact-us"
+          label: "J5 Fashion"
+        - url: "https://www.catwalkwholesale.com/contact-us"
+          label: "Catwalk Wholesale"
+        - url: "https://www.influencefashion.co.uk/pages/contact-us"
+          label: "Influence Fashion"
+        - url: "https://www.stylewise-direct.com/contact-us"
+          label: "Stylewise Direct"
+        - url: "https://www.fashion-book.com/contact-us"
+          label: "Fashion Book"
+        - url: "https://www.missyempire.com/pages/contact-us"
+          label: "Missy Empire"
+        - url: "https://www.boohoo.com/page/contact-us.html"
+          label: "Boohoo"
+        - url: "https://www.prettylittlething.com/contact-us"
+          label: "PrettyLittleThing"
+        - url: "https://www.riverisland.com/contact-us"
+          label: "River Island"
+        - url: "https://www.newlook.com/uk/help/contact-us"
+          label: "New Look"
+    europe:
+      buyer_intent:
+        - url: "https://partnerportal.zalando.com/"
+          label: "Zalando Partner Portal"
+        - url: "https://www.zalando.com/supplier/"
+          label: "Zalando Supplier"
+        - url: "https://www.aboutyou.com/"
+          label: "About You"
+        - url: "https://www.asos.com/"
+          label: "ASOS"
+        - url: "https://www.decathlon.com/"
+          label: "Decathlon"
+        - url: "https://www.intersport.com/"
+          label: "Intersport"
+        - url: "https://www.inditex.com/"
+          label: "Inditex"
+        - url: "https://www.bestseller.com/"
+          label: "Bestseller"
+        - url: "https://www2.hm.com/"
+          label: "H&M"
+        - url: "https://www.c-and-a.com/"
+          label: "C&A"
+        - url: "https://www.primark.com/"
+          label: "Primark"
+        - url: "https://www.next.co.uk/"
+          label: "Next"
+        - url: "https://www.sportsdirect.com/"
+          label: "Sports Direct"
+        - url: "https://www.jdsports.co.uk/"
+          label: "JD Sports"
+        - url: "https://www.otto.de/"
+          label: "Otto"
+        - url: "https://www.galeria.de/"
+          label: "Galeria"
+        - url: "https://www.elcorteingles.es/"
+          label: "El Corte Ingles"
+        - url: "https://www.laredoute.com/"
+          label: "La Redoute"
+        - url: "https://www.bonprix.com/"
+          label: "Bonprix"
+        - url: "https://www.spartoo.com/"
+          label: "Spartoo"
+
+  # --- Directory Sources per Region ---
+  directory_sources:
+    usa:
+      - type: la_fashion_district
+        url: "https://fashiondistrict.org/wholesale/directory"
+        selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        description: "LA Fashion District Wholesale Directory"
+      - type: la_fashion_district
+        url: "https://fashiondistrict.org/wholesale/directory/directory/women-s-wear"
+        selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        description: "LA Fashion District — Womenswear"
+      - type: la_fashion_district
+        url: "https://fashiondistrict.org/wholesale/directory/directory/menswear"
+        selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        description: "LA Fashion District — Menswear"
+      - type: la_fashion_district
+        url: "https://fashiondistrict.org/wholesale/directory/directory/athletic-wear/sportswear"
+        selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        description: "LA Fashion District — Sportswear"
+      - type: yellow_pages
+        search: "importers"
+        description: "Yellow Pages - Importers"
+      - type: yellow_pages
+        search: "wholesalers"
+        description: "Yellow Pages - Wholesalers"
+      - type: yellow_pages
+        search: "distributors"
+        description: "Yellow Pages - Distributors"
+    uk:
+      - type: yell
+        search: "importer wholesaler distributor"
+        description: "Yell - Buyer Directory Search"
+    europe:
+      - type: europages
+        search: "buyer"
+        description: "Europages - Buyer Search"
+    international:
+      - type: europages
+        search: "buyer"
+        description: "Europages - Buyer Search"
+
+  # --- Region Target Markets ---
+  region_markets:
+    usa: ["United States"]
+    uk: ["United Kingdom"]
+    europe: ["Europe"]
+    international: ["United States", "United Kingdom", "Canada", "Australia", "UAE", "Germany"]
+
+  # --- European Per-Country Markets ---
+  europe_country_markets:
+    - Germany
+    - France
+    - Netherlands
+    - Italy
+    - Spain
+    - Poland
+    - Sweden
+
+  # --- Exclusion Lists ---
+  exclusions:
+    host_parts:
+      - google.
+      - bing.
+      - duckduckgo.
+      - yahoo.
+      - microsoft.
+      - youtube.
+      - wikipedia.
+      - facebook.
+      - instagram.
+      - twitter.
+      - x.com
+      - linkedin.
+      - baidu.
+      - zhihu.
+      - pinterest.
+      - quora.
+      - reddit.
+      - amazon.
+      - ebay.
+      - yelp.
+      - yellowpages.
+      - yell.com
+      - europages.
+      - cloudflare.
+      - localsearch.
+      - thryv.
+      - networkadvertising.
+      - bbb.
+      - manta.
+      - mapquest.
+      - superpages.
+      - dnb.
+      - zoominfo.
+      - crunchbase.
+      - glassdoor.
+      - indeed.
+      - trustpilot.
+      - shopify.com
+      - wix.com
+      - godaddy.
+      - wordpress.
+      - sentry.
+      - dictionary.
+      - gitlab.
+      - huggingface.
+      - wiktionary.
+      - wikisource.
+    root_domains:
+      - cambridge.org
+      - cloudflare.com
+      - dictionary.com
+      - github.com
+      - gitlab.com
+      - huggingface.co
+      - localsearch.com
+      - merriam-webster.com
+      - networkadvertising.org
+      - nike.com
+      - stackoverflow.com
+      - thryv.com
+      - baidu.com
+      - zhihu.com
+      - cookie-script.com
+      - vocabulary.com
+      - visable.com
+      - wiktionary.org
+    domain_suffixes:
+      - .ac.uk
+      - .edu
+      - .gov
+      - .mil
+    path_parts:
+      - /cart
+      - /checkout
+      - /cdn-cgi/
+      - /cookie
+      - /login
+      - /privacy
+      - /search
+      - /terms
+      - /wiki/
+      - .pdf
+    exporter_country_suffixes:
+      - .bd
+      - .cn
+      - .com.bd
+      - .com.cn
+      - .com.hk
+      - .com.in
+      - .com.pk
+      - .com.tr
+      - .com.vn
+      - .hk
+      - .in
+      - .pk
+      - .tr
+      - .vn
+
+# --------------------------------------------------
+# SCORING
+# --------------------------------------------------
+scoring:
+  weights:
+    product_fit: 20
+    buyer_intent: 30
+    reachability: 20
+    commercial_readiness: 15
+    evidence_depth: 15
+    negative_penalty: 45
+
+  keywords:
+    product_keywords:
+      - activewear
+      - apparel
+      - bags
+      - boutique
+      - clothing
+      - denim
+      - dress
+      - fabric
+      - fashion
+      - garment
+      - "home textile"
+      - hosiery
+      - knit
+      - leather
+      - shirt
+      - sportswear
+      - streetwear
+      - textile
+      - towel
+      - uniform
+      - woven
+
+    strong_buyer_keywords:
+      - "become a supplier"
+      - "become a vendor"
+      - "buying office"
+      - distributor
+      - "import and distribute"
+      - importer
+      - imports
+      - procurement
+      - purchasing
+      - sourcing
+      - "supplier application"
+      - "supplier code"
+      - "supplier diversity"
+      - "supplier information"
+      - "supplier registration"
+      - "supplier relations"
+      - "supplier requirements"
+      - "supplier portal"
+      - "vendor application"
+      - "vendor information"
+      - "vendor registration"
+      - "vendor relations"
+      - "vendor portal"
+      - "wholesale distributor"
+      - wholesaler
+
+    ambiguous_sales_keywords:
+      - brand
+      - "bulk order"
+      - catalog
+      - "line sheet"
+      - "private label"
+      - retail
+      - retailer
+      - stockist
+      - "store locator"
+      - trade
+      - "trade account"
+      - wholesale
+      - "wholesale account"
+
+    moderate_buyer_keywords:
+      - boutique
+      - brand
+      - "bulk order"
+      - catalog
+      - retail
+      - retailer
+      - stockist
+      - "store locator"
+      - trade
+      - wholesale
+
+    commercial_keywords:
+      - cart
+      - catalog
+      - checkout
+      - collection
+      - collections
+      - "new arrivals"
+      - order
+      - shop
+      - store
+
+    platform_keywords:
+      - "advertise with us"
+      - directory
+      - marketplace
+      - platform
+      - "sponsored listings"
+
+    supplier_competitor_keywords:
+      - "apparel manufacturer"
+      - "clothing manufacturer"
+      - "contract manufacturer"
+      - "cut and sew"
+      - factory
+      - "full package production"
+      - "garment manufacturer"
+      - manufacturer
+      - manufacturing
+      - "private label manufacturer"
+      - "production facility"
+      - sewing
+      - "we manufacture"
+
+    procurement_side_keywords:
+      - "become a supplier"
+      - "become a vendor"
+      - "buying office"
+      - importer
+      - imports
+      - procurement
+      - purchasing
+      - "supplier application"
+      - "supplier portal"
+      - "vendor application"
+      - "vendor portal"
+
+    negative_keywords:
+      - advertising
+      - article
+      - careers
+      - editorial
+      - internship
+      - issue
+      - "job opening"
+      - magazine
+      - news
+      - newsletter
+      - publication
+      - recruitment
+      - staffing
+      - subscribe
+      - subscription
+      - "we are hiring"
+
+    soft_negative_keywords:
+      - article
+      - editorial
+      - magazine
+      - news
+      - newsletter
+      - publication
+
+    supplier_country_markers:
+      - bangladesh
+      - china
+      - faisalabad
+      - india
+      - karachi
+      - lahore
+      - pakistan
+      - sialkot
+      - vietnam
+
+    noisy_domain_markers:
+      - apparelnews.net
+      - fashionnetwork.com
+      - fiber2fashion.com
+      - fibre2fashion.com
+      - just-style.com
+      - textileworld.com
+      - cambridge.org
+      - dictionary.com
+      - merriam-webster.com
+      - vocabulary.com
+      - wiktionary.org
+
+  blocked_domains:
+    - cloudflare.com
+    - localsearch.com
+    - networkadvertising.org
+    - nike.com
+    - thryv.com
+
+  blocked_domain_markers:
+    - "dictionary."
+    - "gitlab."
+    - "huggingface."
+    - "wiktionary."
+    - "wikipedia."
+
+  blocked_tlds:
+    - ".ac.uk"
+    - ".edu"
+    - ".gov"
+    - ".mil"
+
+  exporter_country_suffixes:
+    - .bd
+    - .cn
+    - .com.bd
+    - .com.cn
+    - .com.hk
+    - .com.in
+    - .com.pk
+    - .com.tr
+    - .com.vn
+    - .hk
+    - .in
+    - .pk
+    - .tr
+    - .vn
+
+  tiers:
+    a_plus:
+      min_score: 85
+      require_hard_checks: true
+      require_buyer_evidence: true
+      require_email: decision
+    a:
+      min_score: 75
+      require_hard_checks: true
+      require_email: any
+    manual_review:
+      min_score: 55
+
+  quality_mode: balanced
+
+  pitch_angles:
+    importer: "We are a Pakistan-based manufacturer of premium {products}. We see you actively import {category} and would love to discuss becoming one of your trusted suppliers with competitive MOQs and landed-cost advantage."
+    distributor: "We are a Pakistan-based manufacturer of premium {products}. We're reaching out to offer our full export-ready catalog with reliable lead times for your distribution network."
+    wholesaler: "We are a Pakistan-based manufacturer of premium {products}. We supply wholesale-ready collections and would love to explore a partnership with your wholesale business."
+    procurement_sourcing: "We are a Pakistan-based manufacturer of premium {products}. We offer compliance-ready production, fast sampling, and dedicated sourcing support for procurement teams."
+    private_label_brand: "We are a Pakistan-based manufacturer specializing in private-label production. We offer custom sampling, fabric options, and category-specific production for your brand."
+    retailer: "We are a Pakistan-based manufacturer of premium {products}. We offer wholesale and private-label supply options that could fit your retail assortment."
+    generic: "We are a Pakistan-based manufacturer of premium {products}. We're reaching out to explore how we can support your supply chain."
+
+# --------------------------------------------------
+# ENRICHMENT
+# --------------------------------------------------
+enrichment:
+  likely_paths:
+    - /contact
+    - /contact-us
+    - /pages/contact
+    - /pages/contact-us
+    - /about
+    - /about-us
+    - /brands
+    - /wholesale
+    - /pages/wholesale
+    - /pages/wholesale-account
+    - /pages/wholesale-inquiries
+    - /trade
+    - /b2b
+    - /vendors
+    - /vendor
+    - /vendor-info
+    - /vendor-information
+    - /vendor-relations
+    - /vendor-registration
+    - /vendor-portal
+    - /become-a-vendor
+    - /suppliers
+    - /supplier
+    - /supplier-information
+    - /supplier-registration
+    - /supplier-relations
+    - /supplier-portal
+    - /supplier-requirements
+    - /sourcing
+    - /procurement
+    - /purchasing
+    - /buying
+    - /partnerships
+    - /stockists
+    - /retailers
+    - /private-label
+    - /our-suppliers
+    - /supplierdiversity
+    - /m/getting-started
+    - /m/contact-info
+    - /m/supplier-diversity-overview
+    - /sustainability-governance/responsible-supply-chains/suppliers
+    - /suppliers/apply-to-be-a-supplier
+    - /suppliers/requirements
+    - /browse/impact/people/responsible-sourcing
+
+  high_value_path_hints:
+    - b2b
+    - become-a-vendor
+    - buyers
+    - distributor
+    - import
+    - line-sheet
+    - procurement
+    - sourcing
+    - supplier
+    - trade
+    - vendor
+    - wholesale
+
+  contact_path_hints:
+    - about
+    - b2b
+    - become-a-vendor
+    - business
+    - buyers
+    - company
+    - connect
+    - contact
+    - distributor
+    - import
+    - line-sheet
+    - procurement
+    - reach-us
+    - retail
+    - sourcing
+    - stockist
+    - supplier
+    - team
+    - trade
+    - vendor
+    - wholesale
+
+  email_classification:
+    high_quality_prefixes:
+      - b2b
+      - business
+      - buyer
+      - buyers
+      - export
+      - exports
+      - import
+      - imports
+      - partnerships
+      - privatelabel
+      - procurement
+      - purchase
+      - purchasing
+      - sales
+      - sourcing
+      - supplier
+      - suppliers
+      - trade
+      - vendor
+      - vendors
+      - wholesale
+
+    generic_business_prefixes:
+      - admin
+      - contact
+      - customerservice
+      - hello
+      - help
+      - info
+      - office
+      - orders
+      - service
+      - shop
+      - support
+
+    rejected_prefixes:
+      - abuse
+      - careers
+      - career
+      - donotreply
+      - hr
+      - jobs
+      - legal
+      - media
+      - no-reply
+      - noreply
+      - postmaster
+      - press
+      - privacy
+      - recruiting
+      - webmaster
+
+  bad_email_markers:
+    - .png
+    - .jpg
+    - .jpeg
+    - .gif
+    - .webp
+    - sentry
+    - example.com
+    - wix.com
+    - wixpress.com
+    - mysite.com
+    - yourdomain
+    - domain.com
+    - email.com
+    - noreply@
+    - no-reply@
+    - donotreply@
+
+  business_freemail_domains:
+    - aol.com
+    - gmail.com
+    - hotmail.com
+    - icloud.com
+    - live.com
+    - msn.com
+    - outlook.com
+    - yahoo.com
+
+# --------------------------------------------------
+# SIGNALS (from signal_map.py manufacturing_expansion cluster)
+# --------------------------------------------------
+signals:
+  cluster: manufacturing_expansion
+  search_intent: manufacturing_expansion
+
+  signal_catalog:
+    - name: facility-expansion
+      why_now: "Facility expansion or new line announcements indicate immediate project demand."
+      confidence: 0.82
+      query_templates:
+        - '{industry} {market} new facility opening'
+        - '{industry} {market} plant expansion project'
+
+    - name: equipment-investment
+      why_now: "Equipment financing and modernization usually align with broader capex cycles."
+      confidence: 0.74
+      query_templates:
+        - '{industry} {market} equipment modernization project'
+        - '{industry} {market} capex expansion'
+
+    - name: trade-show-activity
+      why_now: "Trade show season drives buyer-seller matching."
+      confidence: 0.85
+      query_templates:
+        - '{industry} trade show "{market}" buyer exhibitor'
+        - '{industry} fashion week "{market}" buyer list'
+
+    - name: import-export-data
+      why_now: "Import/export records reveal active buyers."
+      confidence: 0.90
+      query_templates:
+        - '{industry} import data "{market}" panjiva'
+        - '{industry} customs shipment "{market}" importer'
+
+    - name: active-growth-intent
+      why_now: "Recent growth announcements often map to near-term buying intent."
+      confidence: 0.70
+      query_templates:
+        - '{industry} {market} expansion contact'
+        - '{industry} {market} project request proposal'

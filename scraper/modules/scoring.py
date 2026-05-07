@@ -2,11 +2,14 @@ import re
 
 
 class LeadScoring:
-    def __init__(self, require_email=True, require_buyer_evidence=True, scoring_context=None, industry=None):
+    def __init__(self, require_email=True, require_buyer_evidence=True, scoring_context=None, industry=None, config=None):
         self.require_email = require_email
         self.require_buyer_evidence = require_buyer_evidence
         scoring_context = scoring_context or {}
         self.industry = str(industry or "").lower()
+        self.config = config if isinstance(config, dict) else {}
+        scoring_cfg = self.config.get("scoring", {})
+
         self.weights = {
             "product_fit": 20,
             "buyer_intent": 30,
@@ -15,6 +18,10 @@ class LeadScoring:
             "evidence_depth": 15,
             "negative_penalty": 45,
         }
+        if scoring_cfg.get("weights"):
+            for k, v in scoring_cfg["weights"].items():
+                if k in self.weights:
+                    self.weights[k] = v
         self.product_keywords = [
             "activewear",
             "apparel",
@@ -232,6 +239,8 @@ class LeadScoring:
             "publication",
         }
         self.quality_mode = str(scoring_context.get("quality_mode", "balanced")).strip().lower() or "balanced"
+        if self.config:
+            self._apply_config_keywords(scoring_cfg)
         self._apply_scoring_context(scoring_context)
 
     @staticmethod
@@ -267,6 +276,52 @@ class LeadScoring:
             if text and text not in terms:
                 terms.append(text)
         return terms
+
+    def _apply_config_keywords(self, scoring_cfg):
+        """Load keyword lists and scoring parameters from specialist config."""
+        kw = scoring_cfg.get("keywords", {})
+        if kw.get("product_keywords"):
+            self.product_keywords = list(dict.fromkeys(kw["product_keywords"] + self.product_keywords))
+        if kw.get("strong_buyer_keywords"):
+            self.strong_buyer_keywords = list(dict.fromkeys(kw["strong_buyer_keywords"] + self.strong_buyer_keywords))
+        if kw.get("ambiguous_sales_keywords"):
+            self.ambiguous_sales_keywords = list(dict.fromkeys(kw["ambiguous_sales_keywords"] + self.ambiguous_sales_keywords))
+        if kw.get("moderate_buyer_keywords"):
+            self.moderate_buyer_keywords = list(dict.fromkeys(kw["moderate_buyer_keywords"] + self.moderate_buyer_keywords))
+        if kw.get("commercial_keywords"):
+            self.commercial_keywords = list(dict.fromkeys(kw["commercial_keywords"] + self.commercial_keywords))
+        if kw.get("platform_keywords"):
+            self.platform_keywords = list(dict.fromkeys(kw["platform_keywords"] + self.platform_keywords))
+        if kw.get("supplier_competitor_keywords"):
+            self.supplier_competitor_keywords = list(dict.fromkeys(kw["supplier_competitor_keywords"] + self.supplier_competitor_keywords))
+        if kw.get("procurement_side_keywords"):
+            self.procurement_side_keywords = list(dict.fromkeys(kw["procurement_side_keywords"] + self.procurement_side_keywords))
+        if kw.get("negative_keywords"):
+            self.negative_keywords = list(dict.fromkeys(kw["negative_keywords"] + self.negative_keywords))
+        if kw.get("soft_negative_keywords"):
+            self.soft_negative_keywords = set(self.soft_negative_keywords) | set(kw["soft_negative_keywords"])
+        if kw.get("supplier_country_markers"):
+            self.supplier_country_markers = list(dict.fromkeys(kw["supplier_country_markers"] + self.supplier_country_markers))
+        if kw.get("noisy_domain_markers"):
+            self.noisy_domain_markers = tuple(dict.fromkeys(list(self.noisy_domain_markers) + kw["noisy_domain_markers"]))
+        if scoring_cfg.get("blocked_domains"):
+            self.blocked_domains = set(self.blocked_domains) | set(scoring_cfg["blocked_domains"])
+        if scoring_cfg.get("blocked_domain_markers"):
+            self.blocked_domain_markers = list(dict.fromkeys(self.blocked_domain_markers + scoring_cfg["blocked_domain_markers"]))
+        if scoring_cfg.get("blocked_tlds"):
+            self.blocked_tlds = list(dict.fromkeys(self.blocked_tlds + scoring_cfg["blocked_tlds"]))
+        if scoring_cfg.get("exporter_country_suffixes"):
+            self.exporter_country_suffixes = tuple(dict.fromkeys(
+                list(self.exporter_country_suffixes) + scoring_cfg["exporter_country_suffixes"]
+            ))
+        if scoring_cfg.get("quality_mode"):
+            self.quality_mode = scoring_cfg["quality_mode"]
+        # Pitch angles from config
+        pitches = scoring_cfg.get("pitch_angles", {})
+        if pitches:
+            self._config_pitch_angles = {str(k): str(v) for k, v in pitches.items()}
+        else:
+            self._config_pitch_angles = {}
 
     def _apply_scoring_context(self, scoring_context):
         product_keywords = self._normalize_keywords(scoring_context.get("product_keywords", []))
@@ -371,6 +426,20 @@ class LeadScoring:
 
     def _pitch_angle(self, buyer_type, product_hits):
         products = ", ".join(product_hits[:3]) if product_hits else "your offer"
+        # Config-driven pitches take priority
+        if getattr(self, "_config_pitch_angles", None):
+            pitch_map = self._config_pitch_angles
+            if buyer_type in {"importer", "distributor", "wholesaler"}:
+                if buyer_type in pitch_map:
+                    return pitch_map[buyer_type]
+                if "generic" in pitch_map:
+                    return pitch_map["generic"]
+            config_key = buyer_type.replace("/", "_")
+            if config_key in pitch_map:
+                return pitch_map[config_key]
+            if "generic" in pitch_map:
+                return pitch_map["generic"]
+        # Legacy fallback
         if buyer_type in {"importer", "distributor", "wholesaler"}:
             return f"Open with export capacity, reliable MOQ, and landed-cost advantage for {products}."
         if buyer_type == "procurement/sourcing":

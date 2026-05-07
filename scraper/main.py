@@ -202,6 +202,31 @@ def merge_scoring_context(base_context, override_context):
     return merged or None
 
 
+def _resolve_scraper_config(industry, region, job_config=None):
+    """Resolve the specialist config for a scraper run.
+
+    Uses the Router for classification, merges with job_config overrides,
+    and returns (config_slug, merged_config).
+    Falls back gracefully if Router/configs are missing."""
+    try:
+        from modules.router import IndustryRouter
+        from modules.config_loader import ConfigLoader
+
+        router = IndustryRouter()
+        slug, config, confidence = router.classify(industry, region)
+        loader = ConfigLoader()
+        if job_config and isinstance(job_config, dict):
+            config = loader.merge_with_job_config(config, job_config)
+        # Inject feedback if Supabase available
+        feedback = router.query_feedback(slug, region)
+        if feedback:
+            config = router.inject_feedback(config, feedback)
+        return slug, config
+    except Exception as e:
+        print(f"[main] Config resolution skipped: {e}")
+        return None, None
+
+
 SEVERE_DISQUALIFICATION_MARKERS = (
     "blocked noisy domain class",
     "known false-positive domain",
@@ -747,6 +772,9 @@ async def run_scraper(
             "Missing dependency: aiohttp. Install with `pip install -r scraper/requirements.txt`."
         ) from exc
 
+    # Resolve specialist config
+    config_slug, scraper_config = _resolve_scraper_config(industry, region)
+
     discovery_limit = compute_discovery_limit(
         limit=limit,
         test_mode=test_mode,
@@ -761,7 +789,7 @@ async def run_scraper(
     top_leads = []
     seen_enriched_domains = set()
 
-    signal_map = build_signal_map(region=region, industry=industry, search_terms=search_terms)
+    signal_map = build_signal_map(region=region, industry=industry, search_terms=search_terms, config=scraper_config)
     merged_search_terms = merge_search_terms(signal_map.get("routed_search_terms", []), search_terms or [])
     merged_scoring_context = merge_scoring_context(signal_map.get("scoring_context"), scoring_context)
     resolved_proxies = resolve_proxy_pool(proxy_pool=proxy_pool, proxy_file=proxy_file)
@@ -788,6 +816,7 @@ async def run_scraper(
         require_buyer_evidence=not allow_weak_buyer_evidence,
         scoring_context=merged_scoring_context,
         industry=industry,
+        config=scraper_config,
     )
 
     worker_count = 2 if test_mode else 4
@@ -989,6 +1018,7 @@ async def run_scraper(
             search_terms=merged_search_terms,
             signal_map=signal_map,
             scoring_context=merged_scoring_context,
+            config=scraper_config,
         )
         source_groups = partition_discovery_sources(discovery_template.generate_sources(region, industry))
         active_discovery_groups = list(source_groups.items())
@@ -1035,6 +1065,7 @@ async def run_scraper(
             max_extra_pages=12,
             browser_context=enrichment_context,
             browser_fallback_concurrency=max(1, worker_count // 2),
+            config=scraper_config,
         )
         batch_size = 8 if test_mode else max(12, min(40, limit * 2))
 
@@ -1081,6 +1112,7 @@ async def run_scraper(
                     search_terms=merged_search_terms,
                     signal_map=signal_map,
                     scoring_context=merged_scoring_context,
+                    config=scraper_config,
                 )
                 async def lane_rotate(engine, source_url, reason, lane_name=lane_name):
                     return await rotate_proxy_on_block(lane_name, engine, source_url, reason)
@@ -1349,10 +1381,12 @@ async def run_hunt_first_a_plus(
     from modules.export import LeadExport
     from modules.scoring import LeadScoring
 
+    config_slug, scraper_config = _resolve_scraper_config(industry, region)
+
     run_id = f"hunt-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
     start_time = time.perf_counter()
-    discovery = LeadDiscovery(limit=max_analyzed)
-    scoring = LeadScoring(require_email=True, require_buyer_evidence=True, industry=industry)
+    discovery = LeadDiscovery(limit=max_analyzed, config=scraper_config)
+    scoring = LeadScoring(require_email=True, require_buyer_evidence=True, industry=industry, config=scraper_config)
     analyzed_candidates = []
     analyzed_domains = set()
     found_lead = None
@@ -1382,6 +1416,7 @@ async def run_hunt_first_a_plus(
             concurrency=1,
             max_extra_pages=12,
             browser_context=context,
+            config=scraper_config,
         )
 
         async def analyze_candidate(candidate):
@@ -1592,6 +1627,8 @@ async def run_scraper_adaptive(
             "Missing dependency: aiohttp. Install with `pip install -r scraper/requirements.txt`."
         ) from exc
 
+    config_slug, scraper_config = _resolve_scraper_config(industry, region)
+
     discovery_limit = compute_discovery_limit(
         limit=limit,
         test_mode=test_mode,
@@ -1599,7 +1636,7 @@ async def run_scraper_adaptive(
     )
     run_id = f"run-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
 
-    signal_map = build_signal_map(region=region, industry=industry, search_terms=search_terms)
+    signal_map = build_signal_map(region=region, industry=industry, search_terms=search_terms, config=scraper_config)
     merged_search_terms = merge_search_terms(signal_map.get("routed_search_terms", []), search_terms or [])
     merged_scoring_context = merge_scoring_context(signal_map.get("scoring_context"), scoring_context)
     resolved_proxies = resolve_proxy_pool(proxy_pool=proxy_pool, proxy_file=proxy_file)
@@ -1627,6 +1664,7 @@ async def run_scraper_adaptive(
         require_buyer_evidence=not allow_weak_buyer_evidence,
         scoring_context=merged_scoring_context,
         industry=industry,
+        config=scraper_config,
     )
     worker_count = 2 if test_mode else 4
 
@@ -1671,6 +1709,7 @@ async def run_scraper_adaptive(
                     max_extra_pages=12,
                     browser_context=enrichment_ctx,
                     browser_fallback_concurrency=max(1, worker_count // 2),
+                    config=scraper_config,
                 )
                 sem = asyncio.Semaphore(worker_count)
 
@@ -1727,6 +1766,7 @@ async def run_scraper_adaptive(
                 signal_map=signal_map,
                 scoring_context=merged_scoring_context,
                 diagnostics=diagnostics,
+                config=scraper_config,
             )
             sources = discovery_template.generate_sources(region, industry, depth=depth)
             source_groups = partition_discovery_sources(sources)
@@ -1759,6 +1799,7 @@ async def run_scraper_adaptive(
                     signal_map=signal_map,
                     scoring_context=merged_scoring_context,
                     diagnostics=diagnostics,
+                    config=scraper_config,
                 )
                 async for batch in lane_discovery.run_discovery(
                     lane_browser,

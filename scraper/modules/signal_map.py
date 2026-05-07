@@ -209,11 +209,17 @@ def _signal_catalog(cluster):
     ]
 
 
-def build_signal_map(region, industry, search_terms=None):
+def build_signal_map(region, industry, search_terms=None, config=None):
     normalized_region = _canonical_region(region)
     markets = _target_markets(normalized_region)
     market = markets[0]
     industry_text = str(industry or "").strip() or "business services"
+
+    # --- Config-driven path (specialist config) ---
+    if config and isinstance(config, dict):
+        return _build_signal_map_from_config(normalized_region, markets, market, industry_text, search_terms, config)
+
+    # --- Legacy hardcoded path ---
     cluster = _cluster_for_industry(industry_text)
 
     catalog = _signal_catalog(cluster)[:5]
@@ -340,4 +346,60 @@ def build_signal_map(region, industry, search_terms=None):
         "signals": source_routes,
         "routed_search_terms": routed_search_terms,
         "scoring_context": scoring_context,
+    }
+
+
+def _build_signal_map_from_config(region, markets, market, industry_text, search_terms, config):
+    """Build signal map entirely from a specialist config."""
+    signals_cfg = config.get("signals", {})
+    scoring_cfg = config.get("scoring", {})
+    cluster = signals_cfg.get("cluster", "generic_b2b")
+
+    signal_catalog = signals_cfg.get("signal_catalog", [])
+    routed_search_terms = []
+    source_routes = []
+
+    for signal_row in signal_catalog[:5]:
+        signal_name = signal_row.get("name", signal_row.get("signal", "signal"))
+        signal_queries = _normalize_queries(
+            template.format(industry=industry_text, market=market).strip()
+            for template in signal_row.get("query_templates", [])
+        )
+        routed_search_terms.extend(signal_queries)
+        source_routes.append({
+            "signal": signal_name,
+            "confidence": float(signal_row.get("confidence", 0.7)),
+            "why_now": signal_row.get("why_now", ""),
+            "queries": signal_queries,
+            "source_urls": list(signal_row.get("source_urls", [])),
+        })
+
+    for term in search_terms or []:
+        text = str(term or "").strip()
+        if not text:
+            continue
+        routed_search_terms.append(text)
+
+    routed_search_terms = _normalize_queries(routed_search_terms)
+
+    keywords = scoring_cfg.get("keywords", {})
+    scoring_context = {
+        "product_keywords": _normalize_queries(keywords.get("product_keywords", [])),
+        "buyer_keywords": _normalize_queries(keywords.get("strong_buyer_keywords", [])),
+        "negative_keywords": _normalize_queries(keywords.get("negative_keywords", [])),
+        "blocked_domains": _normalize_queries(scoring_cfg.get("blocked_domains", [])),
+        "blocked_host_markers": _normalize_queries(scoring_cfg.get("blocked_domain_markers", [])),
+        "blocked_tlds": _normalize_queries(scoring_cfg.get("blocked_tlds", [])),
+        "quality_mode": scoring_cfg.get("quality_mode", "balanced"),
+        "search_intent": signals_cfg.get("search_intent", cluster),
+    }
+
+    return {
+        "cluster": cluster,
+        "region": region,
+        "markets": markets,
+        "signals": source_routes,
+        "routed_search_terms": routed_search_terms,
+        "scoring_context": scoring_context,
+        "_config_slug": config.get("slug", ""),
     }

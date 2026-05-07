@@ -229,6 +229,7 @@ class LeadEnrichment:
         browser_context=None,
         stealth=None,
         browser_fallback_concurrency=2,
+        config=None,
     ):
         self.semaphore = asyncio.Semaphore(concurrency)
         self.browser_semaphore = asyncio.Semaphore(browser_fallback_concurrency)
@@ -238,6 +239,30 @@ class LeadEnrichment:
         self.browser_context = browser_context
         self.stealth = stealth
         self.email_regex = re.compile(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}')
+        self.config = config if isinstance(config, dict) else {}
+        if self.config:
+            self._apply_config_enrichment()
+
+    def _apply_config_enrichment(self):
+        """Load enrichment configuration from specialist config."""
+        enrich = self.config.get("enrichment", {})
+        if enrich.get("likely_paths"):
+            self.LIKELY_PATHS = tuple(dict.fromkeys(list(self.LIKELY_PATHS) + enrich["likely_paths"]))
+        if enrich.get("high_value_path_hints"):
+            self.HIGH_VALUE_PATH_HINTS = tuple(dict.fromkeys(list(self.HIGH_VALUE_PATH_HINTS) + enrich["high_value_path_hints"]))
+        if enrich.get("contact_path_hints"):
+            self.CONTACT_PATH_HINTS = tuple(dict.fromkeys(list(self.CONTACT_PATH_HINTS) + enrich["contact_path_hints"]))
+        email_cls = enrich.get("email_classification", {})
+        if email_cls.get("high_quality_prefixes"):
+            self.HIGH_QUALITY_PREFIXES = tuple(dict.fromkeys(list(self.HIGH_QUALITY_PREFIXES) + email_cls["high_quality_prefixes"]))
+        if email_cls.get("generic_business_prefixes"):
+            self.GENERIC_BUSINESS_PREFIXES = tuple(dict.fromkeys(list(self.GENERIC_BUSINESS_PREFIXES) + email_cls["generic_business_prefixes"]))
+        if email_cls.get("rejected_prefixes"):
+            self.REJECTED_PREFIXES = tuple(dict.fromkeys(list(self.REJECTED_PREFIXES) + email_cls["rejected_prefixes"]))
+        if email_cls.get("bad_email_markers"):
+            self.BAD_EMAIL_MARKERS = tuple(dict.fromkeys(list(self.BAD_EMAIL_MARKERS) + email_cls["bad_email_markers"]))
+        if email_cls.get("business_freemail_domains"):
+            self.BUSINESS_FREEMAIL_DOMAINS = tuple(dict.fromkeys(list(self.BUSINESS_FREEMAIL_DOMAINS) + email_cls["business_freemail_domains"]))
 
     async def fetch_page_with_browser(self, url):
         if not self.browser_context:

@@ -164,7 +164,7 @@ class LeadDiscovery:
         "yahoo": 60.0,
     }
 
-    def __init__(self, limit=30, search_terms=None, signal_map=None, scoring_context=None, diagnostics=None):
+    def __init__(self, limit=30, search_terms=None, signal_map=None, scoring_context=None, diagnostics=None, config=None):
         self.limit = limit
         self.search_terms = [term for term in (search_terms or []) if term]
         self.signal_map = signal_map or {}
@@ -172,6 +172,9 @@ class LeadDiscovery:
         self.seen_domains = set()
         self.diagnostics = diagnostics
         self._last_intake_event = None
+        self.config = config if isinstance(config, dict) else {}
+
+        # Build dynamic exclusion lists from scoring_context (overlay on top of config/legacy)
         self.dynamic_excluded_root_domains = {
             self._normalize_domain_value(value)
             for value in self.scoring_context.get("blocked_domains", []) if str(value or "").strip()
@@ -186,6 +189,35 @@ class LeadDiscovery:
             for value in self.scoring_context.get("blocked_tlds", [])
             if str(value or "").strip()
         )
+
+        # Merge config exclusions into instance-level overrides
+        if self.config:
+            disc = self.config.get("discovery", {})
+            excl = disc.get("exclusions", {})
+            if excl:
+                cfg_host_parts = [str(v or "").strip().lower() for v in excl.get("host_parts", []) if str(v or "").strip()]
+                if cfg_host_parts:
+                    self.dynamic_excluded_host_parts = tuple(
+                        dict.fromkeys(list(self.dynamic_excluded_host_parts) + cfg_host_parts)
+                    )
+                cfg_root = {self._normalize_domain_value(v) for v in excl.get("root_domains", []) if str(v or "").strip()}
+                self.dynamic_excluded_root_domains |= cfg_root
+                cfg_suffixes = [str(v or "").strip().lower() for v in excl.get("domain_suffixes", []) if str(v or "").strip()]
+                if cfg_suffixes:
+                    self.dynamic_excluded_domain_suffixes = tuple(
+                        dict.fromkeys(list(self.dynamic_excluded_domain_suffixes) + cfg_suffixes)
+                    )
+                cfg_exp_path = [str(v or "").strip().lower() for v in excl.get("path_parts", []) if str(v or "").strip()]
+                if cfg_exp_path:
+                    self.EXCLUDED_PATH_PARTS = tuple(dict.fromkeys(
+                        list(self.EXCLUDED_PATH_PARTS) + cfg_exp_path
+                    ))
+                cfg_exp_dom = [str(v or "").strip().lower() for v in excl.get("exporter_country_suffixes", []) if str(v or "").strip()]
+                if cfg_exp_dom:
+                    self.EXPORTER_COUNTRY_SUFFIXES = tuple(dict.fromkeys(
+                        list(self.EXPORTER_COUNTRY_SUFFIXES) + cfg_exp_dom
+                    ))
+
         public_sector_terms = (
             "college",
             "education",
@@ -464,6 +496,27 @@ class LeadDiscovery:
                     )
         return sources
 
+    @staticmethod
+    def _is_throttle_or_block_error(text):
+        lowered = (text or "").lower()
+        return any(
+            marker in lowered
+            for marker in (
+                "err_connection_closed",
+                "err_timed_out",
+                "timeout",
+                "too many requests",
+                "429",
+                "rate",
+                "blocked",
+                "captcha",
+                "automated queries",
+                "unusual traffic",
+                "verify you are human",
+                "access denied",
+            )
+        )
+
     async def _extract_links_from_source(self, page, source):
         seen = set()
         ordered_links = []
@@ -492,6 +545,14 @@ class LeadDiscovery:
         return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:48] or "query"
 
     def _product_seed(self, industry):
+        if self.config:
+            product_seeds = self.config.get("discovery", {}).get("product_seeds", [])
+            if product_seeds:
+                lowered = (industry or "").lower()
+                for term in product_seeds:
+                    if str(term or "").strip().lower() in lowered:
+                        return str(term).strip()
+                return str(product_seeds[0]).strip()
         lowered = (industry or "").lower()
         product_terms = (
             "denim",
@@ -514,8 +575,12 @@ class LeadDiscovery:
                 return term
         return industry.strip() or "apparel"
 
-    @staticmethod
-    def _is_apparel_industry(industry):
+    def _is_apparel_industry(self, industry):
+        if self.config:
+            triggers = self.config.get("triggers", {}).get("keywords", [])
+            if triggers:
+                lowered = (industry or "").lower()
+                return any(str(t or "").strip().lower() in lowered for t in triggers)
         lowered = (industry or "").lower()
         apparel_terms = (
             "activewear",
@@ -569,8 +634,11 @@ class LeadDiscovery:
         )
         return any(term in lowered for term in local_services_terms)
 
-    @staticmethod
-    def _noise_exclusion_suffix():
+    def _noise_exclusion_suffix(self):
+        if self.config:
+            suffixes = self.config.get("discovery", {}).get("noise_exclusion_suffixes", [])
+            if suffixes:
+                return " ".join(str(s or "").strip() for s in suffixes if str(s or "").strip())
         return (
             "-dictionary -definition -wikipedia -wiktionary "
             "-reddit -youtube"
@@ -589,8 +657,12 @@ class LeadDiscovery:
             return "International"
         return region
 
-    @staticmethod
-    def _target_markets(region):
+    def _target_markets(self, region):
+        if self.config:
+            region_markets = self.config.get("discovery", {}).get("region_markets", {})
+            markets = region_markets.get(region.lower(), [])
+            if markets:
+                return markets
         if region == "USA":
             return ["United States"]
         if region == "UK":
@@ -610,6 +682,11 @@ class LeadDiscovery:
 
     def _buyer_search_queries(self, region, industry):
         region = self._canonical_region(region)
+
+        # --- Config-driven path ---
+        if self.config:
+            return self._buyer_search_queries_from_config(region, industry)
+
         base = self._product_seed(industry)
         markets = self._target_markets(region)
         market = markets[0]
@@ -742,6 +819,46 @@ class LeadDiscovery:
 
         return list(dict.fromkeys(supplied_queries + default_queries))
 
+    def _buyer_search_queries_from_config(self, region, industry):
+        """Build search queries from specialist config templates."""
+        disc = self.config.get("discovery", {})
+        templates = disc.get("search_queries", [])
+        base = self._product_seed(industry)
+        markets = self._target_markets(region)
+        market = markets[0]
+        noise_exclusions = self._noise_exclusion_suffix()
+
+        queries = []
+        for template in templates:
+            tpl = str(template or "").strip()
+            if not tpl:
+                continue
+            query = tpl.format(base=base, market=market).strip()
+            if noise_exclusions and "-dictionary" not in query.lower():
+                query = f"{query} {noise_exclusions}"
+            queries.append(query)
+
+        region_extra = disc.get("region_extra_queries", {})
+        if region == "Europe":
+            europe_countries = self.config.get("discovery", {}).get("europe_country_markets",
+                self.config.get("scoring", {}).get("europe_country_markets",
+                ["Germany", "France", "Netherlands", "Italy", "Spain", "Poland", "Sweden"]))
+            for country in europe_countries:
+                for tpl in region_extra.get("europe", []):
+                    query = str(tpl).format(base=base, country=country, market=market).strip()
+                    if noise_exclusions and "-dictionary" not in query.lower():
+                        query = f"{query} {noise_exclusions}"
+                    queries.append(query)
+        elif region == "International":
+            for country in markets[1:]:
+                for tpl in region_extra.get("international", []):
+                    query = str(tpl).format(base=base, country=country, market=market).strip()
+                    if noise_exclusions and "-dictionary" not in query.lower():
+                        query = f"{query} {noise_exclusions}"
+                    queries.append(query)
+
+        return list(dict.fromkeys(queries))
+
     def _search_source_pages(self, query, slug, page_depth, yahoo_depth):
         encoded = quote_plus(query)
         sources = []
@@ -826,6 +943,11 @@ class LeadDiscovery:
     def generate_sources(self, region, industry, depth=None):
         region = self._canonical_region(region)
         signal_sources = self._signal_search_sources(region, industry, depth=depth)
+
+        # --- Config-driven path ---
+        if self.config:
+            return signal_sources + self._generate_sources_from_config(region, industry) + self._search_sources(region, industry, depth=depth)
+
         query = quote_plus(self._product_seed(industry))
         is_apparel = self._is_apparel_industry(industry)
         if region == "USA":
@@ -993,6 +1115,55 @@ class LeadDiscovery:
             ),
         ]
         return signal_sources + buyer_intent_sources + sources + self._search_sources(region, industry, depth=depth)
+
+    def _generate_sources_from_config(self, region, industry):
+        """Build DiscoverySource objects from specialist config directory_sources and seed_urls."""
+        disc = self.config.get("discovery", {})
+        region_key = region.lower()
+        sources = []
+
+        # Seed URL sources
+        seed_urls = disc.get("seed_urls", {})
+        region_seeds = seed_urls.get(region_key, {})
+        for category, url_list in region_seeds.items():
+            if not isinstance(url_list, list) or not url_list:
+                continue
+            seed_name = f"seed-{region_key}-{category}"
+            sources.append(DiscoverySource(
+                name=seed_name,
+                url=f"seed://{seed_name}",
+                selectors=(),
+                discovery_method="curated_seed",
+                candidate_kind="seed_list",
+            ))
+
+        # Directory sources
+        directory_sources = disc.get("directory_sources", {})
+        region_dirs = directory_sources.get(region_key, [])
+        for ds in region_dirs:
+            ds_type = str(ds.get("type", "")).strip().lower()
+            ds_url = str(ds.get("url", "")).strip()
+            ds_selectors = tuple(str(s or "").strip() for s in ds.get("selectors", []) if str(s or "").strip())
+            ds_desc = str(ds.get("description", "")).strip()
+            ds_include_dir = bool(ds.get("include_directory_links", False))
+            ds_candidate_kind = ds.get("candidate_kind", "website")
+
+            if not ds_url:
+                continue
+
+            name = f"{ds_type}-{region_key}-{ds_desc or 'source'}"
+            name = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:64]
+
+            sources.append(DiscoverySource(
+                name=name,
+                url=ds_url,
+                selectors=ds_selectors if ds_selectors else ("a[href*='http']",),
+                include_directory_links=ds_include_dir,
+                discovery_method=ds_type,
+                candidate_kind=ds_candidate_kind,
+            ))
+
+        return sources
 
     @staticmethod
     def _is_throttle_or_block_error(text):
@@ -1334,16 +1505,41 @@ class LeadDiscovery:
             remaining = self.limit - yielded_count
             yield current_chunk[:remaining]
 
+    def _seed_urls_from_config(self, region, source_name):
+        """Look up seed URLs from specialist config."""
+        seed_urls_cfg = self.config.get("discovery", {}).get("seed_urls", {})
+        region_cfg = seed_urls_cfg.get(region.lower(), {})
+        # source_name format: "seed-{region}-{category}" e.g. "seed-usa-buyer-intent-pages"
+        parts = source_name.split("-", 2)
+        category = parts[2] if len(parts) > 2 else source_name
+        urls = region_cfg.get(category, [])
+        if not urls and category == "apparel-buyers":
+            urls = region_cfg.get("apparel_buyers", [])
+        if not urls and category == "buyer-intent-pages":
+            urls = region_cfg.get("buyer_intent", [])
+        if isinstance(urls, list):
+            return [str(u.get("url", "") or u if isinstance(u, dict) else str(u or "")).strip()
+                    for u in urls if (isinstance(u, dict) and u.get("url")) or (isinstance(u, str) and u.strip())]
+        return []
+
+    def seed_urls(self, region, source_name="seed-usa-apparel-buyers"):
+        region = LeadDiscovery._canonical_region(region)
+
+        # Config-driven path
+        if self.config:
+            return self._seed_urls_from_config(region, source_name)
+        return LeadDiscovery._seed_urls_legacy(region, source_name)
+
     @staticmethod
-    def seed_urls(region, source_name="seed-usa-apparel-buyers"):
+    def _seed_urls_legacy(region, source_name):
         region = LeadDiscovery._canonical_region(region)
         if region == "International":
             if source_name.startswith("seed-usa"):
-                return LeadDiscovery.seed_urls("USA", source_name)
+                return LeadDiscovery._seed_urls_legacy("USA", source_name)
             if source_name.startswith("seed-uk"):
-                return LeadDiscovery.seed_urls("UK", source_name)
+                return LeadDiscovery._seed_urls_legacy("UK", source_name)
             if source_name.startswith("seed-europe"):
-                return LeadDiscovery.seed_urls("Europe", source_name)
+                return LeadDiscovery._seed_urls_legacy("Europe", source_name)
             return []
         if region == "UK":
             buyer_intent_urls = [

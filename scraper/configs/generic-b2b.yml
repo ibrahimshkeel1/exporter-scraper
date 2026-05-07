@@ -1,0 +1,468 @@
+# ============================================================
+# Specialist Config: Generic B2B (Catch-All Fallback)
+# ============================================================
+# Used when no specialist config matches the industry.
+# Deliberately minimal — this is the "Discovery Worker" config.
+# If a new industry consistently uses this, promote it to a specialist config.
+
+slug: generic-b2b
+display_name: "Generic B2B / Services (Catch-All)"
+version: 1
+quality_tier: "C"
+
+# --------------------------------------------------
+# ROUTER CLASSIFICATION
+# Empty — this is the fallback. Tries to match nothing.
+# --------------------------------------------------
+triggers:
+  keywords: []
+
+# --------------------------------------------------
+# DISCOVERY
+# --------------------------------------------------
+discovery:
+  product_seeds:
+    - business
+    - services
+    - solutions
+    - company
+
+  search_queries:
+    - '"{base}" "{market}" projects contact email -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+    - '"{base}" "{market}" companies contact -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+    - '"{base}" "{market}" firms contact -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+    - '"{base}" "{market}" services contact -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+    - '"{base}" "{market}" partnerships contact -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+    - '"{base}" "{market}" decision maker contact -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+
+  region_extra_queries:
+    europe:
+      - '"{base}" "{country}" projects contact email -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+      - '"{base}" "{country}" companies contact -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+      - '"{base}" "{country}" procurement vendor contact -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+    international:
+      - '"{base}" "{country}" projects contact email -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+      - '"{base}" "{country}" procurement vendor contact -dictionary -definition -wikipedia -wiktionary -reddit -youtube'
+
+  noise_exclusion_suffixes:
+    - -dictionary
+    - -definition
+    - -wikipedia
+    - -wiktionary
+    - -reddit
+    - -youtube
+
+  supplier_country_exclusions: []
+
+  seed_urls:
+    usa: { buyer_intent: [] }
+    uk: { buyer_intent: [] }
+    europe: { buyer_intent: [] }
+
+  directory_sources:
+    usa:
+      - type: yellow_pages
+        search: "companies"
+        description: "Yellow Pages - Business Search"
+    uk:
+      - type: yell
+        search: "companies contact"
+        description: "Yell - Business Search"
+    europe: []
+    international: []
+
+  region_markets:
+    usa: ["United States"]
+    uk: ["United Kingdom"]
+    europe: ["Europe"]
+    international: ["United States", "United Kingdom", "Canada", "Australia", "UAE", "Germany"]
+
+  europe_country_markets:
+    - Germany
+    - France
+    - Netherlands
+    - Italy
+    - Spain
+    - Poland
+    - Sweden
+
+  exclusions:
+    host_parts:
+      - google.
+      - bing.
+      - duckduckgo.
+      - yahoo.
+      - microsoft.
+      - youtube.
+      - wikipedia.
+      - facebook.
+      - instagram.
+      - twitter.
+      - x.com
+      - linkedin.
+      - baidu.
+      - zhihu.
+      - pinterest.
+      - quora.
+      - reddit.
+      - amazon.
+      - ebay.
+      - yelp.
+      - yellowpages.
+      - yell.com
+      - europages.
+      - cloudflare.
+      - dnb.
+      - zoominfo.
+      - crunchbase.
+      - glassdoor.
+      - indeed.
+      - trustpilot.
+      - shopify.com
+      - wix.com
+      - godaddy.
+      - wordpress.
+      - sentry.
+      - dictionary.
+      - gitlab.
+      - huggingface.
+      - wiktionary.
+    root_domains:
+      - cambridge.org
+      - cloudflare.com
+      - dictionary.com
+      - github.com
+      - gitlab.com
+      - huggingface.co
+      - merriam-webster.com
+      - stackoverflow.com
+      - vocabulary.com
+      - wiktionary.org
+    domain_suffixes:
+      - .ac.uk
+      - .edu
+      - .gov
+      - .mil
+    path_parts:
+      - /cart
+      - /checkout
+      - /cdn-cgi/
+      - /cookie
+      - /login
+      - /privacy
+      - /search
+      - /terms
+      - /wiki/
+      - .pdf
+    exporter_country_suffixes:
+      - .bd
+      - .cn
+      - .com.bd
+      - .com.cn
+      - .com.hk
+      - .com.in
+      - .com.pk
+      - .com.tr
+      - .com.vn
+      - .hk
+      - .in
+      - .pk
+      - .tr
+      - .vn
+
+# --------------------------------------------------
+# SCORING
+# --------------------------------------------------
+scoring:
+  weights:
+    product_fit: 20
+    buyer_intent: 30
+    reachability: 20
+    commercial_readiness: 15
+    evidence_depth: 15
+    negative_penalty: 45
+
+  keywords:
+    product_keywords:
+      - business
+      - services
+      - solutions
+      - company
+      - enterprise
+      - consulting
+      - technology
+
+    strong_buyer_keywords:
+      - "become a supplier"
+      - procurement
+      - purchasing
+      - sourcing
+      - "supplier application"
+      - "vendor application"
+      - "vendor registration"
+      - importer
+      - distributor
+      - wholesaler
+
+    ambiguous_sales_keywords:
+      - brand
+      - catalog
+      - retail
+      - trade
+      - wholesale
+
+    moderate_buyer_keywords:
+      - brand
+      - retail
+      - trade
+      - wholesale
+
+    commercial_keywords:
+      - cart
+      - catalog
+      - checkout
+      - new arrivals
+      - order
+      - shop
+      - store
+
+    platform_keywords:
+      - "advertise with us"
+      - directory
+      - marketplace
+      - platform
+      - "sponsored listings"
+
+    supplier_competitor_keywords:
+      - manufacturer
+      - manufacturing
+      - factory
+      - production
+
+    procurement_side_keywords:
+      - procurement
+      - purchasing
+      - importer
+      - "supplier application"
+      - "vendor application"
+
+    negative_keywords:
+      - advertising
+      - article
+      - careers
+      - editorial
+      - internship
+      - "job opening"
+      - magazine
+      - news
+      - newsletter
+      - publication
+      - recruitment
+      - staffing
+      - subscribe
+      - "we are hiring"
+
+    soft_negative_keywords:
+      - article
+      - editorial
+      - magazine
+      - news
+      - newsletter
+      - publication
+
+    supplier_country_markers:
+      - bangladesh
+      - china
+      - faisalabad
+      - india
+      - karachi
+      - lahore
+      - pakistan
+      - sialkot
+      - vietnam
+
+    noisy_domain_markers:
+      - cambridge.org
+      - dictionary.com
+      - merriam-webster.com
+      - vocabulary.com
+      - wiktionary.org
+
+  blocked_domains:
+    - cloudflare.com
+    - localsearch.com
+    - networkadvertising.org
+    - nike.com
+    - thryv.com
+
+  blocked_domain_markers:
+    - "dictionary."
+    - "gitlab."
+    - "huggingface."
+    - "wiktionary."
+    - "wikipedia."
+
+  blocked_tlds:
+    - ".ac.uk"
+    - ".edu"
+    - ".gov"
+    - ".mil"
+
+  exporter_country_suffixes:
+    - .bd
+    - .cn
+    - .com.bd
+    - .com.cn
+    - .com.hk
+    - .com.in
+    - .com.pk
+    - .com.tr
+    - .com.vn
+    - .hk
+    - .in
+    - .pk
+    - .tr
+    - .vn
+
+  tiers:
+    a_plus:
+      min_score: 85
+      require_hard_checks: true
+      require_buyer_evidence: true
+      require_email: decision
+    a:
+      min_score: 75
+      require_hard_checks: true
+      require_email: any
+    manual_review:
+      min_score: 55
+
+  quality_mode: balanced
+
+  pitch_angles:
+    importer: "We see you actively import in this category and would love to discuss becoming one of your trusted suppliers."
+    distributor: "We're reaching out to explore a distribution partnership for this category."
+    wholesaler: "We'd love to explore a wholesale partnership."
+    procurement_sourcing: "We offer compliance-ready production, fast sampling, and dedicated sourcing support."
+    generic: "We're reaching out to explore how we can support your supply chain."
+
+# --------------------------------------------------
+# ENRICHMENT
+# --------------------------------------------------
+enrichment:
+  likely_paths:
+    - /contact
+    - /contact-us
+    - /about
+    - /about-us
+    - /trade
+    - /b2b
+    - /vendors
+    - /vendor
+    - /suppliers
+    - /supplier
+    - /sourcing
+    - /procurement
+    - /purchasing
+    - /partnerships
+
+  high_value_path_hints:
+    - b2b
+    - procurement
+    - sourcing
+    - supplier
+    - vendor
+    - trade
+
+  contact_path_hints:
+    - about
+    - b2b
+    - business
+    - buyers
+    - company
+    - connect
+    - contact
+
+  email_classification:
+    high_quality_prefixes:
+      - b2b
+      - business
+      - buyer
+      - export
+      - import
+      - partnerships
+      - procurement
+      - purchasing
+      - sales
+      - sourcing
+      - supplier
+      - trade
+      - vendor
+      - wholesale
+    generic_business_prefixes:
+      - admin
+      - contact
+      - customerservice
+      - hello
+      - help
+      - info
+      - office
+      - orders
+      - service
+      - support
+    rejected_prefixes:
+      - abuse
+      - careers
+      - donotreply
+      - hr
+      - jobs
+      - legal
+      - media
+      - no-reply
+      - noreply
+      - postmaster
+      - press
+      - privacy
+      - recruiting
+      - webmaster
+    bad_email_markers:
+      - .png
+      - .jpg
+      - .jpeg
+      - .gif
+      - .webp
+      - sentry
+      - example.com
+      - wix.com
+      - wixpress.com
+      - mysite.com
+      - yourdomain
+      - domain.com
+      - email.com
+      - noreply@
+      - no-reply@
+      - donotreply@
+    business_freemail_domains:
+      - aol.com
+      - gmail.com
+      - hotmail.com
+      - icloud.com
+      - live.com
+      - msn.com
+      - outlook.com
+      - yahoo.com
+
+# --------------------------------------------------
+# SIGNALS
+# --------------------------------------------------
+signals:
+  cluster: generic_b2b
+  search_intent: generic_b2b
+
+  signal_catalog:
+    - name: active-growth-intent
+      why_now: "Recent growth announcements often map to near-term buying intent."
+      confidence: 0.70
+      query_templates:
+        - '{industry} {market} expansion contact'
+        - '{industry} {market} project request proposal'
