@@ -21,7 +21,26 @@ export function assertSafeConfigSlug(slug: string) {
 }
 
 export function getConfigDir() {
-  return path.resolve(process.cwd(), "..", "scraper", "configs");
+  const candidates = [
+    process.env.EXPORTFLOW_CONFIG_DIR,
+    process.env.EXPORTFLOW_CONFIG_ROOT ? path.join(process.env.EXPORTFLOW_CONFIG_ROOT, "scraper", "configs") : "",
+    path.resolve(process.cwd(), "scraper", "configs"),
+    path.resolve(process.cwd(), "..", "scraper", "configs"),
+    path.resolve(process.cwd(), "..", "configs"),
+    "/srv/exportflow/scraper/configs",
+    "/var/scraper/scraper/configs",
+    "/var/scraper/configs",
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`Config directory not found. Checked: ${candidates.join(", ")}`);
 }
 
 export function getConfigPath(slug: string) {
