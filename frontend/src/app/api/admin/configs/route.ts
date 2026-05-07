@@ -4,7 +4,7 @@ import { createConfigFromGeneric, listSpecialistConfigs } from "../../../../lib/
 
 export async function GET() {
   try {
-    return NextResponse.json({ configs: listSpecialistConfigs() });
+    return NextResponse.json({ configs: await listSpecialistConfigs() });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Could not list configs.";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -19,13 +19,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    createConfigFromGeneric({
+    await createConfigFromGeneric({
       slug: body.slug,
       displayName: body.displayName,
       triggerKeywords: Array.isArray(body.triggerKeywords) ? body.triggerKeywords : [],
       productSeeds: Array.isArray(body.productSeeds) ? body.productSeeds : [],
     });
-    return NextResponse.json({ configs: listSpecialistConfigs() });
+    return NextResponse.json({ configs: await listSpecialistConfigs() });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Could not create config.";
     return NextResponse.json({ error: message }, { status: 400 });

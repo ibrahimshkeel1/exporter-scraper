@@ -14,6 +14,9 @@ Also queries Supabase for feedback patterns from past successful runs.
 import json
 import os
 import re
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 from typing import Any, Dict, List, Optional, Tuple
 
 from .config_loader import ConfigLoader
@@ -193,7 +196,30 @@ class IndustryRouter:
         Requires a Supabase client instance.
         """
         if not supabase_client:
-            return []
+            supabase_url = (os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or "").rstrip("/")
+            service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or ""
+            if not supabase_url or not service_role_key:
+                return []
+
+            try:
+                query = (
+                    f"{supabase_url}/rest/v1/specialist_feedback"
+                    f"?select=*&config_slug=eq.{quote(config_slug, safe='')}&promoted=eq.true&order=confidence.desc&limit=10"
+                )
+                request = Request(
+                    query,
+                    headers={
+                        "apikey": service_role_key,
+                        "Authorization": f"Bearer {service_role_key}",
+                        "Accept": "application/json",
+                    },
+                )
+                with urlopen(request, timeout=10) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                return data if isinstance(data, list) else []
+            except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+                print(f"[Router] Feedback query failed: {exc}")
+                return []
 
         try:
             result = (

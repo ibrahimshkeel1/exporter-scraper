@@ -9,7 +9,7 @@ export async function GET(
   const { slug } = await params;
 
   try {
-    const yaml = readConfigYaml(slug);
+    const yaml = await readConfigYaml(slug);
 
     return NextResponse.json({
       slug,
@@ -36,7 +36,7 @@ export async function PUT(
   try {
     const body = await request.json();
     const yaml = String(body.yaml || "");
-    writeConfigYaml(slug, yaml);
+    await writeConfigYaml(slug, yaml);
     return NextResponse.json({
       slug,
       yaml,
