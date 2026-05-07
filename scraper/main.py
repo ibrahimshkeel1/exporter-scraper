@@ -137,6 +137,8 @@ def apply_job_config(args, config):
         args.a_plus_score = int(quality["a_plus_score"])
     if config.get("scoring_context") is not None:
         args.scoring_context = config["scoring_context"]
+    args.specialist_config_slug = config.get("config_slug") or targeting.get("config_slug")
+    args.specialist_job_config = config
     network = config.get("network", {}) if isinstance(config.get("network"), dict) else {}
     if config.get("proxy_pool") is not None:
         args.proxy_pool = list(config.get("proxy_pool") or [])
@@ -213,8 +215,18 @@ def _resolve_scraper_config(industry, region, job_config=None):
         from modules.config_loader import ConfigLoader
 
         router = IndustryRouter()
-        slug, config, confidence = router.classify(industry, region)
         loader = ConfigLoader()
+        forced_slug = None
+        if job_config and isinstance(job_config, dict):
+            forced_slug = job_config.get("config_slug") or job_config.get("specialist_config_slug")
+            forced_slug = str(forced_slug or "").strip()
+
+        if forced_slug:
+            slug = forced_slug
+            config = loader.load(slug)
+        else:
+            slug, config, confidence = router.classify(industry, region)
+
         if job_config and isinstance(job_config, dict):
             config = loader.merge_with_job_config(config, job_config)
         # Inject feedback if Supabase available
@@ -732,6 +744,7 @@ async def run_scraper(
     max_analyzed=None,
     search_terms=None,
     scoring_context=None,
+    job_config=None,
     proxy_pool=None,
     proxy_file=None,
 ):
@@ -773,7 +786,7 @@ async def run_scraper(
         ) from exc
 
     # Resolve specialist config
-    config_slug, scraper_config = _resolve_scraper_config(industry, region)
+    config_slug, scraper_config = _resolve_scraper_config(industry, region, job_config)
 
     discovery_limit = compute_discovery_limit(
         limit=limit,
@@ -1352,6 +1365,7 @@ async def run_hunt_first_a_plus(
     job_id=None,
     proxy_pool=None,
     proxy_file=None,
+    job_config=None,
 ):
     print(
         f"Starting A+ hunt | Region: {region} | Industry: {industry} | Hard stop: {max_analyzed} analyzed candidates"
@@ -1381,7 +1395,7 @@ async def run_hunt_first_a_plus(
     from modules.export import LeadExport
     from modules.scoring import LeadScoring
 
-    config_slug, scraper_config = _resolve_scraper_config(industry, region)
+    config_slug, scraper_config = _resolve_scraper_config(industry, region, job_config)
 
     run_id = f"hunt-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
     start_time = time.perf_counter()
@@ -1585,6 +1599,7 @@ async def run_scraper_adaptive(
     max_analyzed=None,
     search_terms=None,
     scoring_context=None,
+    job_config=None,
     proxy_pool=None,
     proxy_file=None,
 ):
@@ -1627,7 +1642,7 @@ async def run_scraper_adaptive(
             "Missing dependency: aiohttp. Install with `pip install -r scraper/requirements.txt`."
         ) from exc
 
-    config_slug, scraper_config = _resolve_scraper_config(industry, region)
+    config_slug, scraper_config = _resolve_scraper_config(industry, region, job_config)
 
     discovery_limit = compute_discovery_limit(
         limit=limit,
@@ -2159,7 +2174,7 @@ if __name__ == "__main__":
         default=None,
         help="Optional file containing one proxy URL per line for discovery rotation.",
     )
-    parser.set_defaults(scoring_context=None)
+    parser.set_defaults(scoring_context=None, specialist_config_slug=None, specialist_job_config=None)
     parser.add_argument(
         "--legacy",
         action="store_true",
@@ -2184,6 +2199,7 @@ if __name__ == "__main__":
                 job_id=args.job_id,
                 proxy_pool=args.proxy_pool,
                 proxy_file=args.proxy_file,
+                job_config=args.specialist_job_config,
             ))
         elif args.legacy:
             asyncio.run(run_scraper(
@@ -2205,6 +2221,7 @@ if __name__ == "__main__":
                 scoring_context=args.scoring_context,
                 proxy_pool=args.proxy_pool,
                 proxy_file=args.proxy_file,
+                job_config=args.specialist_job_config,
             ))
         else:
             asyncio.run(run_scraper_adaptive(
@@ -2226,6 +2243,7 @@ if __name__ == "__main__":
                 scoring_context=args.scoring_context,
                 proxy_pool=args.proxy_pool,
                 proxy_file=args.proxy_file,
+                job_config=args.specialist_job_config,
             ))
     except Exception as exc:
         emit_progress(

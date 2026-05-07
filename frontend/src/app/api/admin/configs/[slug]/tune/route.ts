@@ -12,6 +12,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { assertAdmin } from "../../../../../../lib/api-auth";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
@@ -32,7 +33,11 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 500 },
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 800,
+          responseMimeType: "application/json",
+        },
       }),
     }
   );
@@ -51,7 +56,13 @@ function parseGeminiJson(raw: string): Record<string, unknown> {
     .replace(/^```\s*/i, "")
     .replace(/\s*```$/, "")
     .trim();
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error("Gemini did not return valid JSON.");
+  }
 }
 
 function extractConfigSummary(yaml: string): string {
@@ -91,18 +102,23 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const admin = assertAdmin(request);
+  if (!admin.ok) {
+    return NextResponse.json({ error: admin.error }, { status: 401 });
+  }
+
   const { slug } = await params;
 
   try {
     const body = await request.json();
-    const { action, configYaml, jobSummary, auditSummary } = body;
+    const { action, configYaml, jobSummary, auditSummary, scenario, region, refinedIndustry } = body;
 
     switch (action) {
       case "analyze": {
-        return handleAnalyze(slug, configYaml, jobSummary, auditSummary);
+        return handleAnalyze(slug, configYaml, jobSummary, auditSummary, scenario, region, refinedIndustry);
       }
       case "critic": {
-        return handleCritic(slug, configYaml, jobSummary);
+        return handleCritic(slug, configYaml, jobSummary, scenario, region, refinedIndustry);
       }
       default: {
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
@@ -124,6 +140,9 @@ async function handleAnalyze(
   configYaml: string,
   jobSummary?: string,
   auditSummary?: string,
+  scenario?: string,
+  region?: string,
+  refinedIndustry?: string,
 ) {
   if (!GEMINI_API_KEY) {
     return NextResponse.json(
@@ -142,7 +161,9 @@ Rules:
 2. Suggest keyword ADDITIONS for scoring (buyer_intent, product_fit)
 3. Suggest domain/path EXCLUSION additions or relaxations
 4. NEVER suggest removing existing queries/keywords — only ADD
-5. Return ONLY valid JSON with this structure:
+5. Keep cost under control: return at most 6 high-impact suggestions
+6. Tune for the parent category, but use the scenario as a representative test case
+7. Return ONLY valid JSON with this structure:
 {
   "diagnosis": "Brief analysis of what's working and what's not",
   "score": 0-10 quality score for current config,
@@ -161,6 +182,10 @@ Rules:
   
 Current config summary:
 ${configSummary.slice(0, 1500)}
+
+Representative scenario: ${scenario || "not supplied"}
+Target region: ${region || "not supplied"}
+Refined industry: ${refinedIndustry || "not supplied"}
 
 ${jobSummary ? `Job run summary:\n${jobSummary.slice(0, 1200)}` : "No job results yet."}
 ${auditSummary ? `\nAudit/rejects summary:\n${auditSummary.slice(0, 800)}` : ""}
@@ -187,6 +212,9 @@ async function handleCritic(
   slug: string,
   configYaml: string,
   jobSummary?: string,
+  scenario?: string,
+  region?: string,
+  refinedIndustry?: string,
 ) {
   if (!GEMINI_API_KEY) {
     return NextResponse.json(
@@ -206,6 +234,7 @@ Evaluate:
 3. Are supplier-country exclusions appropriate?
 4. Do seed URLs cover major known buyers in this industry?
 5. Do job results show high-quality leads (score 80+), not directory fluff?
+6. Would this parent category generalize to adjacent user requests, not only one exact phrase?
 
 Return ONLY valid JSON:
 {
@@ -229,6 +258,10 @@ Tier claimed: A+
 
 Config summary:
 ${configSummary.slice(0, 1500)}
+
+Representative scenario: ${scenario || "not supplied"}
+Target region: ${region || "not supplied"}
+Refined industry: ${refinedIndustry || "not supplied"}
 
 ${jobSummary ? `Latest job results:\n${jobSummary.slice(0, 1200)}` : "No job results available."}
 

@@ -1,12 +1,6 @@
-/**
- * Admin Config YAML Loader
- * ========================
- * GET /api/admin/configs/[slug]/yaml  →  Returns the raw YAML content
- */
-
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+import { assertAdmin } from "../../../../../../lib/api-auth";
+import { readConfigYaml, writeConfigYaml } from "../../../../../../lib/admin-configs";
 
 export async function GET(
   _request: NextRequest,
@@ -15,20 +9,7 @@ export async function GET(
   const { slug } = await params;
 
   try {
-    // Try loading from scraper configs directory
-    const configPath = path.resolve(
-      process.cwd(),
-      "..",
-      "scraper",
-      "configs",
-      `${slug}.yml`
-    );
-
-    if (!fs.existsSync(configPath)) {
-      return NextResponse.json({ error: `Config not found: ${slug}` }, { status: 404 });
-    }
-
-    const yaml = fs.readFileSync(configPath, "utf-8");
+    const yaml = readConfigYaml(slug);
 
     return NextResponse.json({
       slug,
@@ -38,5 +19,31 @@ export async function GET(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const admin = assertAdmin(request);
+  if (!admin.ok) {
+    return NextResponse.json({ error: admin.error }, { status: 401 });
+  }
+
+  const { slug } = await params;
+
+  try {
+    const body = await request.json();
+    const yaml = String(body.yaml || "");
+    writeConfigYaml(slug, yaml);
+    return NextResponse.json({
+      slug,
+      yaml,
+      size_bytes: Buffer.byteLength(yaml, "utf-8"),
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Could not save config.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
