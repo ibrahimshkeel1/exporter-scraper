@@ -15,7 +15,7 @@ type SpecialistConfigMeta = {
 };
 
 type TuneSuggestion = {
-  type: "add_search_query" | "add_keyword" | "add_exclusion" | "add_seed_url" | "relax_filter";
+  type: "add_search_query" | "add_keyword" | "add_exclusion" | "add_seed_url";
   target: string;
   value: string;
   reasoning: string;
@@ -49,6 +49,24 @@ type TuneStep = {
   type: "analysis" | "applied" | "test_run" | "critic" | "saved" | "created";
   timestamp: number;
   message: string;
+  context?: TuningContext;
+  jobId?: string;
+  score?: number;
+  approved?: boolean;
+  tier?: string;
+  verdict?: string;
+  warnings?: string[];
+};
+
+type TuningContext = {
+  scenario?: string;
+  refinedIndustry?: string;
+  region?: string;
+  searchTerms?: string;
+  testLimit?: number;
+  maxAnalyzed?: number;
+  jobSummary?: string;
+  auditSummary?: string;
 };
 
 const STORAGE_KEY = "exportflow_admin_password";
@@ -68,6 +86,111 @@ function addYamlListItem(yaml: string, sectionKey: string, value: string) {
   const lineStart = yaml.lastIndexOf("\n", index) + 1;
   const indent = yaml.slice(lineStart, index).length + 2;
   return `${yaml.slice(0, insertAt)}${" ".repeat(indent)}- ${JSON.stringify(value)}\n${yaml.slice(insertAt)}`;
+}
+
+function lineIndent(line: string) {
+  return line.match(/^\s*/)?.[0].length || 0;
+}
+
+function findBlockEnd(lines: string[], startIndex: number, indent: number) {
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    if (lines[index].trim() && lineIndent(lines[index]) <= indent) {
+      return index;
+    }
+  }
+  return lines.length;
+}
+
+function normalizeRegionKey(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "united states" || normalized === "us") return "usa";
+  if (normalized === "united kingdom") return "uk";
+  return normalized.replace(/[^a-z0-9_-]/g, "-") || "international";
+}
+
+function parseSeedSuggestion(value: string) {
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (parsed && typeof parsed === "object") {
+      const url = String(parsed.url || parsed.href || "").trim();
+      if (url) {
+        return {
+          url,
+          label: String(parsed.label || parsed.name || new URL(url).hostname.replace(/^www\./, "")).trim(),
+        };
+      }
+    }
+  } catch {
+    // Plain URL suggestions are expected.
+  }
+
+  const url = value.trim();
+  let label = url;
+  try {
+    label = new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    label = url.replace(/^https?:\/\//, "").split("/")[0] || url;
+  }
+
+  return { url, label };
+}
+
+function addYamlSeedUrl(yaml: string, target: string, value: string, selectedRegion: string) {
+  const seed = parseSeedSuggestion(value);
+  if (!seed.url) return yaml;
+
+  const targetMatch = target.match(/seed_urls\.([a-z0-9_-]+)(?:\.([a-z0-9_-]+))?/i);
+  const regionKey = normalizeRegionKey(targetMatch?.[1] || selectedRegion);
+  const groupKey = targetMatch?.[2] || "buyer_intent";
+  const lines = yaml.split("\n");
+  const seedUrlsIndex = lines.findIndex((line) => lineIndent(line) === 2 && line.trim() === "seed_urls:");
+  if (seedUrlsIndex === -1) return yaml;
+
+  const seedUrlsEnd = findBlockEnd(lines, seedUrlsIndex, 2);
+  let regionIndex = -1;
+  for (let index = seedUrlsIndex + 1; index < seedUrlsEnd; index += 1) {
+    if (lineIndent(lines[index]) === 4 && lines[index].trim().startsWith(`${regionKey}:`)) {
+      regionIndex = index;
+      break;
+    }
+  }
+
+  const itemLines = [
+    `        - url: ${JSON.stringify(seed.url)}`,
+    `          label: ${JSON.stringify(seed.label)}`,
+  ];
+
+  if (regionIndex === -1) {
+    lines.splice(seedUrlsEnd, 0, `    ${regionKey}:`, `      ${groupKey}:`, ...itemLines);
+    return lines.join("\n");
+  }
+
+  if (lines[regionIndex].trim() !== `${regionKey}:`) {
+    lines.splice(regionIndex, 1, `    ${regionKey}:`, `      ${groupKey}:`, ...itemLines);
+    return lines.join("\n");
+  }
+
+  const regionEnd = findBlockEnd(lines, regionIndex, 4);
+  let groupIndex = -1;
+  for (let index = regionIndex + 1; index < regionEnd; index += 1) {
+    if (lineIndent(lines[index]) === 6 && lines[index].trim().startsWith(`${groupKey}:`)) {
+      groupIndex = index;
+      break;
+    }
+  }
+
+  if (groupIndex === -1) {
+    lines.splice(regionEnd, 0, `      ${groupKey}:`, ...itemLines);
+    return lines.join("\n");
+  }
+
+  if (lines[groupIndex].trim() !== `${groupKey}:`) {
+    lines.splice(groupIndex, 1, `      ${groupKey}:`, ...itemLines);
+    return lines.join("\n");
+  }
+
+  lines.splice(groupIndex + 1, 0, ...itemLines);
+  return lines.join("\n");
 }
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
@@ -116,6 +239,7 @@ export function ConfigTuner() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const liveTerminalRef = useRef<HTMLDivElement | null>(null);
+  const historyContextSlugRef = useRef("");
 
   const selectedConfig = useMemo(
     () => configs.find((config) => config.slug === selectedSlug),
@@ -128,11 +252,83 @@ export function ConfigTuner() {
     liveTerminalRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [lastJobId]);
 
-  const addStep = (type: TuneStep["type"], stepMessage: string) => {
-    setTuneSteps((prev) => [
-      ...prev,
-      { id: `${type}-${Date.now()}`, type, timestamp: Date.now(), message: stepMessage },
-    ]);
+  const currentContext = (): TuningContext => ({
+    scenario,
+    refinedIndustry,
+    region,
+    searchTerms,
+    testLimit,
+    maxAnalyzed,
+    jobSummary,
+    auditSummary,
+  });
+
+  const applyLatestHistoryContext = (slug: string, history: TuneStep[]) => {
+    if (historyContextSlugRef.current === slug) return;
+
+    const latestContext = [...history].reverse().find((step) => step.context)?.context;
+    if (latestContext) {
+      if (latestContext.scenario) setScenario(latestContext.scenario);
+      if (latestContext.refinedIndustry) setRefinedIndustry(latestContext.refinedIndustry);
+      if (latestContext.region) setRegion(latestContext.region);
+      if (latestContext.searchTerms) setSearchTerms(latestContext.searchTerms);
+      if (typeof latestContext.testLimit === "number") setTestLimit(latestContext.testLimit);
+      if (typeof latestContext.maxAnalyzed === "number") setMaxAnalyzed(latestContext.maxAnalyzed);
+      if (typeof latestContext.jobSummary === "string") setJobSummary(latestContext.jobSummary);
+      if (typeof latestContext.auditSummary === "string") setAuditSummary(latestContext.auditSummary);
+    }
+
+    const latestJob = [...history].reverse().find((step) => step.jobId);
+    if (latestJob?.jobId) {
+      setLastJobId(latestJob.jobId);
+    }
+
+    historyContextSlugRef.current = slug;
+  };
+
+  const loadTuningHistory = useCallback(async (slug: string, password: string) => {
+    if (!slug || !password) return;
+
+    const response = await fetch(`/api/admin/configs/${slug}/history`, {
+      headers: { "x-admin-password": password },
+    });
+    const payload = await readJsonResponse<{ history?: TuneStep[]; error?: string }>(response);
+    if (!response.ok) throw new Error(payload.error || "Could not load tuning history.");
+
+    const history = payload.history || [];
+    setTuneSteps(history);
+    applyLatestHistoryContext(slug, history);
+  }, []);
+
+  const addStep = (type: TuneStep["type"], stepMessage: string, extra: Partial<TuneStep> = {}) => {
+    const step: TuneStep = {
+      id: `${type}-${Date.now()}`,
+      type,
+      timestamp: Date.now(),
+      message: stepMessage,
+      context: currentContext(),
+      ...extra,
+    };
+
+    setTuneSteps((prev) => [...prev, step]);
+
+    if (selectedSlug && adminPassword) {
+      fetch(`/api/admin/configs/${selectedSlug}/history`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": adminPassword,
+        },
+        body: JSON.stringify({ entry: step }),
+      })
+        .then(async (response) => {
+          const payload = await readJsonResponse<{ history?: TuneStep[] }>(response);
+          if (response.ok && payload.history) {
+            setTuneSteps(payload.history);
+          }
+        })
+        .catch(() => undefined);
+    }
   };
 
   const loadConfigs = useCallback(async () => {
@@ -149,6 +345,19 @@ export function ConfigTuner() {
     setAdminPassword(localStorage.getItem(STORAGE_KEY) || "");
     loadConfigs().catch((err) => setError(err instanceof Error ? err.message : "Failed to load configs."));
   }, [loadConfigs]);
+
+  useEffect(() => {
+    historyContextSlugRef.current = "";
+    setTuneSteps([]);
+    setLastJobId("");
+  }, [selectedSlug]);
+
+  useEffect(() => {
+    if (!selectedSlug || !adminPassword) return;
+    loadTuningHistory(selectedSlug, adminPassword).catch((err) => {
+      setError(err instanceof Error ? err.message : "Could not load tuning history.");
+    });
+  }, [selectedSlug, adminPassword, loadTuningHistory]);
 
   const loadConfigYaml = useCallback(async (slug: string) => {
     try {
@@ -202,9 +411,10 @@ export function ConfigTuner() {
       if (!response.ok && response.status !== 202) {
         throw new Error(payload.error || "Test run failed.");
       }
-      setLastJobId(payload.jobId || payload.job?.id || "");
+      const jobId = payload.jobId || payload.job?.id || "";
+      setLastJobId(jobId);
       setMessage(payload.warning ? `Job created, but not queued: ${payload.warning}` : "Tuning test queued.");
-      addStep("test_run", `Queued ${testLimit}-lead ${selectedSlug} test for ${region}.`);
+      addStep("test_run", `Queued ${testLimit}-lead ${selectedSlug} test for ${region}.`, { jobId });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Test run failed.");
     } finally {
@@ -238,7 +448,10 @@ export function ConfigTuner() {
 
       setTuneResult({ ...result, suggestions: result.suggestions || [], warnings: result.warnings || [] });
       setAcceptedSuggestions(new Set());
-      addStep("analysis", `Gemini scored the config ${result.score}/10.`);
+      addStep("analysis", `Gemini scored the config ${result.score}/10.`, {
+        score: result.score,
+        warnings: result.warnings || [],
+      });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Tune analysis failed.");
     } finally {
@@ -262,7 +475,10 @@ export function ConfigTuner() {
         const targetKey = suggestion.target.split(".").pop() || "strong_buyer_keywords";
         updatedYaml = addYamlListItem(updatedYaml, targetKey, suggestion.value);
       } else if (suggestion.type === "add_exclusion") {
-        updatedYaml = addYamlListItem(updatedYaml, "host_parts", suggestion.value);
+        const targetKey = suggestion.target.split(".").pop() || "host_parts";
+        updatedYaml = addYamlListItem(updatedYaml, targetKey, suggestion.value);
+      } else if (suggestion.type === "add_seed_url") {
+        updatedYaml = addYamlSeedUrl(updatedYaml, suggestion.target, suggestion.value, region);
       }
     }
 
@@ -316,7 +532,11 @@ export function ConfigTuner() {
       if (!response.ok || result.error) throw new Error(result.error || "Critic check failed.");
 
       setCriticResult(result);
-      addStep("critic", result.approved ? `Critic approved ${selectedSlug} as ${result.tier}.` : `Critic needs work: ${result.verdict}`);
+      addStep("critic", result.approved ? `Critic approved ${selectedSlug} as ${result.tier}.` : `Critic needs work: ${result.verdict}`, {
+        approved: result.approved,
+        tier: result.tier,
+        verdict: result.verdict,
+      });
       if (result.approved) {
         await handleSaveConfig(`Critic approved ${selectedSlug}; tuned YAML saved.`);
       }
@@ -379,6 +599,13 @@ export function ConfigTuner() {
           <p className="mt-1 max-w-3xl text-xs text-[#8b949e]">
             Tune one parent category at a time with bounded tests. Gemini analysis and critic checks are single calls; scraper tests are capped by lead and page limits.
           </p>
+          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[#8b949e]">
+            {["Test", "Analyze", "Apply", "Save", "Retest", "Critic"].map((label, index) => (
+              <span key={label} className="rounded border border-[#30363d] bg-[#0d1117] px-2 py-0.5">
+                {index + 1}. {label}
+              </span>
+            ))}
+          </div>
         </div>
         <input
           type="password"
@@ -559,12 +786,25 @@ export function ConfigTuner() {
 
       {tuneSteps.length > 0 && (
         <div className="rounded border border-[#30363d] bg-[#0d1117] p-3">
-          <h3 className="mb-2 text-xs font-semibold text-[#8b949e]">Tuning history</h3>
-          <div className="flex flex-col gap-1">
-            {tuneSteps.map((step) => (
-              <div key={step.id} className="flex items-center gap-2 text-xs">
-                <span className="text-[#8b949e]">{new Date(step.timestamp).toLocaleTimeString()}</span>
-                <span className="text-[#c9d1d9]">{step.message}</span>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold text-[#8b949e]">Tuning history</h3>
+            <span className="text-[10px] text-[#8b949e]">{selectedSlug}</span>
+          </div>
+          <div className="flex max-h-48 flex-col gap-1 overflow-auto">
+            {[...tuneSteps].reverse().map((step) => (
+              <div key={step.id} className="rounded border border-[#21262d] bg-[#010409] px-2 py-1.5 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[#8b949e]">{new Date(step.timestamp).toLocaleTimeString()}</span>
+                  <span className="text-[#c9d1d9]">{step.message}</span>
+                  {step.jobId && <span className="font-mono text-[10px] text-[#58a6ff]">job {step.jobId.slice(0, 8)}</span>}
+                  {typeof step.score === "number" && <span className="text-[10px] text-[#d29922]">score {step.score}/10</span>}
+                  {step.tier && <span className="text-[10px] text-[#8b949e]">{step.tier}</span>}
+                </div>
+                {step.context?.scenario && (
+                  <div className="mt-0.5 truncate text-[10px] text-[#8b949e]">
+                    {step.context.region || region} - {step.context.scenario}
+                  </div>
+                )}
               </div>
             ))}
           </div>

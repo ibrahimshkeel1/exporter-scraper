@@ -12,6 +12,31 @@ export type SpecialistConfigMeta = {
   keyword_count: number;
 };
 
+export type TuningHistoryContext = {
+  scenario?: string;
+  refinedIndustry?: string;
+  region?: string;
+  searchTerms?: string;
+  testLimit?: number;
+  maxAnalyzed?: number;
+  jobSummary?: string;
+  auditSummary?: string;
+};
+
+export type TuningHistoryEntry = {
+  id: string;
+  type: "analysis" | "applied" | "test_run" | "critic" | "saved" | "created";
+  timestamp: number;
+  message: string;
+  context?: TuningHistoryContext;
+  jobId?: string;
+  score?: number;
+  approved?: boolean;
+  tier?: string;
+  verdict?: string;
+  warnings?: string[];
+};
+
 type ConfigManifestEntry = {
   yaml: string;
   updated_at?: string;
@@ -26,6 +51,7 @@ type ConfigManifest = {
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const CONFIG_BUCKET = process.env.EXPORTFLOW_CONFIG_BUCKET || "specialist-configs";
 const CONFIG_MANIFEST_PATH = process.env.EXPORTFLOW_CONFIG_MANIFEST || "index.json";
+const TUNING_HISTORY_LIMIT = 100;
 
 const LOCAL_CONFIG_CANDIDATES = [
   process.env.EXPORTFLOW_CONFIG_DIR,
@@ -84,6 +110,10 @@ function manifestEntryYaml(entry: ConfigManifestEntry | string | undefined) {
   if (!entry) return "";
   if (typeof entry === "string") return entry;
   return String(entry.yaml || "");
+}
+
+function tuningHistoryPath(slug: string) {
+  return `tuning-history/${slug}.json`;
 }
 
 function normalizeManifest(raw: unknown): ConfigManifest {
@@ -198,6 +228,59 @@ async function saveManifest(manifest: ConfigManifest) {
   }
 }
 
+function normalizeTuningHistoryEntry(value: unknown): TuningHistoryEntry | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const entry = value as Record<string, unknown>;
+  const type = String(entry.type || "");
+  if (!["analysis", "applied", "test_run", "critic", "saved", "created"].includes(type)) {
+    return null;
+  }
+
+  const context = entry.context && typeof entry.context === "object" && !Array.isArray(entry.context)
+    ? entry.context as Record<string, unknown>
+    : {};
+
+  return {
+    id: String(entry.id || `${type}-${Date.now()}`),
+    type: type as TuningHistoryEntry["type"],
+    timestamp: Number(entry.timestamp || Date.now()),
+    message: String(entry.message || ""),
+    context: {
+      scenario: typeof context.scenario === "string" ? context.scenario : undefined,
+      refinedIndustry: typeof context.refinedIndustry === "string" ? context.refinedIndustry : undefined,
+      region: typeof context.region === "string" ? context.region : undefined,
+      searchTerms: typeof context.searchTerms === "string" ? context.searchTerms : undefined,
+      testLimit: typeof context.testLimit === "number" ? context.testLimit : undefined,
+      maxAnalyzed: typeof context.maxAnalyzed === "number" ? context.maxAnalyzed : undefined,
+      jobSummary: typeof context.jobSummary === "string" ? context.jobSummary : undefined,
+      auditSummary: typeof context.auditSummary === "string" ? context.auditSummary : undefined,
+    },
+    jobId: typeof entry.jobId === "string" ? entry.jobId : undefined,
+    score: typeof entry.score === "number" ? entry.score : undefined,
+    approved: typeof entry.approved === "boolean" ? entry.approved : undefined,
+    tier: typeof entry.tier === "string" ? entry.tier : undefined,
+    verdict: typeof entry.verdict === "string" ? entry.verdict : undefined,
+    warnings: Array.isArray(entry.warnings) ? entry.warnings.map(String).slice(0, 8) : undefined,
+  };
+}
+
+function normalizeTuningHistory(raw: unknown): TuningHistoryEntry[] {
+  const entries = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).history)
+      ? (raw as Record<string, unknown>).history as unknown[]
+      : [];
+
+  const normalizedEntries = entries
+    .map(normalizeTuningHistoryEntry)
+    .filter((entry): entry is TuningHistoryEntry => Boolean(entry));
+
+  return normalizedEntries
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .slice(-TUNING_HISTORY_LIMIT);
+}
+
 async function loadManifest() {
   const remoteManifest = await loadRemoteManifest();
   if (remoteManifest) {
@@ -272,6 +355,58 @@ export async function writeConfigYaml(slug: string, yaml: string) {
   };
   await saveManifest(manifest);
   return `${CONFIG_BUCKET}/${CONFIG_MANIFEST_PATH}`;
+}
+
+export async function readTuningHistory(slug: string) {
+  const safeSlug = assertSafeConfigSlug(slug);
+
+  try {
+    const supabase = createAdminSupabase();
+    const { data, error } = await supabase.storage.from(CONFIG_BUCKET).download(tuningHistoryPath(safeSlug));
+    if (error || !data) {
+      return [];
+    }
+
+    const text = await data.text();
+    if (!text.trim()) {
+      return [];
+    }
+
+    return normalizeTuningHistory(JSON.parse(text));
+  } catch {
+    return [];
+  }
+}
+
+export async function appendTuningHistory(slug: string, entry: Partial<TuningHistoryEntry>) {
+  const safeSlug = assertSafeConfigSlug(slug);
+  const normalizedEntry = normalizeTuningHistoryEntry({
+    ...entry,
+    id: entry.id || `${entry.type || "step"}-${Date.now()}`,
+    timestamp: entry.timestamp || Date.now(),
+  });
+
+  if (!normalizedEntry) {
+    throw new Error("Invalid tuning history entry.");
+  }
+
+  const history = normalizeTuningHistory([...(await readTuningHistory(safeSlug)), normalizedEntry]);
+  const supabase = await ensureConfigBucket();
+  const { error } = await supabase.storage.from(CONFIG_BUCKET).upload(
+    tuningHistoryPath(safeSlug),
+    Buffer.from(JSON.stringify({ slug: safeSlug, history }, null, 2), "utf-8"),
+    {
+      upsert: true,
+      contentType: "application/json",
+      cacheControl: "0",
+    },
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  return history;
 }
 
 function yamlList(values: string[]) {

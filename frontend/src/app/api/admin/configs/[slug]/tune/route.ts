@@ -16,6 +16,7 @@ import { assertAdmin } from "../../../../../../lib/api-auth";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const SUGGESTION_TYPES = ["add_search_query", "add_keyword", "add_exclusion", "add_seed_url"] as const;
 const ANALYZE_RESULT_SHAPE = `{
   "diagnosis": string,
   "score": number,
@@ -38,14 +39,81 @@ const CRITIC_RESULT_SHAPE = `{
   "gaps": [string],
   "verdict": string
 }`;
+const ANALYZE_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    diagnosis: { type: "STRING" },
+    score: { type: "NUMBER" },
+    suggestions: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          type: { type: "STRING", enum: SUGGESTION_TYPES },
+          target: { type: "STRING" },
+          value: { type: "STRING" },
+          reasoning: { type: "STRING" },
+        },
+        required: ["type", "target", "value", "reasoning"],
+      },
+    },
+    warnings: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+    },
+  },
+  required: ["diagnosis", "score", "suggestions", "warnings"],
+};
+const CRITIC_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    approved: { type: "BOOLEAN" },
+    tier: { type: "STRING", enum: ["A+", "A", "B", "C"] },
+    confidence: { type: "NUMBER" },
+    score_breakdown: {
+      type: "OBJECT",
+      properties: {
+        query_specificity: { type: "NUMBER" },
+        keyword_coverage: { type: "NUMBER" },
+        seed_coverage: { type: "NUMBER" },
+        exclusion_accuracy: { type: "NUMBER" },
+        result_quality: { type: "NUMBER" },
+      },
+      required: ["query_specificity", "keyword_coverage", "seed_coverage", "exclusion_accuracy", "result_quality"],
+    },
+    strengths: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+    },
+    gaps: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+    },
+    verdict: { type: "STRING" },
+  },
+  required: ["approved", "tier", "confidence", "score_breakdown", "strengths", "gaps", "verdict"],
+};
 
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
 
-async function callGemini(systemPrompt: string, userPrompt: string): Promise<string> {
+async function callGemini(
+  systemPrompt: string,
+  userPrompt: string,
+  responseSchema?: Record<string, unknown>,
+): Promise<string> {
   if (!GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY not configured");
+  }
+
+  const generationConfig: Record<string, unknown> = {
+    temperature: 0.1,
+    maxOutputTokens: 1200,
+    responseMimeType: "application/json",
+  };
+  if (responseSchema) {
+    generationConfig.responseSchema = responseSchema;
   }
 
   const response = await fetch(
@@ -55,11 +123,7 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 800,
-          responseMimeType: "application/json",
-        },
+        generationConfig,
       }),
     }
   );
@@ -160,7 +224,12 @@ function parseGeminiJson(raw: string): Record<string, unknown> | null {
   return null;
 }
 
-async function repairGeminiJson(raw: string, shape: string, kind: "analyze" | "critic"): Promise<Record<string, unknown> | null> {
+async function repairGeminiJson(
+  raw: string,
+  shape: string,
+  kind: "analyze" | "critic",
+  responseSchema: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
   if (!raw.trim()) return null;
 
   const repairSystemPrompt = `You are a strict JSON repair assistant for a lead-generation tuning tool.
@@ -172,8 +241,87 @@ ${shape}
 Original raw output:
 ${raw.slice(0, 3500)}`;
 
-  const repairedRaw = await callGemini(repairSystemPrompt, repairUserPrompt);
+  const repairedRaw = await callGemini(repairSystemPrompt, repairUserPrompt, responseSchema);
   return parseGeminiJson(repairedRaw);
+}
+
+function normalizeTenPointScore(value: unknown) {
+  let score = Number(value);
+  if (!Number.isFinite(score)) return 0;
+  if (score > 10 && score <= 100) score /= 10;
+  if (score > 0 && score <= 1) score *= 10;
+  return Math.max(0, Math.min(10, Math.round(score * 10) / 10));
+}
+
+function normalizeConfidence(value: unknown) {
+  let confidence = Number(value);
+  if (!Number.isFinite(confidence)) return 0;
+  if (confidence > 1 && confidence <= 10) confidence /= 10;
+  if (confidence > 1 && confidence <= 100) confidence /= 100;
+  return Math.max(0, Math.min(1, Math.round(confidence * 100) / 100));
+}
+
+function asStringList(value: unknown, limit: number) {
+  return Array.isArray(value) ? value.map(String).map((item) => item.trim()).filter(Boolean).slice(0, limit) : [];
+}
+
+function normalizeAnalyzeResult(slug: string, rawResult: Record<string, unknown>) {
+  const payload = (rawResult.result && typeof rawResult.result === "object" && !Array.isArray(rawResult.result))
+    ? rawResult.result as Record<string, unknown>
+    : rawResult;
+  const suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
+
+  return {
+    action: "analyze",
+    slug,
+    diagnosis: String(payload.diagnosis || "Gemini returned a sparse tuning analysis."),
+    score: normalizeTenPointScore(payload.score),
+    suggestions: suggestions
+      .map((item) => {
+        const suggestion = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        const type = String(suggestion.type || "");
+        if (!SUGGESTION_TYPES.includes(type as typeof SUGGESTION_TYPES[number])) return null;
+        const value = String(suggestion.value || "").trim();
+        if (!value) return null;
+
+        return {
+          type,
+          target: String(suggestion.target || "").trim() || "discovery.search_queries",
+          value,
+          reasoning: String(suggestion.reasoning || "Improves category-specific lead quality."),
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 6),
+    warnings: asStringList(payload.warnings, 6),
+  };
+}
+
+function normalizeCriticResult(slug: string, rawResult: Record<string, unknown>) {
+  const payload = (rawResult.result && typeof rawResult.result === "object" && !Array.isArray(rawResult.result))
+    ? rawResult.result as Record<string, unknown>
+    : rawResult;
+  const scoreBreakdown = payload.score_breakdown && typeof payload.score_breakdown === "object" && !Array.isArray(payload.score_breakdown)
+    ? payload.score_breakdown as Record<string, unknown>
+    : {};
+
+  return {
+    action: "critic",
+    slug,
+    approved: Boolean(payload.approved),
+    tier: ["A+", "A", "B", "C"].includes(String(payload.tier)) ? String(payload.tier) : "C",
+    confidence: normalizeConfidence(payload.confidence),
+    score_breakdown: {
+      query_specificity: normalizeTenPointScore(scoreBreakdown.query_specificity),
+      keyword_coverage: normalizeTenPointScore(scoreBreakdown.keyword_coverage),
+      seed_coverage: normalizeTenPointScore(scoreBreakdown.seed_coverage),
+      exclusion_accuracy: normalizeTenPointScore(scoreBreakdown.exclusion_accuracy),
+      result_quality: normalizeTenPointScore(scoreBreakdown.result_quality),
+    },
+    strengths: asStringList(payload.strengths, 8),
+    gaps: asStringList(payload.gaps, 8),
+    verdict: String(payload.verdict || "No critic verdict returned."),
+  };
 }
 
 function buildAnalyzeFallback(slug: string, raw: string) {
@@ -308,14 +456,14 @@ Rules:
 4. NEVER suggest removing existing queries/keywords — only ADD
 5. Keep cost under control: return at most 6 high-impact suggestions
 6. Tune for the parent category, but use the scenario as a representative test case
-7. Return ONLY valid JSON with this structure:
+7. Return ONLY valid JSON. Use a 0-10 score, not a percentage. Use this structure:
 {
   "diagnosis": "Brief analysis of what's working and what's not",
-  "score": 0-10 quality score for current config,
+  "score": 7,
   "suggestions": [
     {
-      "type": "add_search_query" | "add_keyword" | "add_exclusion" | "add_seed_url" | "relax_filter",
-      "target": "discovery.search_queries" | "scoring.keywords.strong_buyer_keywords" | "scoring.keywords.product_keywords" | "discovery.seed_urls.usa" | etc,
+      "type": "add_search_query",
+      "target": "discovery.search_queries",
       "value": "The exact value to add",
       "reasoning": "Why this improves results"
     }
@@ -337,10 +485,10 @@ ${auditSummary ? `\nAudit/rejects summary:\n${auditSummary.slice(0, 800)}` : ""}
 
 Analyze and suggest tuning changes. Be specific — give exact search queries and keywords.`;
 
-  const raw = await callGemini(systemPrompt, userPrompt);
+  const raw = await callGemini(systemPrompt, userPrompt, ANALYZE_RESPONSE_SCHEMA);
   let result = parseGeminiJson(raw);
   if (!result) {
-    result = await repairGeminiJson(raw, ANALYZE_RESULT_SHAPE, "analyze");
+    result = await repairGeminiJson(raw, ANALYZE_RESULT_SHAPE, "analyze", ANALYZE_RESPONSE_SCHEMA);
   }
 
   if (!result) {
@@ -351,9 +499,7 @@ Analyze and suggest tuning changes. Be specific — give exact search queries an
   }
 
   return NextResponse.json({
-    action: "analyze",
-    slug,
-    ...result,
+    ...normalizeAnalyzeResult(slug, result),
     raw: raw.slice(0, 200),
   });
 }
@@ -391,21 +537,21 @@ Evaluate:
 5. Do job results show high-quality leads (score 80+), not directory fluff?
 6. Would this parent category generalize to adjacent user requests, not only one exact phrase?
 
-Return ONLY valid JSON:
+Return ONLY valid JSON. Use 0-10 values in score_breakdown and 0-1 for confidence:
 {
-  "approved": true/false,
-  "tier": "A+" | "A" | "B" | "C",
-  "confidence": 0.0-1.0,
+  "approved": false,
+  "tier": "B",
+  "confidence": 0.72,
   "score_breakdown": {
-    "query_specificity": 0-10,
-    "keyword_coverage": 0-10,
-    "seed_coverage": 0-10,
-    "exclusion_accuracy": 0-10,
-    "result_quality": 0-10
+    "query_specificity": 7,
+    "keyword_coverage": 7,
+    "seed_coverage": 6,
+    "exclusion_accuracy": 8,
+    "result_quality": 6
   },
   "strengths": ["what's working well"],
   "gaps": ["what's missing"],
-  "verdict": "Final summary — one sentence"
+  "verdict": "Final summary in one sentence"
 }`;
 
   const userPrompt = `Config: ${slug}
@@ -422,10 +568,10 @@ ${jobSummary ? `Latest job results:\n${jobSummary.slice(0, 1200)}` : "No job res
 
 Is this config production-ready for ${slug}?`;
 
-  const raw = await callGemini(systemPrompt, userPrompt);
+  const raw = await callGemini(systemPrompt, userPrompt, CRITIC_RESPONSE_SCHEMA);
   let result = parseGeminiJson(raw);
   if (!result) {
-    result = await repairGeminiJson(raw, CRITIC_RESULT_SHAPE, "critic");
+    result = await repairGeminiJson(raw, CRITIC_RESULT_SHAPE, "critic", CRITIC_RESPONSE_SCHEMA);
   }
 
   if (!result) {
@@ -436,9 +582,7 @@ Is this config production-ready for ${slug}?`;
   }
 
   return NextResponse.json({
-    action: "critic",
-    slug,
-    ...result,
+    ...normalizeCriticResult(slug, result),
     raw: raw.slice(0, 200),
   });
 }
