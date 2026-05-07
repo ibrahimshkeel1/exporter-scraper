@@ -16,6 +16,28 @@ import { assertAdmin } from "../../../../../../lib/api-auth";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const ANALYZE_RESULT_SHAPE = `{
+  "diagnosis": string,
+  "score": number,
+  "suggestions": [
+    {
+      "type": string,
+      "target": string,
+      "value": string,
+      "reasoning": string
+    }
+  ],
+  "warnings": [string]
+}`;
+const CRITIC_RESULT_SHAPE = `{
+  "approved": boolean,
+  "tier": string,
+  "confidence": number,
+  "score_breakdown": { "query_specificity": number, "keyword_coverage": number, "seed_coverage": number, "exclusion_accuracy": number, "result_quality": number },
+  "strengths": [string],
+  "gaps": [string],
+  "verdict": string
+}`;
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -50,19 +72,142 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<str
   return data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 }
 
-function parseGeminiJson(raw: string): Record<string, unknown> {
-  const cleaned = raw
+function stripGeminiFences(raw: string): string {
+  return raw
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
     .replace(/\s*```$/, "")
     .trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
-    throw new Error("Gemini did not return valid JSON.");
+}
+
+function extractBalancedJson(raw: string): string | null {
+  const startIndex = raw.search(/[\[{]/);
+  if (startIndex === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let quoteChar = "";
+
+  for (let index = startIndex; index < raw.length; index += 1) {
+    const char = raw[index];
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (char === "\\") {
+        escape = true;
+      } else if (char === quoteChar) {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      inString = true;
+      quoteChar = char;
+      continue;
+    }
+
+    if (char === "{" || char === "[") {
+      depth += 1;
+    } else if (char === "}" || char === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(startIndex, index + 1);
+      }
+    }
   }
+
+  return null;
+}
+
+function normalizeParsedJson(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  if (Array.isArray(value) && value.length === 1) {
+    return normalizeParsedJson(value[0]);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+      try {
+        return normalizeParsedJson(JSON.parse(trimmed));
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseGeminiJson(raw: string): Record<string, unknown> | null {
+  const cleaned = stripGeminiFences(raw);
+  const candidates = [cleaned, extractBalancedJson(cleaned)].filter(Boolean) as string[];
+
+  for (const candidate of candidates) {
+    try {
+      return normalizeParsedJson(JSON.parse(candidate));
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+async function repairGeminiJson(raw: string, shape: string, kind: "analyze" | "critic"): Promise<Record<string, unknown> | null> {
+  if (!raw.trim()) return null;
+
+  const repairSystemPrompt = `You are a strict JSON repair assistant for a lead-generation tuning tool.
+Return only valid JSON. Do not add markdown, commentary, or code fences.`;
+  const repairUserPrompt = `The previous Gemini response for the ${kind} step was not valid JSON.
+Repair it to match this shape:
+${shape}
+
+Original raw output:
+${raw.slice(0, 3500)}`;
+
+  const repairedRaw = await callGemini(repairSystemPrompt, repairUserPrompt);
+  return parseGeminiJson(repairedRaw);
+}
+
+function buildAnalyzeFallback(slug: string, raw: string) {
+  return {
+    action: "analyze",
+    slug,
+    diagnosis: "Gemini returned malformed JSON, so no structured analysis could be produced.",
+    score: 0,
+    suggestions: [],
+    warnings: [
+      "Gemini did not return valid JSON.",
+      raw ? `Raw Gemini output was captured for debugging: ${raw.slice(0, 200)}` : "Gemini returned an empty response."
+    ],
+  };
+}
+
+function buildCriticFallback(slug: string, raw: string) {
+  return {
+    action: "critic",
+    slug,
+    approved: false,
+    tier: "C",
+    confidence: 0,
+    score_breakdown: {
+      query_specificity: 0,
+      keyword_coverage: 0,
+      seed_coverage: 0,
+      exclusion_accuracy: 0,
+      result_quality: 0,
+    },
+    strengths: [],
+    gaps: ["Gemini did not return valid JSON, so the critic step could not complete."],
+    verdict: raw ? "Malformed Gemini output prevented a critic verdict." : "Gemini returned an empty response.",
+  };
 }
 
 function extractConfigSummary(yaml: string): string {
@@ -193,7 +338,17 @@ ${auditSummary ? `\nAudit/rejects summary:\n${auditSummary.slice(0, 800)}` : ""}
 Analyze and suggest tuning changes. Be specific — give exact search queries and keywords.`;
 
   const raw = await callGemini(systemPrompt, userPrompt);
-  const result = parseGeminiJson(raw);
+  let result = parseGeminiJson(raw);
+  if (!result) {
+    result = await repairGeminiJson(raw, ANALYZE_RESULT_SHAPE, "analyze");
+  }
+
+  if (!result) {
+    return NextResponse.json({
+      ...buildAnalyzeFallback(slug, raw),
+      raw: raw.slice(0, 200),
+    });
+  }
 
   return NextResponse.json({
     action: "analyze",
@@ -268,7 +423,17 @@ ${jobSummary ? `Latest job results:\n${jobSummary.slice(0, 1200)}` : "No job res
 Is this config production-ready for ${slug}?`;
 
   const raw = await callGemini(systemPrompt, userPrompt);
-  const result = parseGeminiJson(raw);
+  let result = parseGeminiJson(raw);
+  if (!result) {
+    result = await repairGeminiJson(raw, CRITIC_RESULT_SHAPE, "critic");
+  }
+
+  if (!result) {
+    return NextResponse.json({
+      ...buildCriticFallback(slug, raw),
+      raw: raw.slice(0, 200),
+    });
+  }
 
   return NextResponse.json({
     action: "critic",
