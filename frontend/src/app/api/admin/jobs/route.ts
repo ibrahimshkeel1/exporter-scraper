@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertAdmin } from "../../../../lib/api-auth";
+import { assertAdmin, getUserFromRequest } from "../../../../lib/api-auth";
 import { buildScraperJobConfig } from "../../../../lib/job-config";
 import { triggerLeadJob } from "../../../../lib/n8n";
 import { createAdminSupabase } from "../../../../lib/supabase-admin";
@@ -79,7 +79,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Config, scenario, and refined industry are required." }, { status: 400 });
     }
 
-    const userId = await getTuningUserId();
+    const { user } = await getUserFromRequest(request);
+    const userId = user?.id || (await getTuningUserId());
     const preflight: TargetingPreflight = {
       businessSummary: "Admin tuning test run.",
       offerSummary: industry,
@@ -126,7 +127,7 @@ export async function POST(request: NextRequest) {
       .from("lead_jobs")
       .insert({
         user_id: userId,
-        customer_email: "admin-tuning@exportflow.local",
+        customer_email: user?.email || "admin-tuning@exportflow.local",
         status: "approved",
         payment_status: "not_required",
         plan_id: "tuning_test",

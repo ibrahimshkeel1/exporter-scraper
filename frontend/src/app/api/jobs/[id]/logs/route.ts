@@ -34,7 +34,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 
   const workerSecret = process.env.WORKER_API_SECRET || process.env.N8N_WEBHOOK_SECRET;
-  const workerLogsUrl = `${workerBaseUrl}/api/logs/${encodeURIComponent(id)}`;
+  const replay = request.nextUrl.searchParams.get("replay") === "1" ? "1" : "0";
+  const workerLogsUrl = `${workerBaseUrl}/api/logs/${encodeURIComponent(id)}?replay=${replay}`;
 
   let workerResponse: Response;
   try {

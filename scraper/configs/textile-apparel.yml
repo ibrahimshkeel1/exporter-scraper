@@ -52,43 +52,50 @@ triggers:
 discovery:
 
   # --- Product Seed Terms ---
+  # Trimmed to specific buyer-facing categories (removed "fabric","fashion","clothing","textile"
+  # which are too broad and return mostly manufacturer/supplier results).
   product_seeds:
     - denim
     - jeans
-    - home textile
     - activewear
     - sportswear
     - streetwear
-    - garment
-    - fabric
-    - fashion
-    - apparel
-    - clothing
-    - textile
+    - home textile
     - towel
     - leather
+    - garment
+    - apparel
 
   # --- Search Query Templates ---
+  # Only first 8 are executed (_search_sources caps at queries[:8] for apparel).
+  # Ordered by signal strength: procurement/sourcing > quoted exact-match > broad.
+  # DuckDuckGo is intentionally disabled for textile because it returns sparse results and rate-limits quickly.
+  search_engines:
+    - bing
+    - yahoo
+
   # {base} = product seed, {market} = target market
   search_queries:
-    # Core apparel buyer queries (extracted from _buyer_search_queries)
-    - '{base} importer wholesaler distributor "{market}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '{base} wholesale buyer retailer "{market}" contact email -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    # TIER 1: Highest buyer signal — brands/retailers actively looking for manufacturers
     - '{base} private label clothing brand sourcing "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} procurement vendor application retailer "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '{base} boutique retailer wholesale distributor "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} supplier application "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} vendor portal "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    # TIER 2: Quoted exact-match — high precision, less noise
+    - '"{base} importer" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '"{base} wholesaler" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '"{base} distributor" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '"{base} retailer" "vendor application" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    # TIER 3: Broader queries (executed only if budget remains after tier 1-2)
+    - '{base} importer wholesaler distributor "{market}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} wholesale buyer retailer "{market}" contact email -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} boutique retailer wholesale distributor "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} wholesale account "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} trade account "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} stockist "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} line sheet "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} buying office "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} sourcing manager "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '"{base} importer" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '"{base} wholesaler" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '"{base} distributor" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '"{base} retailer" "vendor application" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '"{base} brand" "wholesale" "contact" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '"{base} brand" "supplier portal" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '"{base} brand" "buying office" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
@@ -320,21 +327,45 @@ discovery:
   # --- Directory Sources per Region ---
   directory_sources:
     usa:
+      - type: thomasnet
+        url: "https://www.thomasnet.com/search.html?what={base_query}"
+        selectors: ["a[href*='/profile/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
+        description: "Thomasnet - North American textile/apparel sourcing profiles"
+      - type: kompass
+        url: "https://www.kompass.com/z/us/y/importer/s/textil-odevy-koza-hodinarstvo-sperky/05/"
+        selectors: ["a[href*='/c/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
+        description: "Kompass - US textile and apparel importers"
+      - type: magic
+        url: "https://www.magicfashionevents.com/en/events/magic-las-vegas/brand-list.html"
+        selectors: ["a[href*='http']"]
+        description: "MAGIC Las Vegas brand list"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory"
         selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
         description: "LA Fashion District Wholesale Directory"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/women-s-wear"
         selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
         description: "LA Fashion District — Womenswear"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/menswear"
         selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
         description: "LA Fashion District — Menswear"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/athletic-wear/sportswear"
         selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
         description: "LA Fashion District — Sportswear"
       - type: yellow_pages
         search: "importers"
@@ -350,10 +381,26 @@ discovery:
         search: "importer wholesaler distributor"
         description: "Yell - Buyer Directory Search"
     europe:
+      - type: kompass
+        url: "https://www.kompass.com/z/ww/y/importer/s/textil-odevy-koza-hodinarstvo-sperky/05/"
+        selectors: ["a[href*='/c/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
+        description: "Kompass - global textile and apparel importers"
       - type: europages
         search: "buyer"
         description: "Europages - Buyer Search"
     international:
+      - type: kompass
+        url: "https://www.kompass.com/z/ww/y/importer/s/textil-odevy-koza-hodinarstvo-sperky/05/"
+        selectors: ["a[href*='/c/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
+        description: "Kompass - global textile and apparel importers"
+      - type: magic
+        url: "https://www.magicfashionevents.com/en/events/magic-las-vegas/brand-list.html"
+        selectors: ["a[href*='http']"]
+        description: "MAGIC Las Vegas brand list"
       - type: europages
         search: "buyer"
         description: "Europages - Buyer Search"

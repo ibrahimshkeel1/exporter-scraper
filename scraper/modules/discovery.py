@@ -377,7 +377,14 @@ class LeadDiscovery:
             return None
 
         domain = self._normalize_domain(clean_url)
-        if not domain or domain in self.seen_domains:
+        source_host = (urlsplit(source.url).hostname or "").lower()
+        candidate_host = (urlsplit(clean_url).hostname or "").lower()
+        needs_website_resolution = (
+            source.candidate_kind == "directory_profile"
+            or (source.include_directory_links and source_host and candidate_host == source_host)
+        )
+        dedupe_key = clean_url if needs_website_resolution else domain
+        if not domain or dedupe_key in self.seen_domains:
             if self.diagnostics:
                 self.diagnostics.record_intake(clean_url, passed=False, blocked_reason="dedup")
             return None
@@ -386,13 +393,13 @@ class LeadDiscovery:
                 self.diagnostics.record_intake(clean_url, passed=False, blocked_reason="country")
             return None
 
-        homepage_url = self._canonical_homepage_url(clean_url)
+        homepage_url = clean_url if needs_website_resolution else self._canonical_homepage_url(clean_url)
         if not homepage_url:
             if self.diagnostics:
                 self.diagnostics.record_intake(clean_url, passed=False, blocked_reason="other")
             return None
 
-        self.seen_domains.add(domain)
+        self.seen_domains.add(dedupe_key)
         if self.diagnostics:
             self.diagnostics.record_intake(clean_url, passed=True)
             self.diagnostics.record_candidate_domain(domain)
@@ -404,6 +411,7 @@ class LeadDiscovery:
             "source_url": source.url,
             "discovery_method": source.discovery_method,
             "candidate_kind": source.candidate_kind,
+            "needs_website_resolution": needs_website_resolution,
             "signal_detected": source.signal_detected,
             "signal_confidence_score": source.signal_confidence,
             "why_now": source.why_now,
@@ -421,6 +429,7 @@ class LeadDiscovery:
         if not signals:
             return []
         query_budget = 1
+        enabled_engines = set(self._enabled_search_engines())
         sources = []
         for signal_index, signal in enumerate(signals, start=1):
             signal_name = str(signal.get("signal", "")).strip()
@@ -445,39 +454,41 @@ class LeadDiscovery:
             for query_index, query in enumerate(queries[:query_budget], start=1):
                 encoded = quote_plus(query)
                 name_suffix = signal_slug if query_index == 1 else f"{signal_slug}-q{query_index}"
-                sources.append(
-                    DiscoverySource(
-                        name=f"signal-bing-p1-{name_suffix}",
-                        url=f"https://www.bing.com/search?q={encoded}&first=1",
-                        selectors=(
-                            "li.b_algo h2 a[href]",
-                            "ol#b_results a[href]",
-                            "a[href*='http']",
-                        ),
-                        discovery_method="signal_search",
-                        signal_detected=signal_name,
-                        signal_confidence=confidence,
-                        why_now=why_now,
-                        search_engine="bing",
+                if "bing" in enabled_engines:
+                    sources.append(
+                        DiscoverySource(
+                            name=f"signal-bing-p1-{name_suffix}",
+                            url=f"https://www.bing.com/search?q={encoded}&first=1",
+                            selectors=(
+                                "li.b_algo h2 a[href]",
+                                "ol#b_results a[href]",
+                                "a[href*='http']",
+                            ),
+                            discovery_method="signal_search",
+                            signal_detected=signal_name,
+                            signal_confidence=confidence,
+                            why_now=why_now,
+                            search_engine="bing",
+                        )
                     )
-                )
-                sources.append(
-                    DiscoverySource(
-                        name=f"signal-duckduckgo-p1-{name_suffix}",
-                        url=f"https://lite.duckduckgo.com/lite/?q={encoded}",
-                        selectors=(
-                            "a.result-link[href]",
-                            "a[href*='uddg=']",
-                            "a[href*='http']",
-                        ),
-                        discovery_method="signal_search",
-                        signal_detected=signal_name,
-                        signal_confidence=confidence,
-                        why_now=why_now,
-                        search_engine="duckduckgo",
+                if "duckduckgo" in enabled_engines:
+                    sources.append(
+                        DiscoverySource(
+                            name=f"signal-duckduckgo-p1-{name_suffix}",
+                            url=f"https://lite.duckduckgo.com/lite/?q={encoded}",
+                            selectors=(
+                                "a.result-link[href]",
+                                "a[href*='uddg=']",
+                                "a[href*='http']",
+                            ),
+                            discovery_method="signal_search",
+                            signal_detected=signal_name,
+                            signal_confidence=confidence,
+                            why_now=why_now,
+                            search_engine="duckduckgo",
+                        )
                     )
-                )
-                if query_index == 1:
+                if "yahoo" in enabled_engines and query_index == 1:
                     sources.append(
                         DiscoverySource(
                             name=f"signal-yahoo-p1-{signal_slug}",
@@ -859,39 +870,54 @@ class LeadDiscovery:
 
         return list(dict.fromkeys(queries))
 
-    def _search_source_pages(self, query, slug, page_depth, yahoo_depth):
+    def _enabled_search_engines(self):
+        configured = self.config.get("discovery", {}).get("search_engines", []) if self.config else []
+        if isinstance(configured, list):
+            engines = [
+                str(engine or "").strip().lower()
+                for engine in configured
+                if str(engine or "").strip().lower() in {"bing", "duckduckgo", "yahoo"}
+            ]
+            if engines:
+                return list(dict.fromkeys(engines))
+        return ["bing", "duckduckgo", "yahoo"]
+
+    def _search_source_pages(self, query, slug, page_depth, yahoo_depth, search_engines=None):
         encoded = quote_plus(query)
+        enabled_engines = set(search_engines or ["bing", "duckduckgo", "yahoo"])
         sources = []
         for page_index in range(1, page_depth + 1):
-            bing_offset = (page_index - 1) * 10 + 1
-            sources.append(
-                DiscoverySource(
-                    name=f"bing-p{page_index}-{slug}",
-                    url=f"https://www.bing.com/search?q={encoded}&first={bing_offset}",
-                    selectors=(
-                        "li.b_algo h2 a[href]",
-                        "ol#b_results a[href]",
-                        "a[href*='http']",
-                    ),
-                    discovery_method="search",
-                    search_engine="bing",
+            if "bing" in enabled_engines:
+                bing_offset = (page_index - 1) * 10 + 1
+                sources.append(
+                    DiscoverySource(
+                        name=f"bing-p{page_index}-{slug}",
+                        url=f"https://www.bing.com/search?q={encoded}&first={bing_offset}",
+                        selectors=(
+                            "li.b_algo h2 a[href]",
+                            "ol#b_results a[href]",
+                            "a[href*='http']",
+                        ),
+                        discovery_method="search",
+                        search_engine="bing",
+                    )
                 )
-            )
-            duck_offset = (page_index - 1) * 30
-            sources.append(
-                DiscoverySource(
-                    name=f"duckduckgo-p{page_index}-{slug}",
-                    url=f"https://lite.duckduckgo.com/lite/?q={encoded}&s={duck_offset}",
-                    selectors=(
-                        "a.result-link[href]",
-                        "a[href*='uddg=']",
-                        "a[href*='http']",
-                    ),
-                    discovery_method="search",
-                    search_engine="duckduckgo",
+            if "duckduckgo" in enabled_engines:
+                duck_offset = (page_index - 1) * 30
+                sources.append(
+                    DiscoverySource(
+                        name=f"duckduckgo-p{page_index}-{slug}",
+                        url=f"https://lite.duckduckgo.com/lite/?q={encoded}&s={duck_offset}",
+                        selectors=(
+                            "a.result-link[href]",
+                            "a[href*='uddg=']",
+                            "a[href*='http']",
+                        ),
+                        discovery_method="search",
+                        search_engine="duckduckgo",
+                    )
                 )
-            )
-            if page_index <= yahoo_depth:
+            if "yahoo" in enabled_engines and page_index <= yahoo_depth:
                 yahoo_offset = (page_index - 1) * 10 + 1
                 sources.append(
                     DiscoverySource(
@@ -926,6 +952,7 @@ class LeadDiscovery:
             queries = queries[:8]
         page_depth = depth if depth is not None else 1
         yahoo_depth = depth if depth is not None else 1
+        search_engines = self._enabled_search_engines()
         for query_index, query in enumerate(queries, start=1):
             slug = self._slug(query)
             query_page_depth = page_depth
@@ -936,6 +963,7 @@ class LeadDiscovery:
                     slug=slug,
                     page_depth=query_page_depth,
                     yahoo_depth=query_yahoo_depth,
+                    search_engines=search_engines,
                 )
             )
         return sources
@@ -1120,6 +1148,8 @@ class LeadDiscovery:
         """Build DiscoverySource objects from specialist config directory_sources and seed_urls."""
         disc = self.config.get("discovery", {})
         region_key = region.lower()
+        base = self._product_seed(industry)
+        market = self._target_markets(region)[0]
         sources = []
 
         # Seed URL sources
@@ -1143,13 +1173,41 @@ class LeadDiscovery:
         for ds in region_dirs:
             ds_type = str(ds.get("type", "")).strip().lower()
             ds_url = str(ds.get("url", "")).strip()
+            ds_search = str(ds.get("search", "")).strip()
             ds_selectors = tuple(str(s or "").strip() for s in ds.get("selectors", []) if str(s or "").strip())
             ds_desc = str(ds.get("description", "")).strip()
             ds_include_dir = bool(ds.get("include_directory_links", False))
             ds_candidate_kind = ds.get("candidate_kind", "website")
 
+            if not ds_url and ds_search:
+                search_query = quote_plus(f"{base} {ds_search}".strip())
+                if ds_type == "yellow_pages":
+                    ds_url = f"https://www.yellowpages.com/search?search_terms={search_query}&geo_location_terms=USA"
+                    ds_selectors = ds_selectors or ("a.track-visit-website", "a[data-analytics='website']", "a[href*='http']")
+                elif ds_type == "yell":
+                    ds_url = f"https://www.yell.com/ucs/UcsSearchAction.do?keywords={search_query}&location=UK"
+                    ds_selectors = ds_selectors or ("a.businessCapsule--ctaItem[href]", "a[data-tracking*='website'][href]", "a[href*='http']")
+                elif ds_type == "europages":
+                    ds_url = f"https://www.europages.co.uk/companies/{search_query}.html"
+                    ds_selectors = ds_selectors or ("a[href*='http']", "a.company-card__website[href]")
+
             if not ds_url:
                 continue
+
+            format_context = {
+                "base": base,
+                "base_query": quote_plus(base),
+                "industry": str(industry or ""),
+                "industry_query": quote_plus(str(industry or "")),
+                "market": market,
+                "market_query": quote_plus(market),
+                "search": ds_search,
+                "search_query": quote_plus(ds_search),
+            }
+            try:
+                ds_url = ds_url.format(**format_context)
+            except (KeyError, ValueError):
+                pass
 
             name = f"{ds_type}-{region_key}-{ds_desc or 'source'}"
             name = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:64]

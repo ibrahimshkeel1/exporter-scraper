@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CopyPlus, Play, Save, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Check, CopyPlus, Download, Play, Save, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { DualLiveTerminal } from "./AgenticChat";
-import { isSupabaseConfigured } from "../lib/supabase-client";
+import { JobReportCard } from "./JobReportCard";
+import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
 
 type SpecialistConfigMeta = {
   slug: string;
@@ -58,6 +59,33 @@ type TuneStep = {
   warnings?: string[];
 };
 
+type TuningExport = {
+  id: string;
+  format: string;
+  storage_path: string | null;
+  public_url: string | null;
+  row_count: number | null;
+  signed_url?: string | null;
+};
+
+type TuningJobEvidence = {
+  job: {
+    id: string;
+    status: string;
+    lead_exports?: TuningExport[];
+  };
+  evidence?: {
+    report?: Record<string, unknown> | null;
+    leadExportId?: string | null;
+    auditExportId?: string | null;
+    leadPreview?: string;
+    auditPreview?: string;
+    logSummary?: string;
+    jobSummary?: string;
+    auditSummary?: string;
+  };
+};
+
 type TuningContext = {
   scenario?: string;
   refinedIndustry?: string;
@@ -70,6 +98,7 @@ type TuningContext = {
 };
 
 const STORAGE_KEY = "exportflow_admin_password";
+const TUNING_SCOPE_SLUG = "textile-apparel";
 
 function splitInput(value: string) {
   return value
@@ -207,6 +236,7 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 }
 
 export function ConfigTuner() {
+  const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
   const [configs, setConfigs] = useState<SpecialistConfigMeta[]>([]);
   const [selectedSlug, setSelectedSlug] = useState("");
   const [configYaml, setConfigYaml] = useState("");
@@ -230,6 +260,9 @@ export function ConfigTuner() {
   const [jobSummary, setJobSummary] = useState("");
   const [auditSummary, setAuditSummary] = useState("");
   const [lastJobId, setLastJobId] = useState("");
+  const [jobEvidence, setJobEvidence] = useState<TuningJobEvidence | null>(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [autoFilledJobId, setAutoFilledJobId] = useState("");
 
   const [newSlug, setNewSlug] = useState("");
   const [newDisplayName, setNewDisplayName] = useState("");
@@ -245,6 +278,10 @@ export function ConfigTuner() {
     () => configs.find((config) => config.slug === selectedSlug),
     [configs, selectedSlug],
   );
+  const scopedConfigs = useMemo(() => {
+    const textileConfig = configs.find((config) => config.slug === TUNING_SCOPE_SLUG);
+    return textileConfig ? [textileConfig] : configs;
+  }, [configs]);
   const canShowLiveTerminal = Boolean(lastJobId) && isSupabaseConfigured();
 
   useEffect(() => {
@@ -262,6 +299,99 @@ export function ConfigTuner() {
     jobSummary,
     auditSummary,
   });
+
+  const adminHeaders = useCallback(async (json = false) => {
+    const headers: Record<string, string> = {
+      "x-admin-password": adminPassword,
+    };
+    if (json) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    if (supabase) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        headers.Authorization = `Bearer ${session.access_token}`;
+      }
+    }
+
+    return headers;
+  }, [adminPassword, supabase]);
+
+  const applyEvidenceToInputs = useCallback((payload: TuningJobEvidence, jobId: string) => {
+    const nextJobSummary = payload.evidence?.jobSummary || "";
+    const nextAuditSummary = payload.evidence?.auditSummary || "";
+
+    if (nextJobSummary) setJobSummary(nextJobSummary);
+    if (nextAuditSummary) setAuditSummary(nextAuditSummary);
+    if (nextJobSummary || nextAuditSummary) setAutoFilledJobId(jobId);
+  }, []);
+
+  const loadJobEvidence = useCallback(async (
+    jobId: string,
+    options: { fillInputs?: boolean; ensureReport?: boolean; silent?: boolean } = {},
+  ) => {
+    if (!jobId || !adminPassword) return null;
+    if (!options.silent) setEvidenceLoading(true);
+    try {
+      const response = await fetch(
+        `/api/admin/jobs/${encodeURIComponent(jobId)}?ensureReport=${options.ensureReport ? "1" : "0"}`,
+        { headers: await adminHeaders() },
+      );
+      const payload = await readJsonResponse<TuningJobEvidence & { error?: string }>(response);
+      if (!response.ok || payload.error) throw new Error(payload.error || "Could not load tuning job evidence.");
+      setJobEvidence(payload);
+      if (options.fillInputs) {
+        applyEvidenceToInputs(payload, jobId);
+      }
+      return payload;
+    } finally {
+      if (!options.silent) setEvidenceLoading(false);
+    }
+  }, [adminHeaders, adminPassword, applyEvidenceToInputs]);
+
+  const openTuningJob = useCallback(async (jobId: string, fillInputs = true) => {
+    setLastJobId(jobId);
+    setError("");
+    setMessage("");
+    try {
+      const payload = await loadJobEvidence(jobId, { fillInputs, ensureReport: true });
+      if (payload) {
+        setMessage(fillInputs ? "Run evidence imported into Gemini inputs." : "Tuning run opened.");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not open tuning run.");
+    }
+  }, [loadJobEvidence]);
+
+  function exportById(exportId?: string | null) {
+    if (!exportId) return null;
+    return (jobEvidence?.job.lead_exports || []).find((file) => file.id === exportId) || null;
+  }
+
+  function downloadExport(exportId?: string | null) {
+    const file = exportById(exportId);
+    const url = file?.signed_url || file?.public_url;
+    if (!url) {
+      setError("Download URL is not available for that export yet.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function downloadReport() {
+    const report = jobEvidence?.evidence?.report;
+    if (!report || typeof window === "undefined") return;
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${lastJobId || "tuning"}_ai_report.json`;
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+  }
 
   const applyLatestHistoryContext = (slug: string, history: TuneStep[]) => {
     if (historyContextSlugRef.current === slug) return;
@@ -335,9 +465,15 @@ export function ConfigTuner() {
     const response = await fetch("/api/admin/configs");
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Failed to load configs.");
-    setConfigs(payload.configs || []);
-    if (!selectedSlug && payload.configs?.length > 0) {
-      setSelectedSlug(payload.configs[0].slug);
+    const nextConfigs = (payload.configs || []) as SpecialistConfigMeta[];
+    setConfigs(nextConfigs);
+    const textileConfig = nextConfigs.find((config) => config.slug === TUNING_SCOPE_SLUG);
+    if (textileConfig && selectedSlug !== TUNING_SCOPE_SLUG) {
+      setSelectedSlug(TUNING_SCOPE_SLUG);
+      return;
+    }
+    if (!selectedSlug && nextConfigs.length > 0) {
+      setSelectedSlug(nextConfigs[0].slug);
     }
   }, [selectedSlug]);
 
@@ -350,6 +486,8 @@ export function ConfigTuner() {
     historyContextSlugRef.current = "";
     setTuneSteps([]);
     setLastJobId("");
+    setJobEvidence(null);
+    setAutoFilledJobId("");
   }, [selectedSlug]);
 
   useEffect(() => {
@@ -379,6 +517,45 @@ export function ConfigTuner() {
     if (selectedSlug) loadConfigYaml(selectedSlug);
   }, [selectedSlug, loadConfigYaml]);
 
+  useEffect(() => {
+    if (!lastJobId || !adminPassword) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const payload = await loadJobEvidence(lastJobId, { silent: true });
+        if (cancelled || !payload) return;
+
+        const hasEvidence = Boolean(payload.evidence?.report || payload.evidence?.leadPreview || payload.evidence?.auditPreview);
+        if (hasEvidence && autoFilledJobId !== lastJobId) {
+          applyEvidenceToInputs(payload, lastJobId);
+        }
+
+        const status = String(payload.job?.status || "");
+        if (status === "delivered" && !payload.evidence?.report) {
+          await loadJobEvidence(lastJobId, { fillInputs: autoFilledJobId !== lastJobId, ensureReport: true, silent: true });
+          return;
+        }
+
+        if (!["delivered", "failed", "rejected"].includes(status)) {
+          timer = setTimeout(poll, 8000);
+        }
+      } catch {
+        if (!cancelled) {
+          timer = setTimeout(poll, 12000);
+        }
+      }
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [adminPassword, applyEvidenceToInputs, autoFilledJobId, lastJobId, loadJobEvidence]);
+
   const updateAdminPassword = (value: string) => {
     setAdminPassword(value);
     localStorage.setItem(STORAGE_KEY, value);
@@ -391,10 +568,7 @@ export function ConfigTuner() {
     try {
       const response = await fetch("/api/admin/jobs", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-admin-password": adminPassword,
-        },
+        headers: await adminHeaders(true),
         body: JSON.stringify({
           mode: "tuning_test",
           configSlug: selectedSlug,
@@ -413,6 +587,8 @@ export function ConfigTuner() {
       }
       const jobId = payload.jobId || payload.job?.id || "";
       setLastJobId(jobId);
+      setJobEvidence(null);
+      setAutoFilledJobId("");
       setMessage(payload.warning ? `Job created, but not queued: ${payload.warning}` : "Tuning test queued.");
       addStep("test_run", `Queued ${testLimit}-lead ${selectedSlug} test for ${region}.`, { jobId });
     } catch (err: unknown) {
@@ -597,7 +773,7 @@ export function ConfigTuner() {
             Category Tuning Studio
           </h2>
           <p className="mt-1 max-w-3xl text-xs text-[#8b949e]">
-            Tune one parent category at a time with bounded tests. Gemini analysis and critic checks are single calls; scraper tests are capped by lead and page limits.
+            Textile-apparel tuning only for now. Gemini analysis and critic checks are single calls; scraper tests are capped by lead and page limits.
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[#8b949e]">
             {["Test", "Analyze", "Apply", "Save", "Retest", "Critic"].map((label, index) => (
@@ -628,7 +804,7 @@ export function ConfigTuner() {
               onChange={(event) => setSelectedSlug(event.target.value)}
               className="mt-1 h-8 w-full rounded border border-[#30363d] bg-[#010409] px-3 text-xs text-[#c9d1d9]"
             >
-              {configs.map((config) => (
+              {scopedConfigs.map((config) => (
                 <option key={config.slug} value={config.slug}>
                   {config.display_name} ({config.quality_tier}, v{config.version})
                 </option>
@@ -763,6 +939,7 @@ export function ConfigTuner() {
         </div>
       </div>
 
+      {!configs.some((config) => config.slug === TUNING_SCOPE_SLUG) && (
       <div className="rounded border border-[#30363d] bg-[#0d1117] p-3">
         <button
           type="button"
@@ -783,6 +960,7 @@ export function ConfigTuner() {
           </div>
         )}
       </div>
+      )}
 
       {tuneSteps.length > 0 && (
         <div className="rounded border border-[#30363d] bg-[#0d1117] p-3">
@@ -797,6 +975,15 @@ export function ConfigTuner() {
                   <span className="text-[#8b949e]">{new Date(step.timestamp).toLocaleTimeString()}</span>
                   <span className="text-[#c9d1d9]">{step.message}</span>
                   {step.jobId && <span className="font-mono text-[10px] text-[#58a6ff]">job {step.jobId.slice(0, 8)}</span>}
+                  {step.jobId && (
+                    <button
+                      type="button"
+                      onClick={() => void openTuningJob(step.jobId || "")}
+                      className="rounded border border-[#30363d] px-1.5 py-0.5 text-[10px] text-[#8b949e] hover:border-[#58a6ff] hover:text-[#58a6ff]"
+                    >
+                      Open
+                    </button>
+                  )}
                   {typeof step.score === "number" && <span className="text-[10px] text-[#d29922]">score {step.score}/10</span>}
                   {step.tier && <span className="text-[10px] text-[#8b949e]">{step.tier}</span>}
                 </div>
@@ -870,7 +1057,62 @@ export function ConfigTuner() {
               onChange={(event) => setAuditSummary(event.target.value)}
               className="h-20 w-full resize-none rounded border border-[#30363d] bg-[#161b22] p-2 text-[11px] text-[#c9d1d9]"
             />
+            {lastJobId && (
+              <div className="mt-2 border-t border-[#30363d] pt-2">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-mono text-[10px] text-[#58a6ff]">job {lastJobId.slice(0, 8)}</p>
+                    {jobEvidence?.job?.status && <p className="text-[10px] text-[#8b949e]">status: {jobEvidence.job.status}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void openTuningJob(lastJobId)}
+                    disabled={evidenceLoading}
+                    className="inline-flex items-center gap-1.5 rounded border border-[#30363d] px-2 py-1 text-[10px] text-[#c9d1d9] hover:border-[#58a6ff] hover:text-[#58a6ff] disabled:opacity-50"
+                  >
+                    <Search size={11} />
+                    {evidenceLoading ? "Importing..." : "Import run evidence"}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => downloadExport(jobEvidence?.evidence?.leadExportId)}
+                    disabled={!jobEvidence?.evidence?.leadExportId}
+                    className="inline-flex items-center gap-1.5 rounded border border-[#30363d] px-2 py-1 text-[10px] text-[#c9d1d9] hover:border-[#00ffff] hover:text-[#00ffff] disabled:opacity-50"
+                  >
+                    <Download size={11} />
+                    Leads CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadExport(jobEvidence?.evidence?.auditExportId)}
+                    disabled={!jobEvidence?.evidence?.auditExportId}
+                    className="inline-flex items-center gap-1.5 rounded border border-[#30363d] px-2 py-1 text-[10px] text-[#c9d1d9] hover:border-[#00ffff] hover:text-[#00ffff] disabled:opacity-50"
+                  >
+                    <Download size={11} />
+                    Audit CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadReport}
+                    disabled={!jobEvidence?.evidence?.report}
+                    className="inline-flex items-center gap-1.5 rounded border border-[#30363d] px-2 py-1 text-[10px] text-[#c9d1d9] hover:border-[#00ffff] hover:text-[#00ffff] disabled:opacity-50"
+                  >
+                    <Download size={11} />
+                    AI report
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
+
+          {jobEvidence?.evidence?.report && (
+            <div className="rounded border border-[#2dd4bf]/40 bg-[#2dd4bf]/10 p-3">
+              <JobReportCard report={jobEvidence.evidence.report as any} />
+            </div>
+          )}
 
           {tuneResult && (
             <div className="rounded border border-[#1f6feb]/30 bg-[#1f6feb]/5 p-3">

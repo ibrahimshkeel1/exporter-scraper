@@ -18,6 +18,7 @@ export default function SearchPage() {
       activeTerminalJobId={workspace.terminalJobId}
       explorerContext={workspace.explorerContext}
       activeSessionOpenToken={workspace.sessionOpenToken}
+      onSelectSession={(jobId) => workspace.selectJob(jobId, true)}
       terminalSummary={workspace.terminalSummary}
       mainEditor={
         <AgenticChat

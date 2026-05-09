@@ -50,6 +50,7 @@ function buildSessionSummaryArtifact(job: LeadWorkspaceJob): WorkspaceArtifact {
     folder: "Sessions",
     kind: "markdown",
     meta: `${job.status.toUpperCase()} • ${contextLabel(job)}`,
+    sessionJobId: job.id,
     content: [
       `# Search Session ${job.id.slice(0, 8)}`,
       "",
@@ -319,7 +320,7 @@ function useLeadSessionWorkspaceState() {
   const [sessionOpenToken, setSessionOpenToken] = useState(0);
 
   const selectedJob = useMemo(
-    () => jobs.find((job) => job.id === selectedJobId) ?? jobs[0] ?? null,
+    () => jobs.find((job) => job.id === selectedJobId) ?? null,
     [jobs, selectedJobId]
   );
 
@@ -374,8 +375,8 @@ function useLeadSessionWorkspaceState() {
   }, [jobs, selectJob, selectedJob, selectedJobId]);
 
   const explorerContext = useMemo(() => buildLeadSessionExplorerContext(selectedJob, jobs), [selectedJob, jobs]);
-  const terminalJobId = selectedJobId || selectedJob?.id || null;
-  const terminalEvents = selectedJob?.id === terminalJobId ? selectedJob.job_events || [] : [];
+  const terminalJobId = selectedJob?.id || null;
+  const terminalEvents = selectedJob?.job_events || [];
   const terminalSummary = summarizeJob(selectedJob);
 
   return {
@@ -391,7 +392,7 @@ function useLeadSessionWorkspaceState() {
     jobTableProps: {
       initialJobs: jobs,
       selectedJobId,
-      onSelectedJobIdChange: (jobId: string | null) => selectJob(jobId, false),
+      onSelectedJobIdChange: (jobId: string | null) => selectJob(jobId, true),
       onSelectedJobChange: handleSelectedJobChange,
       onJobsChange: handleJobsChange,
     },

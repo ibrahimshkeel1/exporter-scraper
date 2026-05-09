@@ -78,6 +78,72 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertTrue(any(source.name.startswith("duckduckgo-p1-") for source in sources))
         self.assertTrue(any(source.name.startswith("yahoo-p1-") for source in sources))
 
+    def test_config_can_disable_duckduckgo_search_sources(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            config={
+                "discovery": {
+                    "search_engines": ["bing", "yahoo"],
+                    "search_queries": ['{base} importer "{market}"'],
+                }
+            },
+        )
+        sources = discovery._search_sources("USA", "denim")
+        names = [source.name for source in sources]
+
+        self.assertTrue(any(name.startswith("bing-p1-") for name in names))
+        self.assertTrue(any(name.startswith("yahoo-p1-") for name in names))
+        self.assertFalse(any(name.startswith("duckduckgo-p1-") for name in names))
+
+    def test_config_search_directory_sources_expand_to_urls(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            config={
+                "discovery": {
+                    "directory_sources": {
+                        "usa": [
+                            {
+                                "type": "yellow_pages",
+                                "search": "importers",
+                                "description": "Yellow Pages",
+                            }
+                        ]
+                    }
+                }
+            },
+        )
+        sources = discovery._generate_sources_from_config("USA", "denim")
+
+        self.assertEqual(len(sources), 1)
+        self.assertIn("yellowpages.com/search", sources[0].url)
+        self.assertIn("denim+importers", sources[0].url)
+
+    def test_directory_profile_candidates_keep_profile_url_for_resolution(self):
+        source = DiscoverySource(
+            name="kompass",
+            url="https://www.kompass.com/search",
+            selectors=("a[href]",),
+            include_directory_links=True,
+            discovery_method="directory",
+            candidate_kind="directory_profile",
+        )
+        first = self.discovery._candidate_from_url(
+            "https://www.kompass.com/c/acme/us123/",
+            source,
+            "USA",
+            "denim",
+        )
+        second = self.discovery._candidate_from_url(
+            "https://www.kompass.com/c/bravo/us456/",
+            source,
+            "USA",
+            "denim",
+        )
+
+        self.assertEqual(first["url"], "https://www.kompass.com/c/acme/us123/")
+        self.assertTrue(first["needs_website_resolution"])
+        self.assertIsNotNone(second)
+
     def test_seed_urls_are_source_specific(self):
         buyer_intent_urls = self.discovery.seed_urls("USA", "seed-usa-buyer-intent-pages")
         generic_urls = self.discovery.seed_urls("USA", "seed-usa-apparel-buyers")
@@ -166,6 +232,28 @@ class LeadDiscoveryTests(unittest.TestCase):
         names = [source.name for source in sources]
         self.assertIn("signal-seed-fit-out-rfp", names)
         self.assertTrue(any(name.startswith("signal-bing-p1-fit-out-rfp") for name in names))
+
+    def test_signal_search_sources_respect_configured_engines(self):
+        signal_map = {
+            "signals": [
+                {
+                    "signal": "buyer-intent",
+                    "confidence": 0.9,
+                    "queries": ["denim importer USA"],
+                }
+            ]
+        }
+        discovery = LeadDiscovery(
+            limit=10,
+            signal_map=signal_map,
+            config={"discovery": {"search_engines": ["bing", "yahoo"]}},
+        )
+        sources = discovery._signal_search_sources("USA", "denim")
+        names = [source.name for source in sources]
+
+        self.assertTrue(any(name.startswith("signal-bing-p1-buyer-intent") for name in names))
+        self.assertTrue(any(name.startswith("signal-yahoo-p1-buyer-intent") for name in names))
+        self.assertFalse(any(name.startswith("signal-duckduckgo-p1-buyer-intent") for name in names))
 
     def test_signal_fields_are_carried_to_candidates(self):
         signaled_source = DiscoverySource(

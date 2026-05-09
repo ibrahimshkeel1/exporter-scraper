@@ -519,6 +519,7 @@ export default function OutreachPage() {
       activeTerminalJobId={leadWorkspace.terminalJobId}
       explorerContext={explorerContext}
       activeSessionOpenToken={leadWorkspace.sessionOpenToken}
+      onSelectSession={(jobId) => leadWorkspace.selectJob(jobId, true)}
       terminalSummary={leadWorkspace.terminalSummary}
       mainEditor={mainEditor}
       jobsPanel={<JobTable refreshSignal={0} compact showFilesPane={false} {...leadWorkspace.jobTableProps} />}

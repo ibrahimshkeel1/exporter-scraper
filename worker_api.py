@@ -456,6 +456,7 @@ def _parse_log_line_payload(line):
 async def stream_logs(request):
     job_id = request.match_info.get("job_id")
     log_path = RUNS_DIR / job_id / "stdout.log"
+    replay_existing = request.query.get("replay") == "1"
 
     response = web.StreamResponse(
         status=200,
@@ -476,14 +477,17 @@ async def stream_logs(request):
 
         with log_path.open("r", encoding="utf-8", errors="replace") as file_handle:
             last_heartbeat = time.monotonic()
-            # Send current content
-            while True:
-                line = file_handle.readline()
-                if not line:
-                    break
-                payload, event = _parse_log_line_payload(line)
-                if payload:
-                    await _write_sse(response, payload, event=event)
+            if replay_existing:
+                # Send current content only when explicitly requested; normal UI streams tail new output.
+                while True:
+                    line = file_handle.readline()
+                    if not line:
+                        break
+                    payload, event = _parse_log_line_payload(line)
+                    if payload:
+                        await _write_sse(response, payload, event=event)
+            else:
+                file_handle.seek(0, os.SEEK_END)
 
             # Tail for new content
             while True:

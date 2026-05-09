@@ -17,6 +17,7 @@ export default function DashboardPage() {
       activeTerminalJobId={workspace.terminalJobId}
       explorerContext={workspace.explorerContext}
       activeSessionOpenToken={workspace.sessionOpenToken}
+      onSelectSession={(jobId) => workspace.selectJob(jobId, true)}
       terminalSummary={workspace.terminalSummary}
       mainEditor={<WidgetDashboard />}
       jobsPanel={<JobTable refreshSignal={0} compact showFilesPane={false} {...workspace.jobTableProps} />}

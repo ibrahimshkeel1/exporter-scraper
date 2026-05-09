@@ -179,6 +179,7 @@ type VSCodeLayoutProps = {
   explorerContext?: WorkspaceContext | null;
   renderArtifact?: (artifact: WorkspaceArtifact) => ReactNode;
   activeSessionOpenToken?: number;
+  onSelectSession?: (sessionId: string) => void;
 };
 
 function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
@@ -380,6 +381,7 @@ export function VSCodeLayout({
   explorerContext,
   renderArtifact,
   activeSessionOpenToken = 0,
+  onSelectSession,
 }: VSCodeLayoutProps) {
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
@@ -635,6 +637,7 @@ export function VSCodeLayout({
               explorerContext={explorerContext}
               activeArtifactId={activeArtifactId}
               onOpenArtifact={openArtifact}
+              onSelectSession={onSelectSession}
             />
           </Panel>
 

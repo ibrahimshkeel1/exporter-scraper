@@ -123,6 +123,7 @@ export default function SettingsPage() {
       activeTerminalJobId={workspace.terminalJobId}
       explorerContext={explorerContext}
       activeSessionOpenToken={workspace.sessionOpenToken}
+      onSelectSession={(jobId) => workspace.selectJob(jobId, true)}
       terminalSummary={workspace.terminalSummary}
       mainEditor={mainEditor}
       jobsPanel={<JobTable refreshSignal={0} compact showFilesPane={false} {...workspace.jobTableProps} />}

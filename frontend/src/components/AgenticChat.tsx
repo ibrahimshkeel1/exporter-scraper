@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Check, Copy, Download, Loader2, Mail, Send, Sparkles, Terminal } from "lucide-react";
 import { leadPacks } from "../lib/pricing";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
@@ -55,6 +55,7 @@ const initialMessages: AgenticMessage[] = [
 ];
 
 type HistoricalJobEvent = {
+  id?: string;
   status?: string;
   message?: string;
   created_at?: string;
@@ -122,6 +123,20 @@ function workerLogFromJobEvent(event: HistoricalJobEvent): WorkerLog | null {
   };
 }
 
+function historicalEventKey(event: HistoricalJobEvent, entry: WorkerLog) {
+  return event.id || [
+    event.created_at || "",
+    entry.source,
+    entry.status,
+    entry.lane || "",
+    entry.engine || "",
+    entry.reason || "",
+    entry.proxyBefore || "",
+    entry.proxyAfter || "",
+    entry.message,
+  ].join("\u0001");
+}
+
 type DiscoveryLane = "bing" | "duckduckgo" | "yahoo";
 
 function compactTerminalMessage(value: string) {
@@ -156,19 +171,24 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
   const discoveryDuckRef = useRef<HTMLDivElement>(null);
   const discoveryYahooRef = useRef<HTMLDivElement>(null);
   const enrichmentRef = useRef<HTMLDivElement>(null);
+  const initialEventsRef = useRef(initialEvents);
+  const importedEventKeysRef = useRef<Set<string>>(new Set());
+  const [replayRequest, setReplayRequest] = useState<{ jobId: string; token: number } | null>(null);
 
   useEffect(() => {
-    if (!jobId) return;
-    const sseUrl = `/api/jobs/${encodeURIComponent(jobId)}/logs`;
-    let eventSource: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let closed = false;
+    initialEventsRef.current = initialEvents;
+  }, [initialEvents]);
 
+  function collectEventLogs(events: HistoricalJobEvent[]) {
     const seededDiscoveryLogs: Record<DiscoveryLane, WorkerLog[]> = { bing: [], duckduckgo: [], yahoo: [] };
     const seededEnrichmentLogs: WorkerLog[] = [];
-    for (const event of initialEvents) {
+
+    for (const event of events) {
       const entry = workerLogFromJobEvent(event);
       if (!entry) continue;
+      const key = historicalEventKey(event, entry);
+      if (importedEventKeysRef.current.has(key)) continue;
+      importedEventKeysRef.current.add(key);
       const lane = laneFromPayload(entry);
       if (lane === "enrichment") {
         seededEnrichmentLogs.push(entry);
@@ -176,8 +196,36 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
         seededDiscoveryLogs[lane].push(entry);
       }
     }
+
+    return { seededDiscoveryLogs, seededEnrichmentLogs };
+  }
+
+  const importSavedEvents = useCallback(() => {
+    const { seededDiscoveryLogs, seededEnrichmentLogs } = collectEventLogs(initialEventsRef.current);
+    setDiscoveryLogs((current) => ({
+      bing: [...seededDiscoveryLogs.bing, ...current.bing],
+      duckduckgo: [...seededDiscoveryLogs.duckduckgo, ...current.duckduckgo],
+      yahoo: [...seededDiscoveryLogs.yahoo, ...current.yahoo],
+    }));
+    setEnrichmentLogs((current) => [...seededEnrichmentLogs, ...current]);
+  }, []);
+
+  useEffect(() => {
+    if (!jobId) return;
+    importedEventKeysRef.current.clear();
+    const { seededDiscoveryLogs, seededEnrichmentLogs } = collectEventLogs(initialEventsRef.current);
     setDiscoveryLogs(seededDiscoveryLogs);
     setEnrichmentLogs(seededEnrichmentLogs);
+  }, [jobId]);
+
+  useEffect(() => {
+    if (!jobId) return;
+    const replay = replayRequest?.jobId === jobId ? "1" : "0";
+    const sseUrl = `/api/jobs/${encodeURIComponent(jobId)}/logs?replay=${replay}`;
+    let eventSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
+
     setState("connecting");
 
     const pushLog = (entry: WorkerLog) => {
@@ -231,7 +279,7 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       eventSource?.close();
     };
-  }, [jobId, initialEvents]);
+  }, [jobId, replayRequest]);
 
   useEffect(() => {
     if (discoveryBingRef.current) discoveryBingRef.current.scrollTop = discoveryBingRef.current.scrollHeight;
@@ -272,7 +320,31 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
   }
 
   return (
-    <div className="grid h-full min-h-0 w-full grid-cols-1 gap-2 overflow-hidden xl:grid-cols-3 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 w-full grid-cols-1 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-2 overflow-hidden xl:grid-cols-3">
+      <div className="ide-terminal flex min-w-0 items-center justify-between gap-2 px-2 py-1 font-mono text-[10px] text-[#00ffff] xl:col-span-3">
+        <span className="truncate">worker stream tails new output by default</span>
+        <div className="inline-flex flex-shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={importSavedEvents}
+            className="ide-btn inline-flex h-6 items-center px-2 text-[10px]"
+          >
+            Import saved
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDiscoveryLogs({ bing: [], duckduckgo: [], yahoo: [] });
+              setEnrichmentLogs([]);
+              importedEventKeysRef.current.clear();
+              setReplayRequest((current) => ({ jobId, token: (current?.token || 0) + 1 }));
+            }}
+            className="ide-btn inline-flex h-6 items-center px-2 text-[10px]"
+          >
+            Replay stdout
+          </button>
+        </div>
+      </div>
       <section className="ide-terminal grid min-h-0 grid-cols-1 gap-2 overflow-hidden p-2 xl:col-span-3 xl:grid-cols-3">
         {[
           { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
@@ -363,7 +435,7 @@ function ReportDownloads({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
 
-  async function openExport(format: "csv" | "xlsx") {
+  async function openExport(format: "csv" | "xlsx" | "audit" | "leads") {
     if (!supabase) return;
     setDownloadError(null);
     setDownloadingFormat(format);
@@ -426,12 +498,12 @@ function ReportDownloads({
         </button>
         <button
           type="button"
-          onClick={() => void openExport("xlsx")}
+          onClick={() => void openExport("audit")}
           disabled={downloadingFormat !== null}
           className="ide-btn inline-flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50"
         >
           <Download size={14} />
-          Audit XLSX
+          Audit CSV
         </button>
       </div>
       {downloadError && <p className="text-xs text-amber-300">{downloadError}</p>}
