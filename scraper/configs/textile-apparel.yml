@@ -74,6 +74,21 @@ discovery:
     - bing
     - yahoo
 
+  search_engine_runtime:
+    bing:
+      max_requests: 16
+      min_delay_seconds: 9
+      cooldown_seconds: 75
+      failure_threshold: 3
+    yahoo:
+      max_requests: 14
+      min_delay_seconds: 8
+      cooldown_seconds: 55
+      failure_threshold: 3
+
+  # Textile tuning should start from structured textile directories, not legacy generic apparel seeds.
+  seed_urls_enabled: false
+
   # {base} = product seed, {market} = target market
   search_queries:
     # TIER 1: Highest buyer signal — brands/retailers actively looking for manufacturers
@@ -367,19 +382,13 @@ discovery:
         include_directory_links: true
         candidate_kind: directory_profile
         description: "LA Fashion District — Sportswear"
-      - type: yellow_pages
-        search: "importers"
-        description: "Yellow Pages - Importers"
-      - type: yellow_pages
-        search: "wholesalers"
-        description: "Yellow Pages - Wholesalers"
-      - type: yellow_pages
-        search: "distributors"
-        description: "Yellow Pages - Distributors"
     uk:
-      - type: yell
-        search: "importer wholesaler distributor"
-        description: "Yell - Buyer Directory Search"
+      - type: kompass
+        url: "https://www.kompass.com/z/gb/y/importer/s/textil-odevy-koza-hodinarstvo-sperky/05/"
+        selectors: ["a[href*='/c/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
+        description: "Kompass - UK textile and apparel importers"
     europe:
       - type: kompass
         url: "https://www.kompass.com/z/ww/y/importer/s/textil-odevy-koza-hodinarstvo-sperky/05/"
@@ -387,9 +396,6 @@ discovery:
         include_directory_links: true
         candidate_kind: directory_profile
         description: "Kompass - global textile and apparel importers"
-      - type: europages
-        search: "buyer"
-        description: "Europages - Buyer Search"
     international:
       - type: kompass
         url: "https://www.kompass.com/z/ww/y/importer/s/textil-odevy-koza-hodinarstvo-sperky/05/"
@@ -401,9 +407,6 @@ discovery:
         url: "https://www.magicfashionevents.com/en/events/magic-las-vegas/brand-list.html"
         selectors: ["a[href*='http']"]
         description: "MAGIC Las Vegas brand list"
-      - type: europages
-        search: "buyer"
-        description: "Europages - Buyer Search"
 
   # --- Region Target Markets ---
   region_markets:
@@ -523,6 +526,9 @@ discovery:
       - .tr
       - .vn
 
+lead_pack_selection:
+  backfill_mode: conservative
+
 # --------------------------------------------------
 # SCORING
 # --------------------------------------------------
@@ -560,16 +566,27 @@ scoring:
       - woven
 
     strong_buyer_keywords:
+      - "apparel importer"
       - "become a supplier"
       - "become a vendor"
       - "buying office"
+      - "buying team"
+      - "custom private label"
+      - "denim importer"
       - distributor
+      - "global sourcing"
       - "import and distribute"
+      - "importer of record"
       - importer
+      - imported
       - imports
+      - "private label brand"
+      - "private label program"
+      - "private label sourcing"
       - procurement
       - purchasing
       - sourcing
+      - "sourcing department"
       - "supplier application"
       - "supplier code"
       - "supplier diversity"
@@ -583,6 +600,7 @@ scoring:
       - "vendor registration"
       - "vendor relations"
       - "vendor portal"
+      - "wholesale distribution"
       - "wholesale distributor"
       - wholesaler
 
@@ -627,24 +645,36 @@ scoring:
     platform_keywords:
       - "advertise with us"
       - directory
+      - "exhibitor directory"
+      - "fashion marketplace"
       - marketplace
+      - "online marketplace"
       - platform
+      - "seller marketplace"
       - "sponsored listings"
+      - "supplier directory"
+      - "wholesale marketplace"
 
     supplier_competitor_keywords:
       - "apparel manufacturer"
       - "clothing manufacturer"
       - "contract manufacturer"
       - "cut and sew"
+      - "dyeing facility"
       - factory
+      - "fabric mill"
       - "full package production"
       - "garment manufacturer"
       - manufacturer
       - manufacturing
+      - "our factory"
       - "private label manufacturer"
       - "production facility"
       - sewing
+      - "spinning mill"
+      - "textile mill"
       - "we manufacture"
+      - "we produce"
 
     procurement_side_keywords:
       - "become a supplier"
@@ -943,41 +973,41 @@ enrichment:
 # SIGNALS (from signal_map.py manufacturing_expansion cluster)
 # --------------------------------------------------
 signals:
-  cluster: manufacturing_expansion
-  search_intent: manufacturing_expansion
+  cluster: textile_buyer_sourcing
+  search_intent: textile_buyer_sourcing
 
   signal_catalog:
-    - name: facility-expansion
-      why_now: "Facility expansion or new line announcements indicate immediate project demand."
-      confidence: 0.82
-      query_templates:
-        - '{industry} {market} new facility opening'
-        - '{industry} {market} plant expansion project'
-
-    - name: equipment-investment
-      why_now: "Equipment financing and modernization usually align with broader capex cycles."
-      confidence: 0.74
-      query_templates:
-        - '{industry} {market} equipment modernization project'
-        - '{industry} {market} capex expansion'
-
-    - name: trade-show-activity
-      why_now: "Trade show season drives buyer-seller matching."
-      confidence: 0.85
-      query_templates:
-        - '{industry} trade show "{market}" buyer exhibitor'
-        - '{industry} fashion week "{market}" buyer list'
-
-    - name: import-export-data
-      why_now: "Import/export records reveal active buyers."
+    - name: importer-buyer-evidence
+      why_now: "Importer and distribution pages expose active buyer-side textile demand."
       confidence: 0.90
       query_templates:
-        - '{industry} import data "{market}" panjiva'
-        - '{industry} customs shipment "{market}" importer'
+        - '{industry} "{market}" importer contact'
+        - '{industry} "{market}" wholesale distributor contact'
 
-    - name: active-growth-intent
-      why_now: "Recent growth announcements often map to near-term buying intent."
-      confidence: 0.70
+    - name: private-label-sourcing
+      why_now: "Private-label brands and sourcing teams are likely manufacturer-buyers."
+      confidence: 0.88
       query_templates:
-        - '{industry} {market} expansion contact'
-        - '{industry} {market} project request proposal'
+        - '{industry} private label brand sourcing "{market}"'
+        - '{industry} private label program "{market}" contact'
+
+    - name: vendor-procurement-pages
+      why_now: "Vendor application and supplier portal pages reveal buyer-side onboarding."
+      confidence: 0.85
+      query_templates:
+        - '{industry} vendor application retailer "{market}"'
+        - '{industry} supplier portal procurement "{market}"'
+
+    - name: trade-show-buyers
+      why_now: "Trade show brand lists surface companies actively buying and selling textile categories."
+      confidence: 0.82
+      query_templates:
+        - '{industry} MAGIC Las Vegas brand list'
+        - '{industry} Texworld NYC exhibitor list'
+
+    - name: wholesale-account-pages
+      why_now: "Wholesale and trade-account pages identify contactable buyers with category fit."
+      confidence: 0.78
+      query_templates:
+        - '{industry} wholesale account "{market}" contact'
+        - '{industry} trade account "{market}" contact'

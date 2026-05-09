@@ -264,6 +264,40 @@ class LeadScoringTests(unittest.TestCase):
         self.assertEqual(scored["lead_pack_status"], "manual_review")
         self.assertFalse(self.scoring.is_a_plus(scored))
 
+    def test_generic_context_words_do_not_create_buyer_evidence(self):
+        scoring = LeadScoring(
+            scoring_context={
+                "product_keywords": ["apparel"],
+                "buyer_keywords": [
+                    "contact",
+                    "email",
+                    "pricing",
+                    "vendor",
+                    "supplier",
+                    "procurement",
+                ],
+            },
+        )
+        candidate = {
+            "domain": "genericstore.com",
+            "url": "https://genericstore.com",
+            "content": "Apparel catalog with contact email pricing for customers and supplier notes.",
+            "emails": ["info@genericstore.com"],
+            "high_quality_emails": ["info@genericstore.com"],
+            "email_quality": "decision",
+            "social_urls": [],
+            "linkedin_url": None,
+            "fetch_ok": True,
+            "fetch_status_codes": [200, 200],
+            "crawled_pages": ["https://genericstore.com", "https://genericstore.com/contact"],
+        }
+        scored = scoring.evaluate_candidate(candidate)
+
+        self.assertNotIn("contact", scored["buyer_side_evidence"])
+        self.assertNotIn("email", scored["buyer_side_evidence"])
+        self.assertNotIn("supplier", scored["buyer_side_evidence"])
+        self.assertFalse(scored["passes_hard_checks"])
+
     def test_supplier_application_with_decision_email_can_be_a_plus(self):
         candidate = {
             "domain": "nationalretailer.com",

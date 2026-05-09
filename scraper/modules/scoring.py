@@ -2,6 +2,21 @@ import re
 
 
 class LeadScoring:
+    WEAK_CONTEXT_BUYER_TERMS = {
+        "book",
+        "contact",
+        "email",
+        "partner",
+        "portal",
+        "portals",
+        "pricing",
+        "quote",
+        "services",
+        "solutions",
+        "supplier",
+        "vendor",
+    }
+
     def __init__(self, require_email=True, require_buyer_evidence=True, scoring_context=None, industry=None, config=None):
         self.require_email = require_email
         self.require_buyer_evidence = require_buyer_evidence
@@ -277,13 +292,22 @@ class LeadScoring:
                 terms.append(text)
         return terms
 
+    @classmethod
+    def _filter_context_buyer_keywords(cls, keywords):
+        return [
+            keyword
+            for keyword in keywords
+            if keyword not in cls.WEAK_CONTEXT_BUYER_TERMS
+        ]
+
     def _apply_config_keywords(self, scoring_cfg):
         """Load keyword lists and scoring parameters from specialist config."""
         kw = scoring_cfg.get("keywords", {})
         if kw.get("product_keywords"):
             self.product_keywords = list(dict.fromkeys(kw["product_keywords"] + self.product_keywords))
         if kw.get("strong_buyer_keywords"):
-            self.strong_buyer_keywords = list(dict.fromkeys(kw["strong_buyer_keywords"] + self.strong_buyer_keywords))
+            strong_keywords = self._filter_context_buyer_keywords(kw["strong_buyer_keywords"])
+            self.strong_buyer_keywords = list(dict.fromkeys(strong_keywords + self.strong_buyer_keywords))
         if kw.get("ambiguous_sales_keywords"):
             self.ambiguous_sales_keywords = list(dict.fromkeys(kw["ambiguous_sales_keywords"] + self.ambiguous_sales_keywords))
         if kw.get("moderate_buyer_keywords"):
@@ -325,7 +349,9 @@ class LeadScoring:
 
     def _apply_scoring_context(self, scoring_context):
         product_keywords = self._normalize_keywords(scoring_context.get("product_keywords", []))
-        buyer_keywords = self._normalize_keywords(scoring_context.get("buyer_keywords", []))
+        buyer_keywords = self._filter_context_buyer_keywords(
+            self._normalize_keywords(scoring_context.get("buyer_keywords", []))
+        )
         negative_keywords = self._normalize_keywords(scoring_context.get("negative_keywords", []))
         blocked_domains = self._normalize_terms(scoring_context.get("blocked_domains", []))
         blocked_host_markers = self._normalize_terms(scoring_context.get("blocked_host_markers", []))

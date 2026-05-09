@@ -95,6 +95,51 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertTrue(any(name.startswith("yahoo-p1-") for name in names))
         self.assertFalse(any(name.startswith("duckduckgo-p1-") for name in names))
 
+    def test_config_search_terms_are_prioritized_before_templates(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            search_terms=["jeans private label brand"],
+            config={
+                "discovery": {
+                    "search_queries": ['{base} vendor portal "{market}"'],
+                    "noise_exclusion_suffixes": ["-dictionary"],
+                    "supplier_country_exclusions": ["-Pakistan"],
+                }
+            },
+        )
+        queries = discovery._buyer_search_queries("USA", "denim")
+
+        self.assertTrue(queries[0].startswith('jeans private label brand "United States"'))
+        self.assertIn("contact email", queries[0])
+        self.assertIn("-Pakistan", queries[0])
+        self.assertIn("denim vendor portal", queries[1])
+
+    def test_config_search_engine_runtime_overrides_defaults(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            config={
+                "discovery": {
+                    "search_engines": ["bing"],
+                    "search_engine_runtime": {
+                        "bing": {
+                            "max_requests": 16,
+                            "min_delay_seconds": 9,
+                            "cooldown_seconds": 75,
+                            "failure_threshold": 3,
+                        }
+                    },
+                }
+            },
+        )
+        policy = discovery._engine_runtime_policy("bing")
+        state = discovery._build_engine_runtime_state()
+
+        self.assertEqual(policy["max_requests"], 16)
+        self.assertEqual(policy["min_delay_seconds"], 9)
+        self.assertEqual(policy["cooldown_seconds"], 75)
+        self.assertEqual(policy["failure_threshold"], 3)
+        self.assertEqual(list(state.keys()), ["bing"])
+
     def test_config_search_directory_sources_expand_to_urls(self):
         discovery = LeadDiscovery(
             limit=10,
@@ -117,6 +162,35 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(sources), 1)
         self.assertIn("yellowpages.com/search", sources[0].url)
         self.assertIn("denim+importers", sources[0].url)
+
+    def test_config_can_disable_seed_url_sources(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            config={
+                "discovery": {
+                    "seed_urls_enabled": False,
+                    "seed_urls": {
+                        "usa": {
+                            "buyer_intent": ["https://example.com/suppliers"],
+                        }
+                    },
+                    "directory_sources": {
+                        "usa": [
+                            {
+                                "type": "thomasnet",
+                                "url": "https://www.thomasnet.com/search.html?what={base_query}",
+                                "selectors": ["a[href*='/profile/']"],
+                            }
+                        ]
+                    },
+                }
+            },
+        )
+        sources = discovery._generate_sources_from_config("USA", "denim")
+
+        self.assertEqual(len(sources), 1)
+        self.assertTrue(sources[0].name.startswith("thomasnet-usa"))
+        self.assertFalse(any(source.name.startswith("seed-") for source in sources))
 
     def test_directory_profile_candidates_keep_profile_url_for_resolution(self):
         source = DiscoverySource(

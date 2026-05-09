@@ -194,6 +194,50 @@ class MainConfigTests(unittest.TestCase):
         self.assertEqual(len(leads), 2)
         self.assertTrue(any(event[0] in {"hard_check_backfill", "exploratory_backfill", "forced_backfill"} for event in events))
 
+    def test_build_lead_pack_conservative_mode_does_not_backfill_tuning_runs(self):
+        class DummyScoring:
+            @staticmethod
+            def rank_and_filter(candidates, limit, min_score):
+                return []
+
+        scored_candidates = [
+            {"domain": "alpha.com", "score": 52, "passes_hard_checks": True, "fetch_ok": True, "noisy_domain_hits": 0},
+        ]
+        leads, _, events = build_lead_pack(
+            scoring=DummyScoring(),
+            scored_candidates=scored_candidates,
+            limit=2,
+            min_score=75,
+            fill_until_complete=False,
+            backfill_mode="conservative",
+        )
+
+        self.assertEqual(leads, [])
+        self.assertEqual(events, [("strict", 75, 0)])
+
+    def test_build_lead_pack_conservative_mode_only_uses_hard_check_backfill(self):
+        class DummyScoring:
+            @staticmethod
+            def rank_and_filter(candidates, limit, min_score):
+                return []
+
+        scored_candidates = [
+            {"domain": "alpha.com", "score": 62, "passes_hard_checks": True, "fetch_ok": True, "noisy_domain_hits": 0},
+            {"domain": "beta.com", "score": 58, "passes_hard_checks": False, "fetch_ok": True, "noisy_domain_hits": 0},
+        ]
+        leads, _, events = build_lead_pack(
+            scoring=DummyScoring(),
+            scored_candidates=scored_candidates,
+            limit=2,
+            min_score=75,
+            fill_until_complete=True,
+            backfill_mode="conservative",
+        )
+
+        self.assertEqual([lead["domain"] for lead in leads], ["alpha.com"])
+        self.assertTrue(any(event[0] == "hard_check_backfill" for event in events))
+        self.assertFalse(any(event[0] in {"exploratory_backfill", "forced_backfill"} for event in events))
+
 
 if __name__ == "__main__":
     unittest.main()

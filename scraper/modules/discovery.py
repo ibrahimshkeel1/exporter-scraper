@@ -163,6 +163,11 @@ class LeadDiscovery:
         "duckduckgo": 45.0,
         "yahoo": 60.0,
     }
+    SEARCH_ENGINE_FAILURE_THRESHOLD = {
+        "bing": 2,
+        "duckduckgo": 2,
+        "yahoo": 2,
+    }
 
     def __init__(self, limit=30, search_terms=None, signal_map=None, scoring_context=None, diagnostics=None, config=None):
         self.limit = limit
@@ -838,8 +843,28 @@ class LeadDiscovery:
         markets = self._target_markets(region)
         market = markets[0]
         noise_exclusions = self._noise_exclusion_suffix()
+        supplier_exclusions = " ".join(
+            str(item or "").strip()
+            for item in disc.get("supplier_country_exclusions", [])
+            if str(item or "").strip()
+        )
 
         queries = []
+        for term in self.search_terms:
+            normalized = str(term or "").strip()
+            if not normalized:
+                continue
+            normalized_lower = normalized.lower()
+            mentions_market = any(target.lower() in normalized_lower for target in markets)
+            if not mentions_market and region.lower() not in normalized_lower:
+                normalized = f'{normalized} "{market}"'
+            if supplier_exclusions and "-pakistan" not in normalized_lower:
+                normalized = f"{normalized} {supplier_exclusions}"
+            query = f"{normalized} contact email"
+            if noise_exclusions and "-dictionary" not in query.lower():
+                query = f"{query} {noise_exclusions}"
+            queries.append(query)
+
         for template in templates:
             tpl = str(template or "").strip()
             if not tpl:
@@ -881,6 +906,48 @@ class LeadDiscovery:
             if engines:
                 return list(dict.fromkeys(engines))
         return ["bing", "duckduckgo", "yahoo"]
+
+    @staticmethod
+    def _coerce_positive_float(value, fallback):
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return fallback
+        return parsed if parsed > 0 else fallback
+
+    @staticmethod
+    def _coerce_positive_int(value, fallback):
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return fallback
+        return parsed if parsed > 0 else fallback
+
+    def _engine_runtime_policy(self, engine):
+        engine = str(engine or "").strip().lower()
+        runtime = self.config.get("discovery", {}).get("search_engine_runtime", {}) if self.config else {}
+        engine_runtime = runtime.get(engine, {}) if isinstance(runtime, dict) else {}
+        if not isinstance(engine_runtime, dict):
+            engine_runtime = {}
+
+        return {
+            "max_requests": self._coerce_positive_int(
+                engine_runtime.get("max_requests"),
+                self.SEARCH_ENGINE_MAX_REQUESTS.get(engine, 12),
+            ),
+            "min_delay_seconds": self._coerce_positive_float(
+                engine_runtime.get("min_delay_seconds"),
+                self.SEARCH_ENGINE_MIN_DELAY_SECONDS.get(engine, 4.0),
+            ),
+            "cooldown_seconds": self._coerce_positive_float(
+                engine_runtime.get("cooldown_seconds"),
+                self.SEARCH_ENGINE_COOLDOWN_SECONDS.get(engine, 60.0),
+            ),
+            "failure_threshold": self._coerce_positive_int(
+                engine_runtime.get("failure_threshold"),
+                self.SEARCH_ENGINE_FAILURE_THRESHOLD.get(engine, 2),
+            ),
+        }
 
     def _search_source_pages(self, query, slug, page_depth, yahoo_depth, search_engines=None):
         encoded = quote_plus(query)
@@ -1153,19 +1220,20 @@ class LeadDiscovery:
         sources = []
 
         # Seed URL sources
-        seed_urls = disc.get("seed_urls", {})
-        region_seeds = seed_urls.get(region_key, {})
-        for category, url_list in region_seeds.items():
-            if not isinstance(url_list, list) or not url_list:
-                continue
-            seed_name = f"seed-{region_key}-{category}"
-            sources.append(DiscoverySource(
-                name=seed_name,
-                url=f"seed://{seed_name}",
-                selectors=(),
-                discovery_method="curated_seed",
-                candidate_kind="seed_list",
-            ))
+        if disc.get("seed_urls_enabled", True):
+            seed_urls = disc.get("seed_urls", {})
+            region_seeds = seed_urls.get(region_key, {})
+            for category, url_list in region_seeds.items():
+                if not isinstance(url_list, list) or not url_list:
+                    continue
+                seed_name = f"seed-{region_key}-{category}"
+                sources.append(DiscoverySource(
+                    name=seed_name,
+                    url=f"seed://{seed_name}",
+                    selectors=(),
+                    discovery_method="curated_seed",
+                    candidate_kind="seed_list",
+                ))
 
         # Directory sources
         directory_sources = disc.get("directory_sources", {})
@@ -1267,7 +1335,7 @@ class LeadDiscovery:
                 "blocked_until_ts": 0.0,
                 "requests": 0,
             }
-            for engine in self.SEARCH_ENGINE_MIN_DELAY_SECONDS
+            for engine in self._enabled_search_engines()
         }
 
     async def _wait_for_engine_window(self, page, engine, state):
@@ -1277,10 +1345,11 @@ class LeadDiscovery:
         now = time.monotonic()
         if now < engine_state["blocked_until_ts"]:
             return False
-        max_requests = self.SEARCH_ENGINE_MAX_REQUESTS.get(engine, 12)
+        policy = self._engine_runtime_policy(engine)
+        max_requests = policy["max_requests"]
         if engine_state["requests"] >= max_requests:
             return False
-        min_delay = self.SEARCH_ENGINE_MIN_DELAY_SECONDS.get(engine, 4.0)
+        min_delay = policy["min_delay_seconds"]
         elapsed = now - engine_state["last_request_ts"]
         if elapsed < min_delay:
             wait_seconds = min_delay - elapsed + random.uniform(0.4, 1.1)
@@ -1302,10 +1371,11 @@ class LeadDiscovery:
         engine_state["failures"] += 1
         engine_state["last_request_ts"] = time.monotonic()
         engine_state["requests"] += 1
-        backoff = self.SEARCH_ENGINE_COOLDOWN_SECONDS.get(engine, 60.0)
+        policy = self._engine_runtime_policy(engine)
+        backoff = policy["cooldown_seconds"]
         cooldown_multiplier = min(engine_state["failures"], 3)
         engine_state["blocked_until_ts"] = time.monotonic() + backoff * cooldown_multiplier
-        return engine_state["failures"] >= 2
+        return engine_state["failures"] >= policy["failure_threshold"]
 
     @staticmethod
     async def _emit_discovery_event(callback, **payload):
