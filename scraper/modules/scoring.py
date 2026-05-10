@@ -254,6 +254,11 @@ class LeadScoring:
             "publication",
         }
         self.quality_mode = str(scoring_context.get("quality_mode", "balanced")).strip().lower() or "balanced"
+        delivery_rules = scoring_cfg.get("delivery_rules", {}) if isinstance(scoring_cfg, dict) else {}
+        self.allow_contact_form_without_email = bool(delivery_rules.get("allow_contact_form_without_email", False))
+        self.soften_platform_penalty_for_direct_buyers = bool(
+            delivery_rules.get("soften_platform_penalty_for_direct_buyers", False)
+        )
         if self.config:
             self._apply_config_keywords(scoring_cfg)
         self._apply_scoring_context(scoring_context)
@@ -627,7 +632,13 @@ class LeadScoring:
             reach_score = min(self.weights["reachability"], reach_score + 2)
             reasons.append("LinkedIn profile found")
 
-        if self.require_email and not emails:
+        form_only_buyer_route = (
+            self.allow_contact_form_without_email
+            and bool(contact_forms)
+            and has_buyer_evidence
+            and not noisy_domain_hits
+        )
+        if self.require_email and not emails and not form_only_buyer_route:
             disqualification_reasons.append("no usable candidate-owned email")
 
         if len(commercial_hits) >= 3 and socials:
@@ -683,8 +694,11 @@ class LeadScoring:
             soft_multiplier = 1 if self.quality_mode == "balanced_growth" else 2
             penalty += min(len(soft_negative_hits) * soft_multiplier, 8)
         if platform_hits:
-            penalty += 20
-            disqualification_reasons.append("platform/marketplace/directory, not a direct buyer")
+            if self.soften_platform_penalty_for_direct_buyers and has_buyer_evidence and product_hits:
+                penalty += 8
+            else:
+                penalty += 20
+                disqualification_reasons.append("platform/marketplace/directory, not a direct buyer")
         if supplier_competitor_hits and not procurement_side_hits:
             penalty += 25
             disqualification_reasons.append("manufacturer/supplier competitor signal without buyer-side procurement evidence")

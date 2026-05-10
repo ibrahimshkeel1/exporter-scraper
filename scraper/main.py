@@ -306,6 +306,22 @@ def _lead_pack_backfill_mode(config):
     return "legacy"
 
 
+def _configured_delivery_min_score(requested_min_score, config):
+    try:
+        requested = int(requested_min_score)
+    except (TypeError, ValueError):
+        requested = 75
+    if not isinstance(config, dict):
+        return requested
+    try:
+        configured = int(config.get("scoring", {}).get("tiers", {}).get("a", {}).get("min_score"))
+    except (TypeError, ValueError):
+        return requested
+    if configured <= 0:
+        return requested
+    return min(requested, configured)
+
+
 def build_lead_pack(
     scoring,
     scored_candidates,
@@ -818,6 +834,7 @@ async def run_scraper(
     # Resolve specialist config
     config_slug, scraper_config = _resolve_scraper_config(industry, region, job_config)
     backfill_mode = _lead_pack_backfill_mode(scraper_config)
+    delivery_min_score = _configured_delivery_min_score(min_score, scraper_config)
 
     discovery_limit = compute_discovery_limit(
         limit=limit,
@@ -825,7 +842,7 @@ async def run_scraper(
         max_analyzed=max_analyzed,
     )
     run_id = f"run-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
-    effective_min_score = min_score
+    effective_min_score = delivery_min_score
 
     candidates = []
     enriched_candidates = []
@@ -1011,7 +1028,7 @@ async def run_scraper(
             async with state_lock:
                 enriched_candidates.append(enriched)
                 scored_candidates.append(scored)
-                ranked = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
+                ranked = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=delivery_min_score)
                 top_leads.clear()
                 top_leads.extend(ranked)
                 analyzed_count = len(scored_candidates)
@@ -1030,7 +1047,7 @@ async def run_scraper(
                 analyzed_count=analyzed_count,
                 qualified_count=qualified_count,
                 target_count=limit,
-                min_score=min_score,
+                min_score=delivery_min_score,
             )
 
             if hit_target:
@@ -1204,7 +1221,7 @@ async def run_scraper(
         scoring=scoring,
         scored_candidates=scored_candidates,
         limit=limit,
-        min_score=min_score,
+        min_score=delivery_min_score,
         fill_until_complete=fill_until_complete,
         backfill_mode=backfill_mode,
     )
@@ -1676,6 +1693,7 @@ async def run_scraper_adaptive(
 
     config_slug, scraper_config = _resolve_scraper_config(industry, region, job_config)
     backfill_mode = _lead_pack_backfill_mode(scraper_config)
+    delivery_min_score = _configured_delivery_min_score(min_score, scraper_config)
 
     discovery_limit = compute_discovery_limit(
         limit=limit,
@@ -1732,7 +1750,7 @@ async def run_scraper_adaptive(
         enrichment_browser = await p.chromium.launch(headless=True)
         enrichment_ctx = await enrichment_browser.new_context(user_agent=user_agent)
 
-        current_min_score = min_score
+        current_min_score = delivery_min_score
 
         # FUTURE: bailout threshold — if Phase 1 produces >500 raw candidates but
         # the first ~100 score below 40 on average, the discovery pool is likely
@@ -2005,7 +2023,7 @@ async def run_scraper_adaptive(
         scoring=scoring,
         scored_candidates=all_scored_candidates,
         limit=limit,
-        min_score=min_score,
+        min_score=delivery_min_score,
         fill_until_complete=fill_until_complete,
         backfill_mode=backfill_mode,
     )

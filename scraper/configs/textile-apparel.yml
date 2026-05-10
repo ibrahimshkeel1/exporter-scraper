@@ -7,7 +7,7 @@
 
 slug: textile-apparel
 display_name: "Textile & Apparel Importers"
-version: 5
+version: 6
 quality_tier: "A+"
 
 # --------------------------------------------------
@@ -870,13 +870,16 @@ scoring:
       require_buyer_evidence: true
       require_email: decision
     a:
-      min_score: 75
+      min_score: 68
       require_hard_checks: true
-      require_email: any
+      require_email: any_or_contact_form
     manual_review:
       min_score: 55
 
-  quality_mode: balanced
+  quality_mode: buyer_discovery
+  delivery_rules:
+    allow_contact_form_without_email: true
+    soften_platform_penalty_for_direct_buyers: true
 
   pitch_angles:
     importer: "We are a Pakistan-based manufacturer of premium {products}. We see you actively import {category} and would love to discuss becoming one of your trusted suppliers with competitive MOQs and landed-cost advantage."

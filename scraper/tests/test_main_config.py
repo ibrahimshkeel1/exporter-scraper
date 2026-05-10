@@ -17,6 +17,7 @@ from main import (
     apply_recent_dedupe,
     build_lead_pack,
     compute_discovery_limit,
+    _configured_delivery_min_score,
     load_recent_domains,
     pad_lead_pack_with_repeats,
     partition_discovery_sources,
@@ -241,6 +242,22 @@ class MainConfigTests(unittest.TestCase):
         self.assertTrue(any(event[0] == "hard_check_backfill" for event in events))
         self.assertFalse(any(event[0] in {"exploratory_backfill", "forced_backfill"} for event in events))
 
+    def test_configured_delivery_min_score_uses_specialist_floor(self):
+        self.assertEqual(
+            _configured_delivery_min_score(
+                75,
+                {"scoring": {"tiers": {"a": {"min_score": 68}}}},
+            ),
+            68,
+        )
+        self.assertEqual(
+            _configured_delivery_min_score(
+                60,
+                {"scoring": {"tiers": {"a": {"min_score": 68}}}},
+            ),
+            60,
+        )
+
     def test_textile_config_does_not_enable_duckduckgo(self):
         config_path = Path(SCRAPER_DIR) / "configs" / "textile-apparel.yml"
         with config_path.open("r", encoding="utf-8") as handle:
@@ -249,6 +266,10 @@ class MainConfigTests(unittest.TestCase):
         discovery = config.get("discovery", {})
         self.assertEqual(discovery.get("search_engines"), ["bing", "yahoo"])
         self.assertNotIn("duckduckgo.", discovery.get("exclusions", {}).get("host_parts", []))
+
+        scoring = config.get("scoring", {})
+        self.assertEqual(scoring.get("tiers", {}).get("a", {}).get("min_score"), 68)
+        self.assertTrue(scoring.get("delivery_rules", {}).get("allow_contact_form_without_email"))
 
     def test_textile_config_prioritizes_brand_discovery_over_importer_queries(self):
         config_path = Path(SCRAPER_DIR) / "configs" / "textile-apparel.yml"
