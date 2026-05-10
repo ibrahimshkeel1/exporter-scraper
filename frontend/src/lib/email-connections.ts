@@ -413,7 +413,11 @@ export async function listUserEmailConnections(supabase: SupabaseClient, userId:
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    const message = clean(error.message);
+    if (error.code === "42P01" || message.includes("email_connections")) return [];
+    throw new Error(error.message);
+  }
   return ((data || []) as EmailConnectionRow[]).map(safeEmailConnection);
 }
 
