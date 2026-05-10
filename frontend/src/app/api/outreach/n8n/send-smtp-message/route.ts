@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { testSender, verifyOutreachWebhook } from "../../../../../lib/outreach-server";
+import nodemailer from "nodemailer";
+import { outreachDeliveryConfig, verifyOutreachWebhook } from "../../../../../lib/outreach-server";
 
 type SequenceStep = {
   subject?: string;
@@ -30,9 +31,7 @@ function cleanHeader(value: unknown) {
 
 function asStep(value: unknown): SequenceStep {
   if (!value) return {};
-  if (typeof value === "string") {
-    return { body_text: value };
-  }
+  if (typeof value === "string") return { body_text: value };
 
   if (typeof value === "object") {
     const source = value as Record<string, unknown>;
@@ -54,10 +53,6 @@ function htmlFromText(value: string) {
     .split(/\n{2,}/)
     .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
     .join("");
-}
-
-function base64Url(value: string) {
-  return Buffer.from(value, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function findLeadSequence(generated: Record<string, unknown> | null | undefined, lead: Record<string, unknown>) {
@@ -95,13 +90,14 @@ function findLeadSequence(generated: Record<string, unknown> | null | undefined,
 }
 
 function pickStep(sequence: LeadSequence | null, templates: Record<string, unknown>, step: string) {
-  if (step === "followup_1") {
-    return asStep(sequence?.followup_1 || templates.followup_1_template);
-  }
-  if (step === "followup_2") {
-    return asStep(sequence?.followup_2 || templates.followup_2_template);
-  }
+  if (step === "followup_1") return asStep(sequence?.followup_1 || templates.followup_1_template);
+  if (step === "followup_2") return asStep(sequence?.followup_2 || templates.followup_2_template);
   return asStep(sequence?.initial || templates.initial_template);
+}
+
+function buildMessageId(messageId: string, fromEmail: string) {
+  const domain = clean(fromEmail.split("@")[1]) || "exportflow.local";
+  return `<outreach-${messageId}.${Date.now()}@${domain}>`;
 }
 
 export async function POST(request: NextRequest) {
@@ -110,7 +106,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const sender = testSender();
+  const delivery = outreachDeliveryConfig();
   const messageId = clean(body.message_id || body.id);
   const step = clean(body.step || "initial");
   const lead = body.lead && typeof body.lead === "object" ? (body.lead as Record<string, unknown>) : {};
@@ -127,10 +123,9 @@ export async function POST(request: NextRequest) {
   const bodyText = clean(stepContent.body_text);
   let bodyHtml = clean(stepContent.body_html) || htmlFromText(bodyText);
   const originalToEmail = clean(lead.original_email || lead.email || body.original_to_email || body.to_email);
-  const toEmail = sender.testMode ? clean(sender.testRecipient) : originalToEmail;
-  const fromEmail = cleanHeader(sender.email || body.gmail_from_email || body.sender?.email || campaign.sender_email);
-  const senderName = cleanHeader(sender.name || body.sender?.name || campaign.sender_name || "ExportFlow");
-  const accessToken = clean(body.gmail_access_token || sender.accessToken);
+  const toEmail = delivery.testMode ? clean(delivery.testRecipient) : originalToEmail;
+  const fromEmail = cleanHeader(delivery.smtp.fromEmail || body.sender?.email || campaign.sender_email);
+  const senderName = cleanHeader(delivery.senderName || body.sender?.name || campaign.sender_name || "ExportFlow");
 
   if (!subject || (!bodyText && !bodyHtml)) {
     return NextResponse.json({
@@ -141,7 +136,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  if (sender.testMode) {
+  if (delivery.testMode) {
     const banner = `<p><strong>TEST MODE - not sent to lead.</strong></p><p>Original lead recipient: ${escapeHtml(originalToEmail || "(missing)")}</p><hr>`;
     bodyHtml = `${banner}${bodyHtml || htmlFromText(bodyText)}`;
   }
@@ -151,66 +146,73 @@ export async function POST(request: NextRequest) {
   }
 
   if (!fromEmail) {
-    return NextResponse.json({ ok: false, success: false, status: "failed", error: "No Gmail sender email is configured." });
+    return NextResponse.json({ ok: false, success: false, status: "failed", error: "No SMTP sender email is configured." });
   }
 
-  if (!accessToken) {
-    return NextResponse.json({ ok: false, success: false, status: "failed", error: "No Gmail access token is configured." });
+  if (!delivery.smtp.host || !delivery.smtp.port) {
+    return NextResponse.json({ ok: false, success: false, status: "failed", error: "SMTP host/port is not configured." });
   }
 
-  const mime = [
-    `From: ${senderName} <${fromEmail}>`,
-    `To: ${toEmail}`,
-    `Subject: ${subject}`,
-    "MIME-Version: 1.0",
-    "Content-Type: text/html; charset=UTF-8",
-    "",
-    bodyHtml
-  ].join("\r\n");
-
-  const gmailResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ raw: base64Url(mime) })
+  const transporter = nodemailer.createTransport({
+    host: delivery.smtp.host,
+    port: delivery.smtp.port,
+    secure: delivery.smtp.secure,
+    auth: delivery.smtp.user ? { user: delivery.smtp.user, pass: delivery.smtp.pass } : undefined
   });
 
-  const gmailPayload = await gmailResponse.json().catch(() => ({}));
-  if (!gmailResponse.ok) {
+  const outboundMessageId = buildMessageId(messageId, fromEmail);
+
+  try {
+    const info = await transporter.sendMail({
+      from: {
+        name: senderName,
+        address: fromEmail
+      },
+      to: toEmail,
+      replyTo: clean(delivery.replyTo || fromEmail) || undefined,
+      subject,
+      text: bodyText || undefined,
+      html: bodyHtml || undefined,
+      messageId: outboundMessageId,
+      headers: {
+        "X-ExportFlow-Campaign-Id": clean(body.campaign_id || campaign.id),
+        "X-ExportFlow-Lead-Id": clean(body.lead_id || lead.id),
+        "X-ExportFlow-Step": step
+      }
+    });
+
     return NextResponse.json({
-      ok: false,
-      success: false,
-      status: "failed",
-      error: clean(gmailPayload.error?.message || gmailPayload.error || `Gmail send failed with HTTP ${gmailResponse.status}`),
+      ok: true,
+      success: true,
+      status: delivery.testMode ? "test_sent" : "sent",
       subject,
       body_html: bodyHtml,
       body_text: bodyText,
       generated: {
         step,
         sequence,
-        gmail_error: gmailPayload
+        smtp_response: clean(info.response)
+      },
+      gmail_message_id: clean(info.messageId || outboundMessageId),
+      gmail_thread_id: clean(info.messageId || outboundMessageId),
+      to_email: toEmail,
+      original_to_email: originalToEmail
+    });
+  } catch (error) {
+    return NextResponse.json({
+      ok: false,
+      success: false,
+      status: "failed",
+      error: error instanceof Error ? error.message : "SMTP send failed.",
+      subject,
+      body_html: bodyHtml,
+      body_text: bodyText,
+      generated: {
+        step,
+        sequence
       },
       to_email: toEmail,
       original_to_email: originalToEmail
     });
   }
-
-  return NextResponse.json({
-    ok: true,
-    success: true,
-    status: sender.testMode ? "test_sent" : "sent",
-    subject,
-    body_html: bodyHtml,
-    body_text: bodyText,
-    generated: {
-      step,
-      sequence
-    },
-    gmail_message_id: clean(gmailPayload.id),
-    gmail_thread_id: clean(gmailPayload.threadId),
-    to_email: toEmail,
-    original_to_email: originalToEmail
-  });
 }

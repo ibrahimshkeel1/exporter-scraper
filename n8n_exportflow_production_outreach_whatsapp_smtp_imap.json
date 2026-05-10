@@ -1,11 +1,11 @@
 {
-    "name":  "ExportFlow - Gmail Outreach Sequences",
-    "description":  "ExportFlow outreach automation using Gemini for per-lead sequences and Gmail-backed sending through ExportFlow backend routes. Compatible with the current website API routes.",
+    "name":  "ExportFlow - SMTP IMAP Outreach Sequences",
+    "description":  "ExportFlow outreach automation using Gemini for per-lead sequences, SMTP-backed sending, and IMAP reply checks through the current website API routes.",
     "active":  false,
     "nodes":  [
                   {
                       "parameters":  {
-                                         "content":  "## Required n8n env\n\nEXPORTFLOW_APP_URL=https://exportflow-lovat.vercel.app\nN8N_OUTREACH_WEBHOOK_SECRET=same value as frontend\nGEMINI_API_KEY=...\nGEMINI_MODEL=gemini-3-flash-preview\nEXPORTFLOW_SEND_BATCH_LIMIT=5\nEXPORTFLOW_FOLLOWUP_1_DAYS=3\nEXPORTFLOW_FOLLOWUP_2_DAYS=7\nEXPORTFLOW_REPLY_CHECK_LIMIT=10\n\nWebsite/Vercel must also have OUTREACH_TEST_GMAIL_FROM_EMAIL, OUTREACH_TEST_GMAIL_ACCESS_TOKEN, OUTREACH_TEST_SENDER_NAME, OUTREACH_TEST_MODE, and OUTREACH_TEST_RECIPIENT configured.\n\nDo not paste live keys into this JSON.",
+                                         "content":  "## Required n8n env\n\nEXPORTFLOW_APP_URL=https://exportflow-lovat.vercel.app\nN8N_OUTREACH_WEBHOOK_SECRET=same value as frontend\nGEMINI_API_KEY=...\nGEMINI_MODEL=gemini-3-flash-preview\nEXPORTFLOW_SEND_BATCH_LIMIT=5\nEXPORTFLOW_FOLLOWUP_1_DAYS=3\nEXPORTFLOW_FOLLOWUP_2_DAYS=7\nEXPORTFLOW_REPLY_CHECK_LIMIT=10\n\nWebsite/Vercel must also have:\nOUTREACH_SMTP_HOST\nOUTREACH_SMTP_PORT\nOUTREACH_SMTP_SECURE\nOUTREACH_SMTP_USER\nOUTREACH_SMTP_PASSWORD\nOUTREACH_SMTP_FROM_EMAIL\nOUTREACH_SMTP_FROM_NAME\nOUTREACH_SMTP_REPLY_TO\nOUTREACH_IMAP_HOST\nOUTREACH_IMAP_PORT\nOUTREACH_IMAP_SECURE\nOUTREACH_IMAP_USER\nOUTREACH_IMAP_PASSWORD\nOUTREACH_IMAP_MAILBOX\nOUTREACH_TEST_MODE\nOUTREACH_TEST_RECIPIENT\n\nDo not paste live keys into this JSON.",
                                          "height":  400,
                                          "width":  460
                                      },
@@ -262,7 +262,7 @@
                   },
                   {
                       "parameters":  {
-                                         "content":  "## 3. Send approved due emails\n\nRuns on schedule or manual webhook exportflow-outreach-send-due.\n\nExportFlow backend now sends through the configured Gmail sender env and uses the approved per-lead sequence already saved on the website. No extra n8n SMTP node is required for this workflow.",
+                                         "content":  "## 3. Send approved due emails\n\nRuns on schedule or manual webhook exportflow-outreach-send-due.\n\nExportFlow backend sends through the configured SMTP account and uses the approved per-lead sequence already saved on the website. n8n only triggers the backend send route and persists the result.",
                                          "height":  260,
                                          "width":  460
                                      },
@@ -522,7 +522,7 @@
                   },
                   {
                       "parameters":  {
-                                         "content":  "## 5. Check replies and stop follow-ups\n\nThis branch checks stored Gmail thread IDs through the ExportFlow backend. When a reply is detected, the lead is marked replied and queued follow-ups are skipped.",
+                                         "content":  "## 5. Check replies and stop follow-ups\n\nThis branch checks recent inbox replies through the configured IMAP account. When a reply references a stored outbound Message-ID, the lead is marked replied and queued follow-ups are skipped.",
                                          "height":  240,
                                          "width":  460
                                      },
