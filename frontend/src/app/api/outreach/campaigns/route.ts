@@ -48,21 +48,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Selected email connection was not found." }, { status: 400 });
   }
 
+  const campaignInsert: Record<string, unknown> = {
+    user_id: user.id,
+    business_plan: cleanText(body.business_plan),
+    offer: cleanText(body.offer),
+    target_buyer: cleanText(body.target_buyer),
+    tone: cleanText(body.tone, "professional"),
+    cta: cleanText(body.cta),
+    signature: cleanText(body.signature),
+    sender_name: cleanText(body.sender_name || emailConnection?.from_name || emailConnection?.display_name, "ExportFlow"),
+    sender_email: cleanText(body.sender_email || emailConnection?.email) || null,
+    status: "draft"
+  };
+  if (emailConnection?.id) campaignInsert.email_connection_id = emailConnection.id;
+
   const { data: campaign, error: insertError } = await supabase
     .from("outreach_campaigns")
-    .insert({
-      user_id: user.id,
-      email_connection_id: emailConnection?.id || null,
-      business_plan: cleanText(body.business_plan),
-      offer: cleanText(body.offer),
-      target_buyer: cleanText(body.target_buyer),
-      tone: cleanText(body.tone, "professional"),
-      cta: cleanText(body.cta),
-      signature: cleanText(body.signature),
-      sender_name: cleanText(body.sender_name || emailConnection?.from_name || emailConnection?.display_name, "ExportFlow"),
-      sender_email: cleanText(body.sender_email || emailConnection?.email) || null,
-      status: "draft"
-    })
+    .insert(campaignInsert)
     .select()
     .single();
 

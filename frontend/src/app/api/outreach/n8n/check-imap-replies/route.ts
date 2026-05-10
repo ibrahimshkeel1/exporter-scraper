@@ -243,7 +243,7 @@ export async function POST(request: NextRequest) {
   const supabase = createAdminSupabase();
   const { data, error } = await supabase
     .from("outreach_messages")
-    .select("id,campaign_id,lead_id,user_id,sent_at,gmail_message_id,gmail_thread_id,outreach_leads(id,email,status),outreach_campaigns(id,email_connection_id)")
+    .select("id,campaign_id,lead_id,user_id,sent_at,gmail_message_id,gmail_thread_id,outreach_leads(id,email,status),outreach_campaigns(*)")
     .in("status", ["sent", "test_sent"])
     .order("sent_at", { ascending: false })
     .limit(limit * 5);

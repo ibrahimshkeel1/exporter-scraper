@@ -27,9 +27,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Connect an email account before launching this campaign." }, { status: 400 });
   }
 
+  const update: Record<string, unknown> = { status: "launching", error_message: null };
+  if (connection?.id || "email_connection_id" in campaign) {
+    update.email_connection_id = connection?.id || campaign.email_connection_id || null;
+  }
+
   await supabase
     .from("outreach_campaigns")
-    .update({ status: "launching", error_message: null, email_connection_id: connection?.id || campaign.email_connection_id || null })
+    .update(update)
     .eq("id", id);
 
   const launch = await postN8nWebhook(process.env.N8N_OUTREACH_LAUNCH_WEBHOOK_URL, { campaign_id: id });
