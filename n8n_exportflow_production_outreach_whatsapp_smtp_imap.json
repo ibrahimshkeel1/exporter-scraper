@@ -1,11 +1,11 @@
-﻿{
-    "name":  "ExportFlow - Production Outreach SMTP IMAP",
-    "description":  "Production outreach automation for ExportFlow. Uses Gemini for per-lead 3-email sequences, backend APIs for SMTP/IMAP sending, reply checks, suppression, stats, and campaign state. Secrets are read from n8n environment variables, not hardcoded in this workflow.",
+{
+    "name":  "ExportFlow - Gmail Outreach Sequences",
+    "description":  "ExportFlow outreach automation using Gemini for per-lead sequences and Gmail-backed sending through ExportFlow backend routes. Compatible with the current website API routes.",
     "active":  false,
     "nodes":  [
                   {
                       "parameters":  {
-                                         "content":  "## Required n8n env\\n\\nEXPORTFLOW_APP_URL=https://exportflow-lovat.vercel.app\\nN8N_OUTREACH_WEBHOOK_SECRET=same value as frontend\\nGEMINI_API_KEY=...\\nGEMINI_MODEL=gemini-3-flash-preview\\nEXPORTFLOW_SEND_BATCH_LIMIT=5\\nEXPORTFLOW_FOLLOWUP_1_DAYS=3\\nEXPORTFLOW_FOLLOWUP_2_DAYS=7\\nEXPORTFLOW_NOTIFY_ON_SEND=true\\n\\nDo not paste live keys into this JSON.",
+                                         "content":  "## Required n8n env\n\nEXPORTFLOW_APP_URL=https://exportflow-lovat.vercel.app\nN8N_OUTREACH_WEBHOOK_SECRET=same value as frontend\nGEMINI_API_KEY=...\nGEMINI_MODEL=gemini-3-flash-preview\nEXPORTFLOW_SEND_BATCH_LIMIT=5\nEXPORTFLOW_FOLLOWUP_1_DAYS=3\nEXPORTFLOW_FOLLOWUP_2_DAYS=7\nEXPORTFLOW_REPLY_CHECK_LIMIT=10\n\nWebsite/Vercel must also have OUTREACH_TEST_GMAIL_FROM_EMAIL, OUTREACH_TEST_GMAIL_ACCESS_TOKEN, OUTREACH_TEST_SENDER_NAME, OUTREACH_TEST_MODE, and OUTREACH_TEST_RECIPIENT configured.\n\nDo not paste live keys into this JSON.",
                                          "height":  400,
                                          "width":  460
                                      },
@@ -230,7 +230,7 @@
                   {
                       "parameters":  {
                                          "method":  "POST",
-                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/launch-production\u0027 }}",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/launch\u0027 }}",
                                          "sendHeaders":  true,
                                          "headerParameters":  {
                                                                   "parameters":  [
@@ -262,7 +262,7 @@
                   },
                   {
                       "parameters":  {
-                                         "content":  "## 3. Send approved due emails\\n\\nRuns on schedule or manual webhook exportflow-outreach-send-due.\\n\\nExportFlow backend owns encrypted SMTP credentials, suppression checks, daily caps, send windows, headers, and result persistence.",
+                                         "content":  "## 3. Send approved due emails\n\nRuns on schedule or manual webhook exportflow-outreach-send-due.\n\nExportFlow backend now sends through the configured Gmail sender env and uses the approved per-lead sequence already saved on the website. No extra n8n SMTP node is required for this workflow.",
                                          "height":  260,
                                          "width":  460
                                      },
@@ -277,7 +277,8 @@
                   },
                   {
                       "parameters":  {
-
+                                         "unit":  "minutes",
+                                         "value":  15
                                      },
                       "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000020",
                       "name":  "Schedule - Send Due Emails",
@@ -320,7 +321,7 @@
                   {
                       "parameters":  {
                                          "method":  "POST",
-                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/production-due-messages\u0027 }}",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/due-messages\u0027 }}",
                                          "sendHeaders":  true,
                                          "headerParameters":  {
                                                                   "parameters":  [
@@ -399,7 +400,7 @@
                   },
                   {
                       "parameters":  {
-                                         "jsCode":  "const sentItems = $input.all();\nconst dueItems = $(\u0027Split Due Messages\u0027).all();\nreturn sentItems.map((sent, index) =\u003e {\n  const due = dueItems[index]?.json || {};\n  const response = sent.json || {};\n  return { json: { appUrl: due.appUrl, secret: due.secret, campaign_id: due.campaign_id, lead_id: due.lead_id, message_id: due.message_id || due.id, step: due.step, send_response: response, success: Boolean(response.ok || response.success || response.status === \u0027sent\u0027), sent_at: new Date().toISOString() } };\n});"
+                                         "jsCode":  "const sentItems = $input.all();\nconst dueItems = $('Split Due Messages').all();\nreturn sentItems.map((sent, index) => {\n  const due = dueItems[index]?.json || {};\n  const response = sent.json || {};\n  const status = response.status || (response.ok || response.success ? 'sent' : 'failed');\n  const success = status === 'sent' || status === 'test_sent' || Boolean(response.ok || response.success);\n  return {\n    json: {\n      appUrl: due.appUrl,\n      secret: due.secret,\n      campaign_id: due.campaign_id,\n      lead_id: due.lead_id,\n      message_id: due.message_id || due.id,\n      step: due.step,\n      status,\n      success,\n      sent_at: response.sent_at || new Date().toISOString(),\n      gmail_message_id: response.gmail_message_id || null,\n      gmail_thread_id: response.gmail_thread_id || null,\n      to_email: response.to_email || due.lead?.email || null,\n      original_to_email: response.original_to_email || due.lead?.original_email || due.lead?.email || null,\n      subject: response.subject || null,\n      body_html: response.body_html || null,\n      body_text: response.body_text || null,\n      generated: response.generated || {},\n      error: response.error || response.message || null\n    }\n  };\n});"
                                      },
                       "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000026",
                       "name":  "Prepare SMTP Send Result",
@@ -413,7 +414,7 @@
                   {
                       "parameters":  {
                                          "method":  "POST",
-                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/message-result-production\u0027 }}",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/message-result\u0027 }}",
                                          "sendHeaders":  true,
                                          "headerParameters":  {
                                                                   "parameters":  [
@@ -461,7 +462,8 @@
                   },
                   {
                       "parameters":  {
-
+                                         "unit":  "hours",
+                                         "value":  1
                                      },
                       "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000031",
                       "name":  "Schedule - Queue Follow Ups",
@@ -488,7 +490,7 @@
                   {
                       "parameters":  {
                                          "method":  "POST",
-                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/queue-production-followups\u0027 }}",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/queue-followups\u0027 }}",
                                          "sendHeaders":  true,
                                          "headerParameters":  {
                                                                   "parameters":  [
@@ -520,7 +522,7 @@
                   },
                   {
                       "parameters":  {
-                                         "content":  "## 5. Check replies and notify user\\n\\nBackend owns encrypted IMAP settings and reply matching. On reply, bounce, or unsubscribe, the backend stops the sequence and the website shows the handoff state to the user.",
+                                         "content":  "## 5. Check replies and stop follow-ups\n\nThis branch checks stored Gmail thread IDs through the ExportFlow backend. When a reply is detected, the lead is marked replied and queued follow-ups are skipped.",
                                          "height":  240,
                                          "width":  460
                                      },
@@ -535,7 +537,8 @@
                   },
                   {
                       "parameters":  {
-
+                                         "unit":  "minutes",
+                                         "value":  15
                                      },
                       "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000035",
                       "name":  "Schedule - Check IMAP Replies",
@@ -626,7 +629,8 @@
                   },
                   {
                       "parameters":  {
-
+                                         "unit":  "minutes",
+                                         "value":  1
                                      },
                       "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000043",
                       "name":  "Schedule - Rebuild Outreach Stats",
