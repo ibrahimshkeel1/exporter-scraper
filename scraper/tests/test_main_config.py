@@ -264,9 +264,19 @@ class MainConfigTests(unittest.TestCase):
 
         exclusions = discovery.get("exclusions", {}).get("root_domains", [])
         scoring_blocked = config.get("scoring", {}).get("blocked_domains", [])
-        for domain in ("volza.com", "tradeford.com", "tradewheel.com"):
+        for domain in ("volza.com", "tradeford.com", "tradewheel.com", "apollo.io", "zoominfo.com"):
             self.assertIn(domain, exclusions)
             self.assertIn(domain, scoring_blocked)
+
+        runtime = discovery.get("search_engine_runtime", {})
+        self.assertGreaterEqual(runtime.get("bing", {}).get("max_requests", 0), 20)
+        self.assertGreaterEqual(runtime.get("yahoo", {}).get("max_requests", 0), 18)
+
+        usa_directories = discovery.get("directory_sources", {}).get("usa", [])
+        thomasnet = next(item for item in usa_directories if item.get("type") == "thomasnet")
+        la_dirs = [item for item in usa_directories if item.get("type") == "la_fashion_district"]
+        self.assertIn("a.profile-link[href]", thomasnet.get("selectors", []))
+        self.assertTrue(any("showroom" in selector for item in la_dirs for selector in item.get("selectors", [])))
 
     def test_partition_discovery_sources_orders_engine_lanes(self):
         sources = [

@@ -33,6 +33,42 @@ def _normalize_queries(values):
     return list(dict.fromkeys(cleaned))
 
 
+def _product_seed(industry, config=None, search_terms=None):
+    text_parts = [str(industry or "")]
+    text_parts.extend(str(term or "") for term in search_terms or [])
+    lowered = " ".join(text_parts).lower()
+    if config and isinstance(config, dict):
+        product_seeds = config.get("discovery", {}).get("product_seeds", [])
+        for term in product_seeds:
+            value = str(term or "").strip()
+            if value and value.lower() in lowered:
+                return value
+        for term in product_seeds:
+            value = str(term or "").strip()
+            if value:
+                return value
+    product_terms = (
+        "denim",
+        "jeans",
+        "home textile",
+        "activewear",
+        "sportswear",
+        "streetwear",
+        "garment",
+        "fabric",
+        "fashion",
+        "apparel",
+        "clothing",
+        "textile",
+        "towel",
+        "leather",
+    )
+    for term in product_terms:
+        if term in lowered:
+            return term
+    return str(industry or "").strip() or "business services"
+
+
 def _contains_any(text, terms):
     lowered = str(text or "").lower()
     return any(term in lowered for term in terms)
@@ -354,6 +390,7 @@ def _build_signal_map_from_config(region, markets, market, industry_text, search
     signals_cfg = config.get("signals", {})
     scoring_cfg = config.get("scoring", {})
     cluster = signals_cfg.get("cluster", "generic_b2b")
+    base = _product_seed(industry_text, config=config, search_terms=search_terms)
 
     signal_catalog = signals_cfg.get("signal_catalog", [])
     routed_search_terms = []
@@ -362,7 +399,7 @@ def _build_signal_map_from_config(region, markets, market, industry_text, search
     for signal_row in signal_catalog[:5]:
         signal_name = signal_row.get("name", signal_row.get("signal", "signal"))
         signal_queries = _normalize_queries(
-            template.format(industry=industry_text, market=market).strip()
+            template.format(industry=industry_text, base=base, market=market).strip()
             for template in signal_row.get("query_templates", [])
         )
         routed_search_terms.extend(signal_queries)

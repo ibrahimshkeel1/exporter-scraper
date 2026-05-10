@@ -7,7 +7,7 @@
 
 slug: textile-apparel
 display_name: "Textile & Apparel Importers"
-version: 4
+version: 5
 quality_tier: "A+"
 
 # --------------------------------------------------
@@ -75,15 +75,15 @@ discovery:
 
   search_engine_runtime:
     bing:
-      max_requests: 16
-      min_delay_seconds: 9
-      cooldown_seconds: 75
-      failure_threshold: 3
+      max_requests: 24
+      min_delay_seconds: 11
+      cooldown_seconds: 120
+      failure_threshold: 4
     yahoo:
-      max_requests: 14
-      min_delay_seconds: 8
-      cooldown_seconds: 55
-      failure_threshold: 3
+      max_requests: 20
+      min_delay_seconds: 10
+      cooldown_seconds: 90
+      failure_threshold: 4
 
   # Textile tuning should start from structured textile directories, not legacy generic apparel seeds.
   seed_urls_enabled: false
@@ -356,7 +356,7 @@ discovery:
     usa:
       - type: thomasnet
         url: "https://www.thomasnet.com/search.html?what={base_query}"
-        selectors: ["a[data-company-name]", "a[href*='/profile/']", "a[href*='/company/']", "a[href*='/supplier-discovery/']", "a[href*='http']"]
+        selectors: ["a.profile-link[href]", "a[data-company-name]", "a[href*='/profile/']", "a[href*='/company/']", "a[href*='/supplier-discovery/']", "a[href*='http']"]
         include_directory_links: true
         candidate_kind: directory_profile
         description: "Thomasnet - North American textile/apparel sourcing profiles"
@@ -372,25 +372,25 @@ discovery:
         description: "MAGIC Las Vegas brand list"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
         include_directory_links: true
         candidate_kind: directory_profile
         description: "LA Fashion District Wholesale Directory"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/women-s-wear"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
         include_directory_links: true
         candidate_kind: directory_profile
         description: "LA Fashion District — Womenswear"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/menswear"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
         include_directory_links: true
         candidate_kind: directory_profile
         description: "LA Fashion District — Menswear"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/athletic-wear/sportswear"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
         include_directory_links: true
         candidate_kind: directory_profile
         description: "LA Fashion District — Sportswear"
@@ -472,6 +472,13 @@ discovery:
       - superpages.
       - dnb.
       - zoominfo.
+      - apollo.
+      - lusha.
+      - rocketreach.
+      - signalhire.
+      - leadiq.
+      - adapt.
+      - seamless.
       - crunchbase.
       - glassdoor.
       - indeed.
@@ -507,6 +514,14 @@ discovery:
       - eworldtrade.com
       - go4worldbusiness.com
       - importgenius.com
+      - zoominfo.com
+      - apollo.io
+      - lusha.com
+      - rocketreach.co
+      - signalhire.com
+      - leadiq.com
+      - adapt.io
+      - seamless.ai
       - panjiva.com
       - seair.co.in
       - textileinfomedia.com
@@ -762,6 +777,8 @@ scoring:
     noisy_domain_markers:
       - alibaba.com
       - apparelnews.net
+      - apollo.io
+      - adapt.io
       - exportersindia.com
       - eworldtrade.com
       - fashionnetwork.com
@@ -770,14 +787,20 @@ scoring:
       - go4worldbusiness.com
       - importgenius.com
       - just-style.com
+      - leadiq.com
+      - lusha.com
       - panjiva.com
+      - rocketreach.co
       - seair.co.in
+      - seamless.ai
+      - signalhire.com
       - textileinfomedia.com
       - textileworld.com
       - tradeford.com
       - tradewheel.com
       - tradeindia.com
       - volza.com
+      - zoominfo.com
       - cambridge.org
       - dictionary.com
       - merriam-webster.com
@@ -786,22 +809,30 @@ scoring:
 
   blocked_domains:
     - alibaba.com
+    - apollo.io
+    - adapt.io
     - cloudflare.com
     - exportersindia.com
     - eworldtrade.com
     - go4worldbusiness.com
     - importgenius.com
+    - leadiq.com
     - localsearch.com
+    - lusha.com
     - networkadvertising.org
     - nike.com
     - panjiva.com
+    - rocketreach.co
     - seair.co.in
+    - seamless.ai
+    - signalhire.com
     - textileinfomedia.com
     - thryv.com
     - tradeford.com
     - tradewheel.com
     - tradeindia.com
     - volza.com
+    - zoominfo.com
 
   blocked_domain_markers:
     - "dictionary."
@@ -1038,40 +1069,40 @@ signals:
       why_now: "Brand collection, story, and contact pages surface actual apparel buyers instead of B2B data directories."
       confidence: 0.90
       query_templates:
-        - '{industry} brand "our story" "{market}"'
-        - '{industry} collection "contact us" "{market}"'
+        - '{base} brand "our story" "{market}"'
+        - '{base} collection "contact us" "{market}"'
 
     - name: boutique-retailer-pages
       why_now: "Boutique and retailer pages expose companies buying finished apparel and denim assortments."
       confidence: 0.88
       query_templates:
-        - '{industry} boutique wholesale "{market}"'
-        - '{industry} retailer "vendor application" "{market}"'
+        - '{base} boutique wholesale "{market}"'
+        - '{base} retailer "vendor application" "{market}"'
 
     - name: private-label-sourcing
       why_now: "Private-label brands and sourcing teams are likely manufacturer-buyers."
       confidence: 0.86
       query_templates:
-        - '{industry} private label brand sourcing "{market}"'
-        - '{industry} private label program "contact us" "{market}"'
+        - '{base} private label brand sourcing "{market}"'
+        - '{base} private label program "contact us" "{market}"'
 
     - name: vendor-procurement-pages
       why_now: "Vendor application and supplier portal pages reveal buyer-side onboarding."
       confidence: 0.84
       query_templates:
-        - '{industry} vendor application retailer "{market}"'
-        - '{industry} supplier portal procurement "{market}"'
+        - '{base} vendor application retailer "{market}"'
+        - '{base} supplier portal procurement "{market}"'
 
     - name: wholesale-account-pages
       why_now: "Wholesale and trade-account pages identify contactable buyers with category fit."
       confidence: 0.80
       query_templates:
-        - '{industry} wholesale account brand "{market}"'
-        - '{industry} trade account boutique "{market}"'
+        - '{base} wholesale account brand "{market}"'
+        - '{base} trade account boutique "{market}"'
 
     - name: trade-show-buyers
       why_now: "Trade show brand lists surface companies actively buying and selling textile categories."
       confidence: 0.76
       query_templates:
-        - '{industry} MAGIC Las Vegas brand list'
-        - '{industry} Texworld NYC exhibitor list'
+        - '{base} MAGIC Las Vegas brand list'
+        - '{base} Texworld NYC exhibitor list'
