@@ -69,7 +69,6 @@ discovery:
   # --- Search Query Templates ---
   # Only first 8 are executed (_search_sources caps at queries[:8] for apparel).
   # Ordered by signal strength: procurement/sourcing > quoted exact-match > broad.
-  # DuckDuckGo is intentionally disabled for textile because it returns sparse results and rate-limits quickly.
   search_engines:
     - bing
     - yahoo
@@ -430,7 +429,6 @@ discovery:
     host_parts:
       - google.
       - bing.
-      - duckduckgo.
       - yahoo.
       - microsoft.
       - youtube.

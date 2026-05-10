@@ -3,7 +3,9 @@ import sys
 import unittest
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from pathlib import Path
 
+import yaml
 
 SCRAPER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SCRAPER_DIR not in sys.path:
@@ -237,6 +239,15 @@ class MainConfigTests(unittest.TestCase):
         self.assertEqual([lead["domain"] for lead in leads], ["alpha.com"])
         self.assertTrue(any(event[0] == "hard_check_backfill" for event in events))
         self.assertFalse(any(event[0] in {"exploratory_backfill", "forced_backfill"} for event in events))
+
+    def test_textile_config_does_not_enable_duckduckgo(self):
+        config_path = Path(SCRAPER_DIR) / "configs" / "textile-apparel.yml"
+        with config_path.open("r", encoding="utf-8") as handle:
+            config = yaml.safe_load(handle)
+
+        discovery = config.get("discovery", {})
+        self.assertEqual(discovery.get("search_engines"), ["bing", "yahoo"])
+        self.assertNotIn("duckduckgo.", discovery.get("exclusions", {}).get("host_parts", []))
 
 
 if __name__ == "__main__":
