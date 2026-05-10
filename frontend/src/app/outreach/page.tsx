@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ClipboardList,
   Eye,
+  FileText,
   Loader2,
   MailCheck,
   Play,
@@ -53,6 +54,16 @@ type ChatMessage = {
   content: string;
 };
 
+type LeadUploadFormat = "csv" | "pdf";
+
+type LeadUploadPayload = {
+  name: string;
+  format: LeadUploadFormat;
+  mime_type: string;
+  data?: string;
+  text_content?: string;
+};
+
 type SequenceStep = {
   subject?: string;
   body_text?: string;
@@ -90,7 +101,7 @@ const initialChat: ChatMessage[] = [
     id: "assistant-start",
     role: "assistant",
     content:
-      "Tell me what you sell, who you want to reach, your offer, CTA, sender details, and paste leads when ready. I will fill the outreach draft from the chat."
+      "Tell me what you sell, who you want to reach, your offer, CTA, sender details, and add leads by chat, CSV, or PDF. I will fill the outreach draft from the chat."
   }
 ];
 
@@ -113,6 +124,36 @@ function generatedText(value: unknown) {
 
 function clean(value: unknown) {
   return String(value || "").trim();
+}
+
+function readFileAsText(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Could not read file."));
+    reader.readAsText(file);
+  });
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Could not read file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function base64FromDataUrl(value: string) {
+  const commaIndex = value.indexOf(",");
+  return commaIndex >= 0 ? value.slice(commaIndex + 1) : value;
+}
+
+function formatFromFile(file: File, selected: LeadUploadFormat): LeadUploadFormat {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".pdf") || file.type === "application/pdf") return "pdf";
+  if (name.endsWith(".csv") || file.type.includes("csv") || file.type === "text/plain") return "csv";
+  return selected;
 }
 
 function statusClass(status: string) {
@@ -318,7 +359,10 @@ export default function OutreachPage() {
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [readyFromAssistant, setReadyFromAssistant] = useState(false);
   const [selectedTemplateLead, setSelectedTemplateLead] = useState<OutreachLead | null>(null);
+  const [leadUploadFormat, setLeadUploadFormat] = useState<LeadUploadFormat>("csv");
+  const [uploadedLeadFile, setUploadedLeadFile] = useState("");
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function token() {
     if (!supabase) return null;
@@ -378,6 +422,34 @@ export default function OutreachPage() {
     if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
   }, [chatMessages, loading]);
 
+  function applyAssistantPayload(payload: Record<string, unknown>) {
+    if (payload.draft) setForm((current) => ({ ...current, ...(payload.draft as Partial<FormState>) }));
+    if (typeof payload.pasted_leads === "string") setPastedLeads(payload.pasted_leads);
+    setMissingFields(Array.isArray(payload.missing_fields) ? payload.missing_fields.map(String) : []);
+    setReadyFromAssistant(Boolean(payload.ready_to_create));
+    setChatMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: typeof payload.assistant_message === "string" ? payload.assistant_message : "I updated the outreach draft."
+      }
+    ]);
+  }
+
+  async function askAssistant(nextMessages: ChatMessage[], leadFile?: LeadUploadPayload) {
+    const payload = await api("/api/outreach/assistant", {
+      method: "POST",
+      body: JSON.stringify({
+        messages: nextMessages.map(({ role, content }) => ({ role, content })),
+        draft: form,
+        pasted_leads: pastedLeads,
+        lead_file: leadFile
+      })
+    });
+    applyAssistantPayload(payload);
+  }
+
   async function sendChat(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = chatDraft.trim();
@@ -390,27 +462,7 @@ export default function OutreachPage() {
     setMessage("");
 
     try {
-      const payload = await api("/api/outreach/assistant", {
-        method: "POST",
-        body: JSON.stringify({
-          messages: nextMessages.map(({ role, content }) => ({ role, content })),
-          draft: form,
-          pasted_leads: pastedLeads
-        })
-      });
-
-      if (payload.draft) setForm((current) => ({ ...current, ...payload.draft }));
-      if (typeof payload.pasted_leads === "string") setPastedLeads(payload.pasted_leads);
-      setMissingFields(Array.isArray(payload.missing_fields) ? payload.missing_fields : []);
-      setReadyFromAssistant(Boolean(payload.ready_to_create));
-      setChatMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: payload.assistant_message || "I updated the outreach draft."
-        }
-      ]);
+      await askAssistant(nextMessages);
     } catch (error) {
       setChatMessages((current) => [
         ...current,
@@ -418,6 +470,65 @@ export default function OutreachPage() {
           id: crypto.randomUUID(),
           role: "assistant",
           content: error instanceof Error ? error.message : "I could not update the outreach draft."
+        }
+      ]);
+    } finally {
+      setLoading("");
+    }
+  }
+
+  async function handleLeadFileUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || loading === "chat") return;
+
+    const format = formatFromFile(file, leadUploadFormat);
+    setLeadUploadFormat(format);
+
+    if (format === "csv" && !(file.name.toLowerCase().endsWith(".csv") || file.type.includes("csv") || file.type === "text/plain")) {
+      setMessage("Choose a CSV file or switch the upload format to PDF.");
+      return;
+    }
+
+    if (format === "pdf" && !(file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf")) {
+      setMessage("Choose a PDF file or switch the upload format to CSV.");
+      return;
+    }
+
+    const maxBytes = format === "pdf" ? 4 * 1024 * 1024 : 2 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setMessage(`${format.toUpperCase()} upload is too large. Keep it under ${format === "pdf" ? "4MB" : "2MB"}.`);
+      return;
+    }
+
+    const userMessage: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: `Uploaded ${format.toUpperCase()} lead file: ${file.name}`
+    };
+    const nextMessages = [...chatMessages, userMessage];
+    setChatMessages(nextMessages);
+    setUploadedLeadFile(file.name);
+    setLoading("chat");
+    setMessage("");
+
+    try {
+      const textContent = format === "csv" ? await readFileAsText(file) : "";
+      const data = format === "pdf" ? base64FromDataUrl(await readFileAsDataUrl(file)) : undefined;
+      await askAssistant(nextMessages, {
+        name: file.name,
+        format,
+        mime_type: file.type || (format === "pdf" ? "application/pdf" : "text/csv"),
+        data,
+        text_content: textContent
+      });
+    } catch (error) {
+      setChatMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: error instanceof Error ? error.message : "I could not analyze that lead file."
         }
       ]);
     } finally {
@@ -533,6 +644,41 @@ export default function OutreachPage() {
             )}
           </div>
 
+          <div className="mt-3 border-t border-[#30363d] pt-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={leadUploadFormat === "pdf" ? "application/pdf,.pdf" : ".csv,text/csv,text/plain"}
+              className="hidden"
+              onChange={(event) => void handleLeadFileUpload(event)}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] uppercase tracking-[0.16em] text-[#8b949e]">Lead file</span>
+              <div className="grid h-9 grid-cols-2 overflow-hidden border border-[#30363d]">
+                {(["csv", "pdf"] as LeadUploadFormat[]).map((format) => (
+                  <button
+                    key={format}
+                    type="button"
+                    onClick={() => setLeadUploadFormat(format)}
+                    className={`px-3 text-xs font-semibold uppercase ${leadUploadFormat === format ? "bg-[#00ffff] text-black" : "bg-black/30 text-vercel-muted hover:text-vercel-text"}`}
+                  >
+                    {format}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading === "chat"}
+                className="ide-btn inline-flex h-9 items-center gap-2 px-3 text-xs disabled:opacity-50"
+              >
+                <FileText size={14} />
+                Upload {leadUploadFormat.toUpperCase()}
+              </button>
+              {uploadedLeadFile && <span className="max-w-full truncate text-xs text-vercel-muted">{uploadedLeadFile}</span>}
+            </div>
+          </div>
+
           <form className="mt-3 flex gap-2 border-t border-[#30363d] pt-3" onSubmit={sendChat}>
             <textarea
               className="ide-input h-16 flex-1 resize-none px-3 py-2 text-sm"
@@ -587,9 +733,9 @@ export default function OutreachPage() {
               </button>
             </div>
             <div className="border border-[#30363d] bg-black/30 p-2">
-              <p className="mb-2 text-[10px] uppercase tracking-[0.16em] text-[#8b949e]">Lead rows from chat</p>
+              <p className="mb-2 text-[10px] uppercase tracking-[0.16em] text-[#8b949e]">Lead rows from chat or file</p>
               <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-vercel-muted">
-                {pastedLeads || "Paste leads in chat. Example: Acme Textiles, Sarah Khan, sarah@example.com, https://example.com"}
+                {pastedLeads || "No leads extracted yet."}
               </pre>
             </div>
             <button type="button" onClick={() => void loadDeliveredJobs()} className="ide-btn inline-flex h-9 items-center gap-2 px-3 text-xs">

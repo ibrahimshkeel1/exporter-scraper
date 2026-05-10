@@ -17,6 +17,14 @@ type OutreachDraft = {
   sender_email: string;
 };
 
+type LeadUploadFile = {
+  name: string;
+  format: "csv" | "pdf";
+  mime_type: string;
+  data?: string;
+  text_content?: string;
+};
+
 const draftKeys: Array<keyof OutreachDraft> = [
   "business_plan",
   "offer",
@@ -30,6 +38,29 @@ const draftKeys: Array<keyof OutreachDraft> = [
 
 function text(value: unknown, fallback = "") {
   return String(value ?? fallback).trim();
+}
+
+function normalizeLeadFile(value: unknown): LeadUploadFile | null {
+  if (!value || typeof value !== "object") return null;
+  const source = value as Record<string, unknown>;
+  const format = text(source.format).toLowerCase();
+  if (format !== "csv" && format !== "pdf") return null;
+
+  const name = text(source.name) || `lead-upload.${format}`;
+  const mimeType = text(source.mime_type) || (format === "pdf" ? "application/pdf" : "text/csv");
+  const data = text(source.data);
+  const textContent = text(source.text_content).slice(0, 120000);
+
+  if (format === "pdf" && !data) return null;
+  if (format === "csv" && !textContent && !data) return null;
+
+  return {
+    name,
+    format,
+    mime_type: mimeType,
+    data: data || undefined,
+    text_content: textContent || undefined
+  };
 }
 
 function normalizeDraft(value: unknown, current: OutreachDraft): OutreachDraft {
@@ -100,11 +131,13 @@ export async function POST(request: NextRequest) {
     sender_email: ""
   });
   const currentLeads = text(body.pasted_leads);
+  const leadFile = normalizeLeadFile(body.lead_file);
   const apiKey = process.env.GEMINI_API_KEY;
   const model = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
 
   if (!apiKey) {
-    return NextResponse.json(fallbackReply(messages, currentDraft, currentLeads));
+    const fallbackLeads = currentLeads || (leadFile?.format === "csv" ? text(leadFile.text_content) : "");
+    return NextResponse.json(fallbackReply(messages, currentDraft, fallbackLeads));
   }
 
   const transcript = messages
@@ -119,6 +152,9 @@ export async function POST(request: NextRequest) {
     "Return JSON only. Do not use markdown.",
     "Schema: {\"assistant_message\": string, \"draft\": {\"business_plan\": string, \"offer\": string, \"target_buyer\": string, \"tone\": string, \"cta\": string, \"signature\": string, \"sender_name\": string, \"sender_email\": string}, \"pasted_leads\": string, \"ready_to_create\": boolean, \"missing_fields\": string[]}.",
     "Extract lead rows from the chat if the user pasted them. Keep one lead per line as: company, contact, email, website, notes.",
+    "If an uploaded lead file is provided, analyze every visible column, table row, note, and context block in it.",
+    "For CSV files, use the headers to identify company, contact, email, website, country, category, MOQ, buyer type, and notes. For PDF files, read the attached PDF and extract the same fields from tables or prose.",
+    "Preserve useful per-lead context in the notes field so later template generation can personalize emails from the file details.",
     "Do not invent sender email, offer details, or leads. Preserve existing draft values unless the user clearly updates them.",
     "Ask one concise next question when information is missing. If ready, tell the user to review the panels and create the campaign.",
     "",
@@ -128,15 +164,31 @@ export async function POST(request: NextRequest) {
     "Current pasted leads:",
     currentLeads || "none",
     "",
+    "Uploaded lead file:",
+    leadFile ? JSON.stringify({ name: leadFile.name, format: leadFile.format, mime_type: leadFile.mime_type }, null, 2) : "none",
+    "",
+    "Uploaded CSV/text content:",
+    leadFile?.text_content || "none",
+    "",
     "Conversation:",
     transcript || "No conversation yet."
   ].join("\n");
+
+  const parts: Array<Record<string, unknown>> = [{ text: prompt }];
+  if (leadFile?.format === "pdf" && leadFile.data) {
+    parts.push({
+      inline_data: {
+        mime_type: leadFile.mime_type || "application/pdf",
+        data: leadFile.data
+      }
+    });
+  }
 
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: [{ role: "user", parts }],
       generationConfig: {
         temperature: 0.2,
         responseMimeType: "application/json"
@@ -145,8 +197,9 @@ export async function POST(request: NextRequest) {
   });
 
   if (!response.ok) {
+    const fallbackLeads = currentLeads || (leadFile?.format === "csv" ? text(leadFile.text_content) : "");
     return NextResponse.json({
-      ...fallbackReply(messages, currentDraft, currentLeads),
+      ...fallbackReply(messages, currentDraft, fallbackLeads),
       warning: `Gemini failed with HTTP ${response.status}; local fallback used.`
     });
   }
@@ -155,8 +208,9 @@ export async function POST(request: NextRequest) {
   const rawText = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
   const parsed = typeof rawText === "string" ? parseGeminiJson(rawText) : null;
   if (!parsed) {
+    const fallbackLeads = currentLeads || (leadFile?.format === "csv" ? text(leadFile.text_content) : "");
     return NextResponse.json({
-      ...fallbackReply(messages, currentDraft, currentLeads),
+      ...fallbackReply(messages, currentDraft, fallbackLeads),
       warning: "Gemini returned invalid JSON; local fallback used."
     });
   }
