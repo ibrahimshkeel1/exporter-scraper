@@ -30,6 +30,12 @@ class ConfigLoader:
         self.supabase_url = (os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or "").rstrip("/")
         self.config_bucket = os.environ.get(self.REMOTE_BUCKET_ENV, self.DEFAULT_BUCKET).strip() or self.DEFAULT_BUCKET
         self.manifest_path = os.environ.get(self.REMOTE_MANIFEST_ENV, self.DEFAULT_MANIFEST).strip() or self.DEFAULT_MANIFEST
+        self.remote_first = str(os.environ.get("EXPORTFLOW_CONFIG_REMOTE_FIRST") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         self.remote_manifest_url = (
             f"{self.supabase_url}/storage/v1/object/public/{self.config_bucket}/{self.manifest_path}"
             if self.supabase_url
@@ -156,24 +162,27 @@ class ConfigLoader:
                     self._trigger_map[lowered] = slug
 
     def _load(self):
-        """Load configs from remote storage first, then local disk as fallback."""
-        remote_manifest = self._download_remote_manifest()
-        if remote_manifest:
-            remote_configs = self._configs_from_manifest(remote_manifest, self.remote_manifest_url)
-            if remote_configs:
-                self.configs = remote_configs
-                self._source = "remote"
-                self._build_trigger_map()
-                return
-
-        local_manifest = self._build_local_manifest()
-        if local_manifest:
-            local_configs = self._configs_from_manifest(local_manifest, str(self.config_dir))
-            if local_configs:
-                self.configs = local_configs
-                self._source = "local"
-                self._build_trigger_map()
-                return
+        """Load configs from the preferred source, then fall back to the other one."""
+        source_plan = ("remote", "local") if self.remote_first else ("local", "remote")
+        for source in source_plan:
+            if source == "remote":
+                manifest = self._download_remote_manifest()
+                if manifest:
+                    configs = self._configs_from_manifest(manifest, self.remote_manifest_url)
+                    if configs:
+                        self.configs = configs
+                        self._source = "remote"
+                        self._build_trigger_map()
+                        return
+            else:
+                manifest = self._build_local_manifest()
+                if manifest:
+                    configs = self._configs_from_manifest(manifest, str(self.config_dir))
+                    if configs:
+                        self.configs = configs
+                        self._source = "local"
+                        self._build_trigger_map()
+                        return
 
         self.configs = {}
         self._trigger_map = {}

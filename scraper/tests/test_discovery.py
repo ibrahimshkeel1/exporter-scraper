@@ -78,6 +78,23 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertTrue(any(source.name.startswith("duckduckgo-p1-") for source in sources))
         self.assertTrue(any(source.name.startswith("yahoo-p1-") for source in sources))
 
+    def test_search_source_pages_prioritize_bing_then_yahoo_then_duckduckgo(self):
+        sources = self.discovery._search_source_pages(
+            "textile importer",
+            "textile-importer",
+            page_depth=1,
+            yahoo_depth=1,
+            search_engines=["duckduckgo", "bing", "yahoo"],
+        )
+        self.assertEqual(
+            [source.name for source in sources],
+            [
+                "bing-p1-textile-importer",
+                "yahoo-p1-textile-importer",
+                "duckduckgo-p1-textile-importer",
+            ],
+        )
+
     def test_config_can_disable_duckduckgo_search_sources(self):
         discovery = LeadDiscovery(
             limit=10,

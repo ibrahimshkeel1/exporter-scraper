@@ -24,6 +24,7 @@ class DiscoverySource:
 
 
 class LeadDiscovery:
+    SEARCH_ENGINE_PRIORITY = ("bing", "yahoo", "duckduckgo")
     MULTI_LEVEL_SUFFIXES = {
         "co.uk",
         "org.uk",
@@ -459,57 +460,60 @@ class LeadDiscovery:
             for query_index, query in enumerate(queries[:query_budget], start=1):
                 encoded = quote_plus(query)
                 name_suffix = signal_slug if query_index == 1 else f"{signal_slug}-q{query_index}"
-                if "bing" in enabled_engines:
-                    sources.append(
-                        DiscoverySource(
-                            name=f"signal-bing-p1-{name_suffix}",
-                            url=f"https://www.bing.com/search?q={encoded}&first=1",
-                            selectors=(
-                                "li.b_algo h2 a[href]",
-                                "ol#b_results a[href]",
-                                "a[href*='http']",
-                            ),
-                            discovery_method="signal_search",
-                            signal_detected=signal_name,
-                            signal_confidence=confidence,
-                            why_now=why_now,
-                            search_engine="bing",
+                for engine in self.SEARCH_ENGINE_PRIORITY:
+                    if engine not in enabled_engines:
+                        continue
+                    if engine == "bing":
+                        sources.append(
+                            DiscoverySource(
+                                name=f"signal-bing-p1-{name_suffix}",
+                                url=f"https://www.bing.com/search?q={encoded}&first=1",
+                                selectors=(
+                                    "li.b_algo h2 a[href]",
+                                    "ol#b_results a[href]",
+                                    "a[href*='http']",
+                                ),
+                                discovery_method="signal_search",
+                                signal_detected=signal_name,
+                                signal_confidence=confidence,
+                                why_now=why_now,
+                                search_engine="bing",
+                            )
                         )
-                    )
-                if "duckduckgo" in enabled_engines:
-                    sources.append(
-                        DiscoverySource(
-                            name=f"signal-duckduckgo-p1-{name_suffix}",
-                            url=f"https://lite.duckduckgo.com/lite/?q={encoded}",
-                            selectors=(
-                                "a.result-link[href]",
-                                "a[href*='uddg=']",
-                                "a[href*='http']",
-                            ),
-                            discovery_method="signal_search",
-                            signal_detected=signal_name,
-                            signal_confidence=confidence,
-                            why_now=why_now,
-                            search_engine="duckduckgo",
+                    elif engine == "yahoo" and query_index == 1:
+                        sources.append(
+                            DiscoverySource(
+                                name=f"signal-yahoo-p1-{signal_slug}",
+                                url=f"https://search.yahoo.com/search?p={encoded}",
+                                selectors=(
+                                    "div#web h3.title a[href]",
+                                    "h3.title a[href]",
+                                    "a[href*='http']",
+                                ),
+                                discovery_method="signal_search",
+                                signal_detected=signal_name,
+                                signal_confidence=confidence,
+                                why_now=why_now,
+                                search_engine="yahoo",
+                            )
                         )
-                    )
-                if "yahoo" in enabled_engines and query_index == 1:
-                    sources.append(
-                        DiscoverySource(
-                            name=f"signal-yahoo-p1-{signal_slug}",
-                            url=f"https://search.yahoo.com/search?p={encoded}",
-                            selectors=(
-                                "div#web h3.title a[href]",
-                                "h3.title a[href]",
-                                "a[href*='http']",
-                            ),
-                            discovery_method="signal_search",
-                            signal_detected=signal_name,
-                            signal_confidence=confidence,
-                            why_now=why_now,
-                            search_engine="yahoo",
+                    elif engine == "duckduckgo":
+                        sources.append(
+                            DiscoverySource(
+                                name=f"signal-duckduckgo-p1-{name_suffix}",
+                                url=f"https://lite.duckduckgo.com/lite/?q={encoded}",
+                                selectors=(
+                                    "a.result-link[href]",
+                                    "a[href*='uddg=']",
+                                    "a[href*='http']",
+                                ),
+                                discovery_method="signal_search",
+                                signal_detected=signal_name,
+                                signal_confidence=confidence,
+                                why_now=why_now,
+                                search_engine="duckduckgo",
+                            )
                         )
-                    )
         return sources
 
     @staticmethod
@@ -898,14 +902,14 @@ class LeadDiscovery:
     def _enabled_search_engines(self):
         configured = self.config.get("discovery", {}).get("search_engines", []) if self.config else []
         if isinstance(configured, list):
-            engines = [
+            enabled = {
                 str(engine or "").strip().lower()
                 for engine in configured
-                if str(engine or "").strip().lower() in {"bing", "duckduckgo", "yahoo"}
-            ]
-            if engines:
-                return list(dict.fromkeys(engines))
-        return ["bing", "duckduckgo", "yahoo"]
+                if str(engine or "").strip().lower() in self.SEARCH_ENGINE_PRIORITY
+            }
+            if enabled:
+                return [engine for engine in self.SEARCH_ENGINE_PRIORITY if engine in enabled]
+        return list(self.SEARCH_ENGINE_PRIORITY)
 
     @staticmethod
     def _coerce_positive_float(value, fallback):
@@ -951,54 +955,57 @@ class LeadDiscovery:
 
     def _search_source_pages(self, query, slug, page_depth, yahoo_depth, search_engines=None):
         encoded = quote_plus(query)
-        enabled_engines = set(search_engines or ["bing", "duckduckgo", "yahoo"])
+        enabled_engines = set(search_engines or self.SEARCH_ENGINE_PRIORITY)
         sources = []
         for page_index in range(1, page_depth + 1):
-            if "bing" in enabled_engines:
-                bing_offset = (page_index - 1) * 10 + 1
-                sources.append(
-                    DiscoverySource(
-                        name=f"bing-p{page_index}-{slug}",
-                        url=f"https://www.bing.com/search?q={encoded}&first={bing_offset}",
-                        selectors=(
-                            "li.b_algo h2 a[href]",
-                            "ol#b_results a[href]",
-                            "a[href*='http']",
-                        ),
-                        discovery_method="search",
-                        search_engine="bing",
+            for engine in self.SEARCH_ENGINE_PRIORITY:
+                if engine not in enabled_engines:
+                    continue
+                if engine == "bing":
+                    bing_offset = (page_index - 1) * 10 + 1
+                    sources.append(
+                        DiscoverySource(
+                            name=f"bing-p{page_index}-{slug}",
+                            url=f"https://www.bing.com/search?q={encoded}&first={bing_offset}",
+                            selectors=(
+                                "li.b_algo h2 a[href]",
+                                "ol#b_results a[href]",
+                                "a[href*='http']",
+                            ),
+                            discovery_method="search",
+                            search_engine="bing",
+                        )
                     )
-                )
-            if "duckduckgo" in enabled_engines:
-                duck_offset = (page_index - 1) * 30
-                sources.append(
-                    DiscoverySource(
-                        name=f"duckduckgo-p{page_index}-{slug}",
-                        url=f"https://lite.duckduckgo.com/lite/?q={encoded}&s={duck_offset}",
-                        selectors=(
-                            "a.result-link[href]",
-                            "a[href*='uddg=']",
-                            "a[href*='http']",
-                        ),
-                        discovery_method="search",
-                        search_engine="duckduckgo",
+                elif engine == "yahoo" and page_index <= yahoo_depth:
+                    yahoo_offset = (page_index - 1) * 10 + 1
+                    sources.append(
+                        DiscoverySource(
+                            name=f"yahoo-p{page_index}-{slug}",
+                            url=f"https://search.yahoo.com/search?p={encoded}&b={yahoo_offset}",
+                            selectors=(
+                                "div#web h3.title a[href]",
+                                "h3.title a[href]",
+                                "a[href*='http']",
+                            ),
+                            discovery_method="search",
+                            search_engine="yahoo",
+                        )
                     )
-                )
-            if "yahoo" in enabled_engines and page_index <= yahoo_depth:
-                yahoo_offset = (page_index - 1) * 10 + 1
-                sources.append(
-                    DiscoverySource(
-                        name=f"yahoo-p{page_index}-{slug}",
-                        url=f"https://search.yahoo.com/search?p={encoded}&b={yahoo_offset}",
-                        selectors=(
-                            "div#web h3.title a[href]",
-                            "h3.title a[href]",
-                            "a[href*='http']",
-                        ),
-                        discovery_method="search",
-                        search_engine="yahoo",
+                elif engine == "duckduckgo":
+                    duck_offset = (page_index - 1) * 30
+                    sources.append(
+                        DiscoverySource(
+                            name=f"duckduckgo-p{page_index}-{slug}",
+                            url=f"https://lite.duckduckgo.com/lite/?q={encoded}&s={duck_offset}",
+                            selectors=(
+                                "a.result-link[href]",
+                                "a[href*='uddg=']",
+                                "a[href*='http']",
+                            ),
+                            discovery_method="search",
+                            search_engine="duckduckgo",
+                        )
                     )
-                )
         return sources
 
     def _search_sources(self, region, industry, depth=None):

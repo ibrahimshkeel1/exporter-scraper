@@ -619,8 +619,8 @@ def partition_discovery_sources(sources):
     groups = {
         "main": [],
         "bing": [],
-        "duckduckgo": [],
         "yahoo": [],
+        "duckduckgo": [],
     }
     for source in sources:
         engine = (getattr(source, "search_engine", "") or "").strip().lower()

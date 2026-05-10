@@ -19,6 +19,7 @@ from main import (
     compute_discovery_limit,
     load_recent_domains,
     pad_lead_pack_with_repeats,
+    partition_discovery_sources,
     relaxed_score_thresholds,
     resolve_proxy_pool,
     save_recent_domains,
@@ -248,6 +249,18 @@ class MainConfigTests(unittest.TestCase):
         discovery = config.get("discovery", {})
         self.assertEqual(discovery.get("search_engines"), ["bing", "yahoo"])
         self.assertNotIn("duckduckgo.", discovery.get("exclusions", {}).get("host_parts", []))
+
+    def test_partition_discovery_sources_orders_engine_lanes(self):
+        sources = [
+            SimpleNamespace(search_engine="duckduckgo"),
+            SimpleNamespace(search_engine="bing"),
+            SimpleNamespace(search_engine=""),
+            SimpleNamespace(search_engine="yahoo"),
+        ]
+        groups = partition_discovery_sources(sources)
+
+        self.assertEqual(list(groups.keys()), ["main", "bing", "yahoo", "duckduckgo"])
+        self.assertEqual(groups["main"][0].search_engine, "")
 
 
 if __name__ == "__main__":
