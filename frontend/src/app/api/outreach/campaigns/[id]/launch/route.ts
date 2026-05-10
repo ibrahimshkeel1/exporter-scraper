@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserFromRequest } from "../../../../../../lib/api-auth";
 import { createAdminSupabase } from "../../../../../../lib/supabase-admin";
-import { getCampaignForUser, postN8nWebhook } from "../../../../../../lib/outreach-server";
+import { getCampaignForUser, outreachDeliveryConfig, postN8nWebhook } from "../../../../../../lib/outreach-server";
+import { findUserEmailConnection } from "../../../../../../lib/email-connections";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -20,7 +21,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   const supabase = createAdminSupabase();
-  await supabase.from("outreach_campaigns").update({ status: "launching", error_message: null }).eq("id", id);
+  const delivery = outreachDeliveryConfig();
+  const connection = await findUserEmailConnection(supabase, user.id, campaign.email_connection_id || null);
+  if (!connection && !delivery.smtp.host) {
+    return NextResponse.json({ error: "Connect an email account before launching this campaign." }, { status: 400 });
+  }
+
+  await supabase
+    .from("outreach_campaigns")
+    .update({ status: "launching", error_message: null, email_connection_id: connection?.id || campaign.email_connection_id || null })
+    .eq("id", id);
 
   const launch = await postN8nWebhook(process.env.N8N_OUTREACH_LAUNCH_WEBHOOK_URL, { campaign_id: id });
   if (!launch.ok) {

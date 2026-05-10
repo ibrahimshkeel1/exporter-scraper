@@ -1,11 +1,11 @@
 {
-    "name":  "ExportFlow - SMTP IMAP Outreach Sequences",
-    "description":  "ExportFlow outreach automation using Gemini for per-lead sequences, SMTP-backed sending, and IMAP reply checks through the current website API routes.",
+    "name":  "ExportFlow - Per User Email Outreach Sequences",
+    "description":  "ExportFlow outreach automation using Gemini for per-lead sequences. n8n calls the website API; the website sends and checks replies through each user's connected Google Workspace/Gmail or SMTP account.",
     "active":  false,
     "nodes":  [
                   {
                       "parameters":  {
-                                         "content":  "## Required n8n env\n\nEXPORTFLOW_APP_URL=https://exportflow-lovat.vercel.app\nN8N_OUTREACH_WEBHOOK_SECRET=same value as frontend\nGEMINI_API_KEY=...\nGEMINI_MODEL=gemini-3-flash-preview\nEXPORTFLOW_SEND_BATCH_LIMIT=5\nEXPORTFLOW_FOLLOWUP_1_DAYS=3\nEXPORTFLOW_FOLLOWUP_2_DAYS=7\nEXPORTFLOW_REPLY_CHECK_LIMIT=10\n\nWebsite/Vercel must also have:\nOUTREACH_SMTP_HOST\nOUTREACH_SMTP_PORT\nOUTREACH_SMTP_SECURE\nOUTREACH_SMTP_USER\nOUTREACH_SMTP_PASSWORD\nOUTREACH_SMTP_FROM_EMAIL\nOUTREACH_SMTP_FROM_NAME\nOUTREACH_SMTP_REPLY_TO\nOUTREACH_IMAP_HOST\nOUTREACH_IMAP_PORT\nOUTREACH_IMAP_SECURE\nOUTREACH_IMAP_USER\nOUTREACH_IMAP_PASSWORD\nOUTREACH_IMAP_MAILBOX\nOUTREACH_TEST_MODE\nOUTREACH_TEST_RECIPIENT\n\nDo not paste live keys into this JSON.",
+                                         "content":  "## Required n8n env\n\nEXPORTFLOW_APP_URL=https://exportflow-lovat.vercel.app\nN8N_OUTREACH_WEBHOOK_SECRET=same value as frontend\nGEMINI_API_KEY=...\nGEMINI_MODEL=gemini-3-flash-preview\nEXPORTFLOW_SEND_BATCH_LIMIT=5\nEXPORTFLOW_FOLLOWUP_1_DAYS=3\nEXPORTFLOW_FOLLOWUP_2_DAYS=7\nEXPORTFLOW_REPLY_CHECK_LIMIT=10\n\nWebsite/Vercel must also have:\nEMAIL_ENCRYPTION_KEY\nEMAIL_OAUTH_STATE_SECRET\nGOOGLE_CLIENT_ID\nGOOGLE_CLIENT_SECRET\nGOOGLE_REDIRECT_URI=https://exportflow-lovat.vercel.app/api/email/google/callback\nOUTREACH_TEST_MODE\nOUTREACH_TEST_RECIPIENT\n\nOptional shared fallback SMTP/IMAP env can stay configured, but per-user senders are stored from the website Email Sender box.\n\nDo not paste live keys into this JSON.",
                                          "height":  400,
                                          "width":  460
                                      },
@@ -262,7 +262,7 @@
                   },
                   {
                       "parameters":  {
-                                         "content":  "## 3. Send approved due emails\n\nRuns on schedule or manual webhook exportflow-outreach-send-due.\n\nExportFlow backend sends through the configured SMTP account and uses the approved per-lead sequence already saved on the website. n8n only triggers the backend send route and persists the result.",
+                                         "content":  "## 3. Send approved due emails\n\nRuns on schedule or manual webhook exportflow-outreach-send-due.\n\nExportFlow backend sends through the campaign owner's connected email account and uses the approved per-lead sequence already saved on the website. n8n only triggers the backend send route and persists the result.",
                                          "height":  260,
                                          "width":  460
                                      },
@@ -522,7 +522,7 @@
                   },
                   {
                       "parameters":  {
-                                         "content":  "## 5. Check replies and stop follow-ups\n\nThis branch checks recent inbox replies through the configured IMAP account. When a reply references a stored outbound Message-ID, the lead is marked replied and queued follow-ups are skipped.",
+                                         "content":  "## 5. Check replies and stop follow-ups\n\nThis branch asks ExportFlow to check recent replies through each campaign owner's connected Gmail/Workspace or SMTP/IMAP account. When a reply references a stored outbound Message-ID, the lead is marked replied and queued follow-ups are skipped.",
                                          "height":  240,
                                          "width":  460
                                      },

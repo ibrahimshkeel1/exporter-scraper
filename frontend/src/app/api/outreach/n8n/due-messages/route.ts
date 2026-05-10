@@ -52,6 +52,8 @@ export async function POST(request: NextRequest) {
         message_id: row.id,
         campaign_id: row.campaign_id,
         lead_id: row.lead_id,
+        user_id: row.user_id,
+        email_connection_id: campaign.email_connection_id || null,
         step: row.step,
         approved_templates: campaign.approved_templates || campaign.generated_templates || null,
         sender: {

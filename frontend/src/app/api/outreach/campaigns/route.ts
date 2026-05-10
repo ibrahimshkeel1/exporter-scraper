@@ -3,6 +3,7 @@ import { getUserFromRequest } from "../../../../lib/api-auth";
 import { createAdminSupabase } from "../../../../lib/supabase-admin";
 import { OutreachLeadInput } from "../../../../lib/outreach";
 import { toLeadRows } from "../../../../lib/outreach-server";
+import { findUserEmailConnection } from "../../../../lib/email-connections";
 
 function cleanText(value: unknown, fallback = "") {
   return String(value ?? fallback).trim();
@@ -41,18 +42,25 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createAdminSupabase();
+  const requestedConnectionId = cleanText(body.email_connection_id);
+  const emailConnection = await findUserEmailConnection(supabase, user.id, requestedConnectionId || null);
+  if (requestedConnectionId && !emailConnection) {
+    return NextResponse.json({ error: "Selected email connection was not found." }, { status: 400 });
+  }
+
   const { data: campaign, error: insertError } = await supabase
     .from("outreach_campaigns")
     .insert({
       user_id: user.id,
+      email_connection_id: emailConnection?.id || null,
       business_plan: cleanText(body.business_plan),
       offer: cleanText(body.offer),
       target_buyer: cleanText(body.target_buyer),
       tone: cleanText(body.tone, "professional"),
       cta: cleanText(body.cta),
       signature: cleanText(body.signature),
-      sender_name: cleanText(body.sender_name, "ExportFlow"),
-      sender_email: cleanText(body.sender_email) || null,
+      sender_name: cleanText(body.sender_name || emailConnection?.from_name || emailConnection?.display_name, "ExportFlow"),
+      sender_email: cleanText(body.sender_email || emailConnection?.email) || null,
       status: "draft"
     })
     .select()

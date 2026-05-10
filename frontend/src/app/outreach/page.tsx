@@ -11,12 +11,15 @@ import {
   ClipboardList,
   Eye,
   FileText,
+  KeyRound,
   Loader2,
   MailCheck,
+  Plug,
   Play,
   RefreshCw,
   Send,
   Sparkles,
+  Trash2,
   Upload,
   X
 } from "lucide-react";
@@ -64,6 +67,44 @@ type LeadUploadPayload = {
   text_content?: string;
 };
 
+type EmailConnection = {
+  id: string;
+  provider: "google" | "smtp";
+  email: string;
+  display_name: string | null;
+  from_name: string | null;
+  reply_to: string | null;
+  status: string;
+  smtp_host: string | null;
+  smtp_port: number | null;
+  smtp_secure: boolean | null;
+  smtp_username: string | null;
+  imap_host: string | null;
+  imap_port: number | null;
+  imap_secure: boolean | null;
+  imap_username: string | null;
+  imap_mailbox: string | null;
+  last_error: string | null;
+};
+
+type SmtpFormState = {
+  email: string;
+  display_name: string;
+  from_name: string;
+  reply_to: string;
+  smtp_host: string;
+  smtp_port: string;
+  smtp_secure: boolean;
+  smtp_username: string;
+  smtp_password: string;
+  imap_host: string;
+  imap_port: string;
+  imap_secure: boolean;
+  imap_username: string;
+  imap_password: string;
+  imap_mailbox: string;
+};
+
 type SequenceStep = {
   subject?: string;
   body_text?: string;
@@ -104,6 +145,24 @@ const initialChat: ChatMessage[] = [
       "Tell me what you sell, who you want to reach, your offer, CTA, sender details, and add leads by chat, CSV, or PDF. I will fill the outreach draft from the chat."
   }
 ];
+
+const initialSmtpForm: SmtpFormState = {
+  email: "",
+  display_name: "",
+  from_name: "",
+  reply_to: "",
+  smtp_host: "",
+  smtp_port: "587",
+  smtp_secure: false,
+  smtp_username: "",
+  smtp_password: "",
+  imap_host: "",
+  imap_port: "993",
+  imap_secure: true,
+  imap_username: "",
+  imap_password: "",
+  imap_mailbox: "INBOX"
+};
 
 const draftFields: Array<{ key: keyof FormState; label: string }> = [
   { key: "business_plan", label: "Business plan" },
@@ -361,6 +420,10 @@ export default function OutreachPage() {
   const [selectedTemplateLead, setSelectedTemplateLead] = useState<OutreachLead | null>(null);
   const [leadUploadFormat, setLeadUploadFormat] = useState<LeadUploadFormat>("csv");
   const [uploadedLeadFile, setUploadedLeadFile] = useState("");
+  const [emailConnections, setEmailConnections] = useState<EmailConnection[]>([]);
+  const [selectedEmailConnectionId, setSelectedEmailConnectionId] = useState("");
+  const [showSmtpForm, setShowSmtpForm] = useState(false);
+  const [smtpForm, setSmtpForm] = useState<SmtpFormState>(initialSmtpForm);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -408,9 +471,101 @@ export default function OutreachPage() {
     }
   }
 
+  async function loadEmailConnections() {
+    if (!supabase) return;
+    try {
+      const payload = await api("/api/email/connections");
+      const connections = (payload.connections || []) as EmailConnection[];
+      setEmailConnections(connections);
+      setSelectedEmailConnectionId((current) => current || connections[0]?.id || "");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load email connections.");
+    }
+  }
+
+  async function connectGoogleEmail() {
+    setLoading("connect-google");
+    setMessage("");
+    try {
+      const payload = await api("/api/email/google/start", {
+        method: "POST",
+        body: JSON.stringify({ return_to: "/outreach" })
+      });
+      if (!payload.url) throw new Error("Google did not return a connection URL.");
+      window.location.href = payload.url;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not start Google connection.");
+      setLoading("");
+    }
+  }
+
+  async function saveSmtpEmail() {
+    setLoading("save-smtp");
+    setMessage("");
+    try {
+      const payload = await api("/api/email/connections/smtp", {
+        method: "POST",
+        body: JSON.stringify({
+          ...smtpForm,
+          smtp_port: Number(smtpForm.smtp_port || 587),
+          imap_port: Number(smtpForm.imap_port || 993)
+        })
+      });
+      const connection = payload.connection as EmailConnection;
+      setEmailConnections((current) => [connection, ...current.filter((item) => item.id !== connection.id)]);
+      setSelectedEmailConnectionId(connection.id);
+      setShowSmtpForm(false);
+      setSmtpForm(initialSmtpForm);
+      setMessage(`Connected ${connection.email} for outreach sending.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save SMTP connection.");
+    } finally {
+      setLoading("");
+    }
+  }
+
+  async function deleteEmailConnection(id: string) {
+    setLoading(`delete-${id}`);
+    setMessage("");
+    try {
+      await api(`/api/email/connections/${encodeURIComponent(id)}`, { method: "DELETE" });
+      setEmailConnections((current) => current.filter((item) => item.id !== id));
+      setSelectedEmailConnectionId((current) => (current === id ? "" : current));
+      setMessage("Email connection removed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not remove email connection.");
+    } finally {
+      setLoading("");
+    }
+  }
+
   useEffect(() => {
     void loadDeliveredJobs();
+    void loadEmailConnections();
   }, [supabase]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const status = url.searchParams.get("email_connection");
+    const detail = url.searchParams.get("email_message");
+    if (!status) return;
+
+    setMessage(detail || (status === "connected" ? "Email account connected." : "Email connection failed."));
+    url.searchParams.delete("email_connection");
+    url.searchParams.delete("email_message");
+    window.history.replaceState({}, "", url.toString());
+    if (status === "connected") void loadEmailConnections();
+  }, []);
+
+  useEffect(() => {
+    const connection = emailConnections.find((item) => item.id === selectedEmailConnectionId);
+    if (!connection) return;
+    setForm((current) => ({
+      ...current,
+      sender_email: current.sender_email || connection.email,
+      sender_name: current.sender_name || connection.from_name || connection.display_name || "ExportFlow"
+    }));
+  }, [emailConnections, selectedEmailConnectionId]);
 
   useEffect(() => {
     if (!campaign?.id) return;
@@ -558,7 +713,7 @@ export default function OutreachPage() {
       const leads = [...parsePastedLeads(pastedLeads), ...importedLeads].slice(0, 50);
       const payload = await api("/api/outreach/campaigns", {
         method: "POST",
-        body: JSON.stringify({ ...form, leads })
+        body: JSON.stringify({ ...form, email_connection_id: selectedEmailConnectionId || null, leads })
       });
       setCampaign(payload.campaign);
       setMessage("Campaign created. Generate per-lead templates next.");
@@ -620,6 +775,7 @@ export default function OutreachPage() {
     replies: leads.filter((lead) => lead.status === "replied").length,
     failed: messages.filter((item) => item.status === "failed").length
   };
+  const selectedEmailConnection = emailConnections.find((item) => item.id === selectedEmailConnectionId) || null;
 
   const mainEditor = (
     <div className="relative grid h-full min-h-0 grid-cols-1 gap-3 p-3 xl:grid-cols-[minmax(360px,430px)_minmax(0,1fr)]">
@@ -707,6 +863,135 @@ export default function OutreachPage() {
               <div className="flex gap-2 border border-amber-300/30 bg-amber-300/10 p-2 text-xs text-amber-100">
                 <AlertTriangle size={15} />
                 Missing: {missingFields.join(", ")}
+              </div>
+            )}
+          </div>
+        </CollapsibleBox>
+
+        <CollapsibleBox title="Email Sender" eyebrow={selectedEmailConnection ? selectedEmailConnection.provider : "connect"} icon={<KeyRound size={16} className="text-[#00ffff]" />}>
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void connectGoogleEmail()}
+                disabled={Boolean(loading)}
+                className="ide-btn ide-btn-primary inline-flex h-10 items-center gap-2 px-3 text-xs disabled:opacity-50"
+              >
+                {loading === "connect-google" ? <Loader2 size={14} className="animate-spin" /> : <Plug size={14} />}
+                Connect Gmail / Workspace
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSmtpForm((current) => !current)}
+                className="ide-btn inline-flex h-10 items-center gap-2 px-3 text-xs"
+              >
+                <MailCheck size={14} />
+                SMTP fallback
+              </button>
+              <button type="button" onClick={() => void loadEmailConnections()} className="ide-btn inline-flex h-10 items-center gap-2 px-3 text-xs">
+                <RefreshCw size={14} />
+                Refresh
+              </button>
+            </div>
+
+            {emailConnections.length > 0 ? (
+              <div className="space-y-2">
+                <select
+                  className="ide-input h-10 w-full px-3 text-xs"
+                  value={selectedEmailConnectionId}
+                  onChange={(event) => setSelectedEmailConnectionId(event.target.value)}
+                >
+                  {emailConnections.map((connection) => (
+                    <option key={connection.id} value={connection.id}>
+                      {connection.email} - {connection.provider}
+                    </option>
+                  ))}
+                </select>
+                <div className="max-h-44 space-y-2 overflow-auto">
+                  {emailConnections.map((connection) => (
+                    <div key={connection.id} className={`grid grid-cols-[1fr_auto] gap-2 border p-2 ${connection.id === selectedEmailConnectionId ? "border-[#00ffff] bg-[#062429]" : "border-[#30363d] bg-black/30"}`}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmailConnectionId(connection.id)}
+                        className="min-w-0 text-left"
+                      >
+                        <p className="truncate text-sm text-vercel-text">{connection.email}</p>
+                        <p className="text-[11px] uppercase tracking-[0.14em] text-[#8b949e]">
+                          {connection.provider} | {connection.status}
+                          {connection.last_error ? ` | ${connection.last_error}` : ""}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteEmailConnection(connection.id)}
+                        disabled={loading === `delete-${connection.id}`}
+                        className="ide-btn flex h-8 w-8 items-center justify-center disabled:opacity-50"
+                        title="Remove connection"
+                      >
+                        {loading === `delete-${connection.id}` ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="border border-amber-300/30 bg-amber-300/10 p-2 text-xs leading-5 text-amber-100">
+                Connect at least one sender before launching real outreach. Test mode can still use the shared SMTP environment if it is configured.
+              </div>
+            )}
+
+            {showSmtpForm && (
+              <div className="grid grid-cols-1 gap-2 border border-[#30363d] bg-black/30 p-3 md:grid-cols-2">
+                {[
+                  ["email", "Sender email"],
+                  ["display_name", "Display name"],
+                  ["from_name", "From name"],
+                  ["reply_to", "Reply-to"],
+                  ["smtp_host", "SMTP host"],
+                  ["smtp_port", "SMTP port"],
+                  ["smtp_username", "SMTP username"],
+                  ["smtp_password", "SMTP/app password"],
+                  ["imap_host", "IMAP host"],
+                  ["imap_port", "IMAP port"],
+                  ["imap_username", "IMAP username"],
+                  ["imap_password", "IMAP password"],
+                  ["imap_mailbox", "Mailbox"]
+                ].map(([key, label]) => (
+                  <label key={key} className={key === "imap_mailbox" ? "md:col-span-2" : ""}>
+                    <span className="mb-1 block text-[10px] uppercase tracking-[0.16em] text-[#8b949e]">{label}</span>
+                    <input
+                      className="ide-input h-9 w-full px-2 text-xs"
+                      type={key.includes("password") ? "password" : "text"}
+                      value={String(smtpForm[key as keyof SmtpFormState])}
+                      onChange={(event) => setSmtpForm((current) => ({ ...current, [key]: event.target.value }))}
+                    />
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 text-xs text-vercel-muted">
+                  <input
+                    type="checkbox"
+                    checked={smtpForm.smtp_secure}
+                    onChange={(event) => setSmtpForm((current) => ({ ...current, smtp_secure: event.target.checked }))}
+                  />
+                  SMTP SSL/TLS
+                </label>
+                <label className="flex items-center gap-2 text-xs text-vercel-muted">
+                  <input
+                    type="checkbox"
+                    checked={smtpForm.imap_secure}
+                    onChange={(event) => setSmtpForm((current) => ({ ...current, imap_secure: event.target.checked }))}
+                  />
+                  IMAP SSL/TLS
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void saveSmtpEmail()}
+                  disabled={loading === "save-smtp"}
+                  className="ide-btn ide-btn-primary inline-flex h-10 items-center justify-center gap-2 px-3 text-xs disabled:opacity-50 md:col-span-2"
+                >
+                  {loading === "save-smtp" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  Save SMTP sender
+                </button>
               </div>
             )}
           </div>
