@@ -852,6 +852,21 @@ class LeadDiscovery:
             for item in disc.get("supplier_country_exclusions", [])
             if str(item or "").strip()
         )
+        search_term_templates = [
+            str(item or "").strip()
+            for item in disc.get("search_term_query_templates", [])
+            if str(item or "").strip()
+        ]
+
+        def finalize_query(value):
+            query = str(value or "").strip()
+            if not query:
+                return ""
+            if supplier_exclusions and "-pakistan" not in query.lower():
+                query = f"{query} {supplier_exclusions}"
+            if noise_exclusions and "-dictionary" not in query.lower():
+                query = f"{query} {noise_exclusions}"
+            return query
 
         queries = []
         for term in self.search_terms:
@@ -862,20 +877,22 @@ class LeadDiscovery:
             mentions_market = any(target.lower() in normalized_lower for target in markets)
             if not mentions_market and region.lower() not in normalized_lower:
                 normalized = f'{normalized} "{market}"'
-            if supplier_exclusions and "-pakistan" not in normalized_lower:
-                normalized = f"{normalized} {supplier_exclusions}"
-            query = f"{normalized} contact email"
-            if noise_exclusions and "-dictionary" not in query.lower():
-                query = f"{query} {noise_exclusions}"
-            queries.append(query)
+            if search_term_templates:
+                for template in search_term_templates:
+                    query = template.format(term=normalized, base=base, market=market).strip()
+                    finalized = finalize_query(query)
+                    if finalized:
+                        queries.append(finalized)
+                continue
+            query = finalize_query(f"{normalized} contact email")
+            if query:
+                queries.append(query)
 
         for template in templates:
             tpl = str(template or "").strip()
             if not tpl:
                 continue
-            query = tpl.format(base=base, market=market).strip()
-            if noise_exclusions and "-dictionary" not in query.lower():
-                query = f"{query} {noise_exclusions}"
+            query = finalize_query(tpl.format(base=base, market=market).strip())
             queries.append(query)
 
         region_extra = disc.get("region_extra_queries", {})
@@ -885,16 +902,12 @@ class LeadDiscovery:
                 ["Germany", "France", "Netherlands", "Italy", "Spain", "Poland", "Sweden"]))
             for country in europe_countries:
                 for tpl in region_extra.get("europe", []):
-                    query = str(tpl).format(base=base, country=country, market=market).strip()
-                    if noise_exclusions and "-dictionary" not in query.lower():
-                        query = f"{query} {noise_exclusions}"
+                    query = finalize_query(str(tpl).format(base=base, country=country, market=market).strip())
                     queries.append(query)
         elif region == "International":
             for country in markets[1:]:
                 for tpl in region_extra.get("international", []):
-                    query = str(tpl).format(base=base, country=country, market=market).strip()
-                    if noise_exclusions and "-dictionary" not in query.lower():
-                        query = f"{query} {noise_exclusions}"
+                    query = finalize_query(str(tpl).format(base=base, country=country, market=market).strip())
                     queries.append(query)
 
         return list(dict.fromkeys(queries))

@@ -250,6 +250,24 @@ class MainConfigTests(unittest.TestCase):
         self.assertEqual(discovery.get("search_engines"), ["bing", "yahoo"])
         self.assertNotIn("duckduckgo.", discovery.get("exclusions", {}).get("host_parts", []))
 
+    def test_textile_config_prioritizes_brand_discovery_over_importer_queries(self):
+        config_path = Path(SCRAPER_DIR) / "configs" / "textile-apparel.yml"
+        with config_path.open("r", encoding="utf-8") as handle:
+            config = yaml.safe_load(handle)
+
+        discovery = config.get("discovery", {})
+        early_queries = discovery.get("search_queries", [])[:8]
+        self.assertTrue(early_queries)
+        self.assertTrue(any("brand" in query for query in early_queries))
+        self.assertTrue(any("boutique" in query for query in early_queries))
+        self.assertFalse(any("importer" in query.lower() for query in early_queries))
+
+        exclusions = discovery.get("exclusions", {}).get("root_domains", [])
+        scoring_blocked = config.get("scoring", {}).get("blocked_domains", [])
+        for domain in ("volza.com", "tradeford.com", "tradewheel.com"):
+            self.assertIn(domain, exclusions)
+            self.assertIn(domain, scoring_blocked)
+
     def test_partition_discovery_sources_orders_engine_lanes(self):
         sources = [
             SimpleNamespace(search_engine="duckduckgo"),

@@ -131,6 +131,28 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertIn("-Pakistan", queries[0])
         self.assertIn("denim vendor portal", queries[1])
 
+    def test_config_search_term_templates_override_raw_contact_queries(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            search_terms=["denim importers"],
+            config={
+                "discovery": {
+                    "search_term_query_templates": ['{base} brand "our story" "{market}"'],
+                    "search_queries": ['{base} vendor portal "{market}"'],
+                    "noise_exclusion_suffixes": ["-dictionary"],
+                    "supplier_country_exclusions": ["-Pakistan"],
+                }
+            },
+        )
+        queries = discovery._buyer_search_queries("USA", "denim")
+
+        self.assertEqual(
+            queries[0],
+            'denim brand "our story" "United States" -Pakistan -dictionary',
+        )
+        self.assertNotIn("contact email", queries[0])
+        self.assertIn("denim vendor portal", queries[1])
+
     def test_config_search_engine_runtime_overrides_defaults(self):
         discovery = LeadDiscovery(
             limit=10,
