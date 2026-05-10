@@ -297,7 +297,15 @@ class MainConfigTests(unittest.TestCase):
         thomasnet = next(item for item in usa_directories if item.get("type") == "thomasnet")
         la_dirs = [item for item in usa_directories if item.get("type") == "la_fashion_district"]
         self.assertIn("a.profile-link[href]", thomasnet.get("selectors", []))
+        self.assertIn("h2 a[href]", thomasnet.get("selectors", []))
+        self.assertIn("a.track-visit-website[href]", thomasnet.get("selectors", []))
+        self.assertTrue(any(".showroom-name" in selector for item in la_dirs for selector in item.get("selectors", [])))
         self.assertTrue(any("showroom" in selector for item in la_dirs for selector in item.get("selectors", [])))
+
+        likely_paths = config.get("enrichment", {}).get("likely_paths", [])
+        self.assertIn("/pages/our-story", likely_paths)
+        self.assertIn("/pages/lookbook", likely_paths)
+        self.assertIn("/pages/stockists", likely_paths)
 
     def test_partition_discovery_sources_orders_engine_lanes(self):
         sources = [

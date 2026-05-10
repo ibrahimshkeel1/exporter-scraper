@@ -7,7 +7,7 @@
 
 slug: textile-apparel
 display_name: "Textile & Apparel Importers"
-version: 6
+version: 7
 quality_tier: "A+"
 
 # --------------------------------------------------
@@ -356,7 +356,7 @@ discovery:
     usa:
       - type: thomasnet
         url: "https://www.thomasnet.com/search.html?what={base_query}"
-        selectors: ["a.profile-link[href]", "a[data-company-name]", "a[href*='/profile/']", "a[href*='/company/']", "a[href*='/supplier-discovery/']", "a[href*='http']"]
+        selectors: ["a.profile-link[href]", "h2 a[href]", "a.track-visit-website[href]", "a[data-company-name]", "a[href*='/profile/']", "a[href*='/company/']", "a[href*='/supplier-discovery/']", "a[href*='http']"]
         include_directory_links: true
         candidate_kind: directory_profile
         description: "Thomasnet - North American textile/apparel sourcing profiles"
@@ -372,25 +372,25 @@ discovery:
         description: "MAGIC Las Vegas brand list"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        selectors: [".showroom-name a[href]", "a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
         include_directory_links: true
         candidate_kind: directory_profile
         description: "LA Fashion District Wholesale Directory"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/women-s-wear"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        selectors: [".showroom-name a[href]", "a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
         include_directory_links: true
         candidate_kind: directory_profile
         description: "LA Fashion District — Womenswear"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/menswear"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        selectors: [".showroom-name a[href]", "a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
         include_directory_links: true
         candidate_kind: directory_profile
         description: "LA Fashion District — Menswear"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/athletic-wear/sportswear"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        selectors: [".showroom-name a[href]", "a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
         include_directory_links: true
         candidate_kind: directory_profile
         description: "LA Fashion District — Sportswear"
@@ -899,6 +899,9 @@ enrichment:
     - /contact-us
     - /pages/contact
     - /pages/contact-us
+    - /pages/our-story
+    - /pages/lookbook
+    - /pages/stockists
     - /about
     - /about-us
     - /brands
