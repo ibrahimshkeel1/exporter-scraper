@@ -351,8 +351,8 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
           { key: "duckduckgo", label: "DISCOVERY / DUCKDUCKGO", ref: discoveryDuckRef },
           { key: "yahoo", label: "DISCOVERY / YAHOO", ref: discoveryYahooRef },
         ].map((laneRow) => (
-          <div key={laneRow.key} className="flex h-full min-h-0 flex-col overflow-hidden border border-[#30363d] bg-black">
-            <div className="flex items-center justify-between border-b border-[#30363d] px-2 py-1 text-[10px] font-mono text-vercel-text">
+          <div key={laneRow.key} className="flex h-full min-h-0 flex-col overflow-hidden border border-[#3c3c3c] bg-[#1e1e1e]">
+            <div className="flex items-center justify-between border-b border-[#3c3c3c] px-2 py-1 text-[10px] font-mono text-vercel-text">
               <span className="inline-flex items-center gap-1.5">
                 <Terminal size={11} />
                 {laneRow.label}
@@ -381,14 +381,14 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
                 </div>
               ))}
               {(discoveryLogs[laneRow.key as DiscoveryLane] || []).length === 0 && (
-                <div className="text-[#8b949e]">Waiting for {laneRow.key} logs...</div>
+                <div className="text-[#858585]">Waiting for {laneRow.key} logs...</div>
               )}
             </div>
           </div>
         ))}
       </section>
       <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-3">
-        <div className="flex items-center justify-between border-b border-[#30363d] px-3 py-1.5 text-[11px] font-mono text-vercel-text">
+        <div className="flex items-center justify-between border-b border-[#3c3c3c] px-3 py-1.5 text-[11px] font-mono text-vercel-text">
           <span className="inline-flex items-center gap-1.5">
             <Terminal size={12} />
             ENRICH / SCORE
@@ -416,7 +416,7 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
               )}
             </div>
           ))}
-          {enrichmentLogs.length === 0 && <div className="text-[#8b949e]">Waiting for enrichment logs...</div>}
+          {enrichmentLogs.length === 0 && <div className="text-[#858585]">Waiting for enrichment logs...</div>}
         </div>
       </section>
     </div>
@@ -513,9 +513,9 @@ function ReportDownloads({
 
 function AiGlyph({ active = false }: { active?: boolean }) {
   return (
-    <span className="relative inline-flex h-7 w-7 flex-shrink-0 items-center justify-center border border-black/30 bg-black text-vercel-accent shadow-[inset_0_0_0_1px_rgba(45,212,191,0.35),0_0_18px_rgba(0,0,0,0.25)]">
-      {active && <span className="absolute -inset-1 animate-ping border border-black/30" />}
-      {active && <span className="absolute h-1 w-1 animate-pulse bg-[#2dd4bf]" />}
+    <span className="relative inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border border-[#3c3c3c] bg-[#333333] text-vercel-accent">
+      {active && <span className="absolute -inset-1 animate-ping rounded border border-[#007acc]/30" />}
+      {active && <span className="absolute h-1 w-1 animate-pulse bg-[#007acc]" />}
       <svg
         viewBox="0 0 24 24"
         aria-hidden="true"
@@ -930,9 +930,9 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
 
   return (
     <section className="ide-panel flex h-full min-h-0 w-full flex-col">
-      <header className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
+      <header className="flex items-center justify-between border-b border-[#3c3c3c] bg-[#252526] px-3 py-2">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-[#8b949e]">Agentic Lead Search</p>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-[#858585]">Agentic Lead Search</p>
           <h2 className="text-sm font-semibold text-vercel-text">Live discovery + enrichment workspace</h2>
         </div>
         <div className="inline-flex items-center gap-2">
@@ -952,7 +952,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
                     <span className="hidden" />
                   )}
                   {message.role === "user" ? (
-                    <span className="mt-0.5 font-mono text-[#8b949e]">&gt;</span>
+                    <span className="mt-0.5 font-mono text-[#858585]">&gt;</span>
                   ) : (
                     <AiGlyph />
                   )}
@@ -1033,7 +1033,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
 
       </div>
 
-      <footer className="border-t border-[#30363d] bg-[#161b22] p-3">
+      <footer className="border-t border-[#3c3c3c] bg-[#252526] p-3">
         <form className="flex gap-2" onSubmit={appendUserMessage}>
           <textarea
             className="ide-input h-14 flex-1 resize-none px-3 py-2 text-sm"
@@ -1174,7 +1174,7 @@ function ConfigWidget({
         </div>
       </div>
 
-      <div className="space-y-4 border-t border-[#30363d] pt-4">
+      <div className="space-y-4 border-t border-[#3c3c3c] pt-4">
         <div className="grid grid-cols-3 gap-2">
           {leadPacks.map((pack) => (
             <button
@@ -1193,10 +1193,10 @@ function ConfigWidget({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <label className="flex max-w-[240px] flex-col gap-1 text-xs text-vercel-text">
             <span className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Min Quality Score: {minScore}</span>
-            <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-[#00ffff]" />
+            <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-[#569cd6]" />
           </label>
           <label className="flex items-center gap-2 text-xs text-vercel-text">
-            <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} className="border border-[#30363d] bg-[#010409]" />
+            <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} className="border border-[#3c3c3c] bg-[#252526]" />
             Allow missing emails
           </label>
         </div>
@@ -1288,19 +1288,19 @@ function OutreachLauncherWidget({
       </div>
       {message && <p className="text-xs text-amber-300">{message}</p>}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <label className="block space-y-1 text-xs text-[#8b949e]">
+        <label className="block space-y-1 text-xs text-[#858585]">
           <span>Business plan</span>
           <input className="ide-input h-9 w-full px-2 text-sm" value={businessPlan} onChange={(e) => setBusinessPlan(e.target.value)} placeholder="What you do" />
         </label>
-        <label className="block space-y-1 text-xs text-[#8b949e]">
+        <label className="block space-y-1 text-xs text-[#858585]">
           <span>Offer</span>
           <input className="ide-input h-9 w-full px-2 text-sm" value={offer} onChange={(e) => setOffer(e.target.value)} placeholder="Your offer" />
         </label>
-        <label className="block space-y-1 text-xs text-[#8b949e]">
+        <label className="block space-y-1 text-xs text-[#858585]">
           <span>Target buyer</span>
           <input className="ide-input h-9 w-full px-2 text-sm" value={targetBuyer} onChange={(e) => setTargetBuyer(e.target.value)} placeholder="Who to reach" />
         </label>
-        <label className="block space-y-1 text-xs text-[#8b949e]">
+        <label className="block space-y-1 text-xs text-[#858585]">
           <span>Tone</span>
           <select className="ide-input h-9 w-full px-2 text-sm" value={tone} onChange={(e) => setTone(e.target.value)}>
             {["professional", "direct", "warm", "premium", "bold", "convincing"].map((t) => (
@@ -1309,7 +1309,7 @@ function OutreachLauncherWidget({
           </select>
         </label>
       </div>
-      <label className="block space-y-1 text-xs text-[#8b949e]">
+      <label className="block space-y-1 text-xs text-[#858585]">
         <span>Pasted leads (name, company, email, website — one per line)</span>
         <textarea
           className="ide-input h-24 w-full resize-none px-2 py-2 font-mono text-xs"

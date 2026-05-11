@@ -11,7 +11,7 @@ type SystemHealthWidgetProps = {
 function TerminalLine({ prompt = "$", text, color = "text-vercel-muted" }: { prompt?: string; text: string; color?: string }) {
   return (
     <div className="flex items-start gap-1.5 text-[11px] font-mono">
-      <span className="text-[#00ff00]">{prompt}</span>
+      <span className="text-[#6a9955]">{prompt}</span>
       <span className={color}>{text}</span>
     </div>
   );
@@ -42,16 +42,16 @@ export function SystemHealthWidget({ snapshot }: SystemHealthWidgetProps) {
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-1">
       <div className="flex items-center gap-2">
-        <Cpu size={12} className="text-[#00ffff]" />
-        <span className="text-[11px] font-mono uppercase tracking-wider text-[#00ffff]">monitor_live</span>
+        <Cpu size={12} className="text-[#569cd6]" />
+        <span className="text-[11px] font-mono uppercase tracking-wider text-[#569cd6]">monitor_live</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-1.5 border border-[#30363d] bg-black p-2">
-        <TerminalLine text={`uptime --workspace ${stats.uptime}`} color="text-[#00ff00]" />
+      <div className="flex-1 overflow-y-auto space-y-1.5 border border-[#3c3c3c] bg-[#1e1e1e] p-2">
+        <TerminalLine text={`uptime --workspace ${stats.uptime}`} color="text-[#6a9955]" />
         <TerminalLine text={`jobs_total --count ${snapshot.jobs.length}`} color="text-vercel-text" />
         <TerminalLine text={`queue_depth --count ${stats.queueDepth}`} color="text-vercel-text" />
-        <TerminalLine text={`running --count ${stats.running}`} color="text-[#00ffff]" />
-        <TerminalLine text={`delivered --count ${stats.delivered}`} color="text-[#00ff00]" />
+        <TerminalLine text={`running --count ${stats.running}`} color="text-[#569cd6]" />
+        <TerminalLine text={`delivered --count ${stats.delivered}`} color="text-[#6a9955]" />
         <TerminalLine text={`failed --count ${stats.failed}`} color={stats.failed > 0 ? "text-[#ff6b6b]" : "text-vercel-text"} />
         <TerminalLine text={`ai_reports --coverage ${stats.reportCoverage}%`} color="text-vercel-text" />
         <TerminalLine text={`campaigns --count ${snapshot.campaigns.length}`} color="text-vercel-text" />

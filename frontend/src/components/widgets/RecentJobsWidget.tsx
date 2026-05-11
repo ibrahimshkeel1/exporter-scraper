@@ -42,19 +42,19 @@ export function RecentJobsWidget({ snapshot }: RecentJobsWidgetProps) {
         {jobs.map((job) => (
           <div
             key={job.id}
-            className="flex items-center justify-between gap-2 border border-[#30363d] bg-[#0d1117] p-2"
+            className="flex items-center justify-between gap-2 border border-[#3c3c3c] bg-[#1e1e1e] p-2"
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span
                   className={`h-1.5 w-1.5 ${
-                    job.status === "delivered" ? "bg-[#00ff00]" : "bg-[#ff6b6b]"
+                    job.status === "delivered" ? "bg-[#6a9955]" : "bg-[#ff6b6b]"
                   }`}
                 />
                 <span className="truncate text-xs font-medium text-vercel-text">
                   {job.refined_industry || job.original_industry}
                 </span>
-                <span className="text-[10px] font-mono text-[#8b949e]">{job.target_region}</span>
+                <span className="text-[10px] font-mono text-[#858585]">{job.target_region}</span>
               </div>
               <div className="mt-0.5 text-[10px] text-vercel-muted">
                 {new Date(job.created_at).toLocaleDateString()} · {job.plan_name}

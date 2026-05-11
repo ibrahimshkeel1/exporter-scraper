@@ -297,7 +297,7 @@ export function LeftSidebar({
           <button
             type="button"
             onClick={() => toggleFolder(node.path)}
-            className="inline-flex min-w-0 items-center gap-1 text-[#8b949e] hover:text-[#c9d1d9]"
+            className="inline-flex min-w-0 items-center gap-1 text-[#858585] hover:text-[#d4d4d4]"
           >
             {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
             {expanded ? <FolderOpen size={12} /> : <FolderClosed size={12} />}
@@ -308,7 +308,7 @@ export function LeftSidebar({
             <button
               type="button"
               onClick={() => void downloadFolder(node)}
-              className="invisible inline-flex h-5 w-5 items-center justify-center rounded border border-[#30363d] text-[#8b949e] hover:border-[#00ffff] hover:text-[#00ffff] group-hover:visible"
+              className="invisible inline-flex h-5 w-5 items-center justify-center rounded text-[#858585] hover:bg-[#333333] hover:text-[#569cd6] group-hover:visible"
               title={`Download all (${downloadableCount})`}
             >
               {downloadingIds[folderKey] ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
@@ -328,23 +328,23 @@ export function LeftSidebar({
                   <button
                     type="button"
                     onClick={() => openArtifactOrSession(artifact)}
-                    className={`inline-flex min-w-0 items-center gap-1.5 border px-1.5 py-1 text-left ${
+                    className={`inline-flex min-w-0 items-center gap-1.5 rounded px-1.5 py-1 text-left ${
                       isCsv
-                        ? "border-[#00ffff]/40 bg-[#062126] text-[#00ffff] hover:border-[#00ffff] hover:bg-[#09333d]"
+                        ? "bg-[#1f3a4f] text-[#d4d4d4] hover:bg-[#264f78]"
                         : activeArtifactId === artifact.id
-                        ? "border-[#00ffff]/30 bg-[#101923] text-[#00ffff]"
-                        : "border-transparent text-[#c9d1d9] hover:border-[#30363d] hover:text-[#00ffff]"
+                        ? "bg-[#333333] text-[#569cd6]"
+                        : "text-[#d4d4d4] hover:bg-[#333333] hover:text-[#569cd6]"
                     }`}
                   >
                     {fileIcon(artifact.kind)}
                     <span className="truncate">{artifact.name}</span>
-                    {isCsv && <span className="ml-1 text-[9px] uppercase tracking-[0.12em] text-[#8cf5ff]">View</span>}
+                    {isCsv && <span className="ml-1 text-[9px] uppercase tracking-[0.12em] text-[#569cd6]">View</span>}
                   </button>
                   {canDownload && (
                     <button
                       type="button"
                       onClick={() => void downloadArtifact(artifact)}
-                      className="invisible inline-flex h-5 w-5 items-center justify-center rounded border border-[#30363d] text-[#8b949e] hover:border-[#00ffff] hover:text-[#00ffff] group-hover:visible"
+                      className="invisible inline-flex h-5 w-5 items-center justify-center rounded text-[#858585] hover:bg-[#333333] hover:text-[#569cd6] group-hover:visible"
                       title="Download file"
                     >
                       {downloadingIds[fileKey] ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
@@ -360,8 +360,8 @@ export function LeftSidebar({
   }
 
   return (
-    <div className="flex h-full flex-col bg-[#0d1117]">
-      <div className="mb-2 border border-[#30363d] bg-[#010409] px-2 py-1 text-[11px] uppercase tracking-[0.16em] text-[#8b949e]">
+    <div className="flex h-full flex-col bg-[#252526]">
+      <div className="mb-2 px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-[#858585]">
         Explorer
       </div>
       {(mode === "dashboard" || mode === "search") && (
@@ -375,26 +375,26 @@ export function LeftSidebar({
         </button>
       )}
 
-      <div className="ide-panel mx-2 min-h-0 flex-1 overflow-y-auto p-2">
+      <div className="mx-2 min-h-0 flex-1 overflow-y-auto p-2">
         <div className="space-y-3 font-mono text-xs">
           <div>
-            <p className="text-[#8b949e]">workspace</p>
-            <p className="text-[#8b949e]">- lead-sessions</p>
+            <p className="text-[#858585]">workspace</p>
+            <p className="text-[#858585]">- lead-sessions</p>
           </div>
 
           {explorerContext && (
             <>
-              <div className="border-t border-[#30363d] pt-2">
-                <p className="mb-1 text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">Active Context</p>
-                <p className="truncate text-[#00ffff]">{explorerContext.label}</p>
+              <div className="border-t border-[#333333] pt-2">
+                <p className="mb-1 text-[10px] uppercase tracking-[0.14em] text-[#858585]">Active Context</p>
+                <p className="truncate text-[#569cd6]">{explorerContext.label}</p>
                 {explorerContext.description && (
-                  <p className="truncate text-[11px] text-[#8b949e]">{explorerContext.description}</p>
+                  <p className="truncate text-[11px] text-[#858585]">{explorerContext.description}</p>
                 )}
               </div>
 
               {explorerContext.sessions && explorerContext.sessions.length > 0 && (
-                <div className="border-t border-[#30363d] pt-2">
-                  <p className="mb-2 text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">Sessions</p>
+                <div className="border-t border-[#333333] pt-2">
+                  <p className="mb-2 text-[10px] uppercase tracking-[0.14em] text-[#858585]">Sessions</p>
                   <div className="space-y-1">
                     {explorerContext.sessions.map((session) => {
                       const active = session.id === explorerContext.activeSessionId;
@@ -403,17 +403,17 @@ export function LeftSidebar({
                           key={session.id}
                           type="button"
                           onClick={() => onSelectSession?.(session.id)}
-                          className={`w-full border px-2 py-1.5 text-left ${
+                          className={`w-full rounded px-2 py-1.5 text-left ${
                             active
-                              ? "border-[#00ffff]/40 bg-[#062126] text-[#00ffff]"
-                              : "border-transparent text-[#c9d1d9] hover:border-[#30363d] hover:text-[#00ffff]"
+                              ? "bg-[#333333] text-[#569cd6]"
+                              : "text-[#d4d4d4] hover:bg-[#333333] hover:text-[#569cd6]"
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="truncate">{session.label}</span>
-                            {session.status && <span className="text-[9px] uppercase text-[#8b949e]">{session.status}</span>}
+                            {session.status && <span className="text-[9px] uppercase text-[#858585]">{session.status}</span>}
                           </div>
-                          {session.description && <p className="mt-0.5 truncate text-[10px] text-[#8b949e]">{session.description}</p>}
+                          {session.description && <p className="mt-0.5 truncate text-[10px] text-[#858585]">{session.description}</p>}
                         </button>
                       );
                     })}
@@ -421,8 +421,8 @@ export function LeftSidebar({
                 </div>
               )}
 
-              <div className="border-t border-[#30363d] pt-2">
-                <p className="mb-2 text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">Files</p>
+              <div className="border-t border-[#333333] pt-2">
+                <p className="mb-2 text-[10px] uppercase tracking-[0.14em] text-[#858585]">Files</p>
                 {errorMessage && (
                   <div className="mb-2 border border-[#ff6b6b] bg-[#220b0b] px-2 py-1.5 text-[10px] text-[#ff6b6b]">
                     {errorMessage}
@@ -430,7 +430,7 @@ export function LeftSidebar({
                 )}
                 <div className="space-y-1">
                   {folderTree.folders.length === 0 && (
-                    <p className="text-[11px] text-[#8b949e]">No files yet for this session.</p>
+                    <p className="text-[11px] text-[#858585]">No files yet for this session.</p>
                   )}
                   {folderTree.folders.map((folder) => renderFolder(folder))}
                 </div>

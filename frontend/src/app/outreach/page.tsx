@@ -218,8 +218,8 @@ function formatFromFile(file: File, selected: LeadUploadFormat): LeadUploadForma
 function statusClass(status: string) {
   if (["template_ready", "test_sent", "sent", "active", "replied"].includes(status)) return "border-emerald-400/30 bg-emerald-400/10 text-emerald-200";
   if (["failed", "unsubscribed"].includes(status)) return "border-red-400/30 bg-red-400/10 text-red-200";
-  if (["generating", "launching", "sending", "queued", "followup_1_pending", "followup_2_pending"].includes(status)) return "border-cyan-300/30 bg-cyan-300/10 text-cyan-100";
-  return "border-white/10 bg-white/5 text-vercel-muted";
+  if (["generating", "launching", "sending", "queued", "followup_1_pending", "followup_2_pending"].includes(status)) return "border-[#569cd6]/40 bg-[#1f3a4f] text-[#d4d4d4]";
+  return "border-[#3c3c3c] bg-[#252526] text-vercel-muted";
 }
 
 function formatStepName(step: string) {
@@ -329,17 +329,17 @@ function CollapsibleBox({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex min-h-11 items-center justify-between border-b border-[#30363d] bg-[#10161f] px-3 text-left"
+        className="flex min-h-11 items-center justify-between border-b border-[#3c3c3c] bg-[#252526] px-3 text-left"
       >
         <span className="flex min-w-0 items-center gap-2">
-          {open ? <ChevronDown size={15} className="text-[#00ffff]" /> : <ChevronRight size={15} className="text-[#8b949e]" />}
+          {open ? <ChevronDown size={15} className="text-[#569cd6]" /> : <ChevronRight size={15} className="text-[#858585]" />}
           {icon}
           <span className="min-w-0">
-            {eyebrow && <span className="block text-[9px] uppercase tracking-[0.16em] text-[#8b949e]">{eyebrow}</span>}
+            {eyebrow && <span className="block text-[9px] uppercase tracking-[0.16em] text-[#858585]">{eyebrow}</span>}
             <span className="block truncate text-sm font-semibold text-vercel-text">{title}</span>
           </span>
         </span>
-        <span className="text-[10px] uppercase tracking-[0.12em] text-[#8b949e]">{open ? "collapse" : "open"}</span>
+        <span className="text-[10px] uppercase tracking-[0.12em] text-[#858585]">{open ? "collapse" : "open"}</span>
       </button>
       {open && <div className="min-h-0 flex-1 overflow-auto p-3">{children}</div>}
     </section>
@@ -356,11 +356,11 @@ function TemplateModal({ lead, sequence, onClose }: { lead: OutreachLead; sequen
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="ide-panel flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden">
-        <div className="flex items-start justify-between gap-3 border-b border-[#30363d] bg-[#10161f] px-4 py-3">
+        <div className="flex items-start justify-between gap-3 border-b border-[#3c3c3c] bg-[#252526] px-4 py-3">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.18em] text-[#8b949e]">Lead template</p>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-[#858585]">Lead template</p>
             <h2 className="mt-1 text-base font-semibold text-vercel-text">{lead.company_name || lead.email || "Lead"}</h2>
-            <p className="mt-1 text-xs text-[#8b949e]">{lead.contact_name || "No contact name"} | {lead.email || "No email"}</p>
+            <p className="mt-1 text-xs text-[#858585]">{lead.contact_name || "No contact name"} | {lead.email || "No email"}</p>
           </div>
           <button type="button" onClick={onClose} className="ide-btn inline-flex h-9 w-9 items-center justify-center">
             <X size={16} />
@@ -368,7 +368,7 @@ function TemplateModal({ lead, sequence, onClose }: { lead: OutreachLead; sequen
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-4">
           {sequence.approval_summary && (
-            <div className="mb-4 border border-[#30363d] bg-black/30 p-3 text-sm leading-6 text-vercel-text">
+            <div className="mb-4 border border-[#3c3c3c] bg-[#252526] p-3 text-sm leading-6 text-vercel-text">
               {sequence.approval_summary}
             </div>
           )}
@@ -376,10 +376,10 @@ function TemplateModal({ lead, sequence, onClose }: { lead: OutreachLead; sequen
             {steps.map((step) => {
               const content = asStep(sequence[step.key]);
               return (
-                <div key={step.key} className="border border-[#30363d] bg-black/35 p-3">
-                  <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-[#00ffff]">{step.label}</p>
+                <div key={step.key} className="border border-[#3c3c3c] bg-[#252526] p-3">
+                  <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-[#569cd6]">{step.label}</p>
                   <p className="mb-3 text-sm font-semibold text-vercel-text">{content.subject || "No subject returned"}</p>
-                  <pre className="max-h-[48vh] overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-[#c9d1d9]">
+                  <pre className="max-h-[48vh] overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-[#d4d4d4]">
                     {content.body_text || content.body_html || "No body returned."}
                   </pre>
                 </div>
@@ -387,8 +387,8 @@ function TemplateModal({ lead, sequence, onClose }: { lead: OutreachLead; sequen
             })}
           </div>
           {Array.isArray(sequence.personalization_evidence) && sequence.personalization_evidence.length > 0 && (
-            <div className="mt-4 border border-[#30363d] bg-black/30 p-3">
-              <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-[#8b949e]">Personalization evidence</p>
+            <div className="mt-4 border border-[#3c3c3c] bg-[#252526] p-3">
+              <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-[#858585]">Personalization evidence</p>
               <ul className="space-y-1 text-xs text-vercel-muted">
                 {sequence.personalization_evidence.map((item, index) => (
                   <li key={`${item}-${index}`}>{item}</li>
@@ -783,24 +783,24 @@ export default function OutreachPage() {
         <TemplateModal lead={selectedTemplateLead} sequence={selectedSequence} onClose={() => setSelectedTemplateLead(null)} />
       )}
 
-      <CollapsibleBox title="Outreach Chat" eyebrow="Gemini setup" icon={<Bot size={16} className="text-[#00ffff]" />} className="min-h-[520px]">
+      <CollapsibleBox title="Outreach Chat" eyebrow="Gemini setup" icon={<Bot size={16} className="text-[#569cd6]" />} className="min-h-[520px]">
         <div className="flex h-full min-h-[460px] flex-col">
           <div ref={chatScrollRef} className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
             {chatMessages.map((item) => (
-              <div key={item.id} className={`border px-3 py-2 text-sm leading-6 ${item.role === "user" ? "ml-8 border-[#30363d] bg-black/40 text-[#00ffff]" : "mr-8 border-[#10a3a3] bg-[#10212b] text-vercel-text"}`}>
-                <span className="mr-2 text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">{item.role === "user" ? "you" : "ai"}</span>
+              <div key={item.id} className={`border px-3 py-2 text-sm leading-6 ${item.role === "user" ? "ml-8 border-[#3c3c3c] bg-[#252526] text-[#569cd6]" : "mr-8 border-[#007acc] bg-[#1f3a4f] text-vercel-text"}`}>
+                <span className="mr-2 text-[10px] uppercase tracking-[0.14em] text-[#858585]">{item.role === "user" ? "you" : "ai"}</span>
                 <span className="whitespace-pre-wrap">{item.content}</span>
               </div>
             ))}
             {loading === "chat" && (
-              <div className="inline-flex items-center gap-2 border border-[#30363d] bg-black/40 px-3 py-2 text-sm text-[#00ffff]">
+              <div className="inline-flex items-center gap-2 border border-[#3c3c3c] bg-[#252526] px-3 py-2 text-sm text-[#569cd6]">
                 <Loader2 size={14} className="animate-spin" />
                 updating draft...
               </div>
             )}
           </div>
 
-          <div className="mt-3 border-t border-[#30363d] pt-3">
+          <div className="mt-3 border-t border-[#3c3c3c] pt-3">
             <input
               ref={fileInputRef}
               type="file"
@@ -809,14 +809,14 @@ export default function OutreachPage() {
               onChange={(event) => void handleLeadFileUpload(event)}
             />
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] uppercase tracking-[0.16em] text-[#8b949e]">Lead file</span>
-              <div className="grid h-9 grid-cols-2 overflow-hidden border border-[#30363d]">
+              <span className="text-[10px] uppercase tracking-[0.16em] text-[#858585]">Lead file</span>
+              <div className="grid h-9 grid-cols-2 overflow-hidden border border-[#3c3c3c]">
                 {(["csv", "pdf"] as LeadUploadFormat[]).map((format) => (
                   <button
                     key={format}
                     type="button"
                     onClick={() => setLeadUploadFormat(format)}
-                    className={`px-3 text-xs font-semibold uppercase ${leadUploadFormat === format ? "bg-[#00ffff] text-black" : "bg-black/30 text-vercel-muted hover:text-vercel-text"}`}
+                    className={`px-3 text-xs font-semibold uppercase ${leadUploadFormat === format ? "bg-[#569cd6] text-white" : "bg-[#252526] text-vercel-muted hover:text-vercel-text"}`}
                   >
                     {format}
                   </button>
@@ -835,7 +835,7 @@ export default function OutreachPage() {
             </div>
           </div>
 
-          <form className="mt-3 flex gap-2 border-t border-[#30363d] pt-3" onSubmit={sendChat}>
+          <form className="mt-3 flex gap-2 border-t border-[#3c3c3c] pt-3" onSubmit={sendChat}>
             <textarea
               className="ide-input h-16 flex-1 resize-none px-3 py-2 text-sm"
               value={chatDraft}
@@ -851,11 +851,11 @@ export default function OutreachPage() {
       </CollapsibleBox>
 
       <div className="grid min-h-0 grid-cols-1 gap-3 overflow-auto xl:grid-cols-2">
-        <CollapsibleBox title="AI-Filled Campaign Draft" eyebrow={readyFromAssistant ? "ready" : "needs details"} icon={<ClipboardList size={16} className="text-[#00ffff]" />}>
+        <CollapsibleBox title="AI-Filled Campaign Draft" eyebrow={readyFromAssistant ? "ready" : "needs details"} icon={<ClipboardList size={16} className="text-[#569cd6]" />}>
           <div className="space-y-2">
             {draftFields.map((field) => (
-              <div key={field.key} className="border border-[#30363d] bg-black/30 p-2">
-                <p className="text-[10px] uppercase tracking-[0.16em] text-[#8b949e]">{field.label}</p>
+              <div key={field.key} className="border border-[#3c3c3c] bg-[#252526] p-2">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-[#858585]">{field.label}</p>
                 <p className="mt-1 whitespace-pre-wrap break-words text-sm text-vercel-text">{form[field.key] || "Not set yet"}</p>
               </div>
             ))}
@@ -868,7 +868,7 @@ export default function OutreachPage() {
           </div>
         </CollapsibleBox>
 
-        <CollapsibleBox title="Email Sender" eyebrow={selectedEmailConnection ? selectedEmailConnection.provider : "connect"} icon={<KeyRound size={16} className="text-[#00ffff]" />}>
+        <CollapsibleBox title="Email Sender" eyebrow={selectedEmailConnection ? selectedEmailConnection.provider : "connect"} icon={<KeyRound size={16} className="text-[#569cd6]" />}>
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
               <button
@@ -909,14 +909,14 @@ export default function OutreachPage() {
                 </select>
                 <div className="max-h-44 space-y-2 overflow-auto">
                   {emailConnections.map((connection) => (
-                    <div key={connection.id} className={`grid grid-cols-[1fr_auto] gap-2 border p-2 ${connection.id === selectedEmailConnectionId ? "border-[#00ffff] bg-[#062429]" : "border-[#30363d] bg-black/30"}`}>
+                    <div key={connection.id} className={`grid grid-cols-[1fr_auto] gap-2 border p-2 ${connection.id === selectedEmailConnectionId ? "border-[#569cd6] bg-[#1f3a4f]" : "border-[#3c3c3c] bg-[#252526]"}`}>
                       <button
                         type="button"
                         onClick={() => setSelectedEmailConnectionId(connection.id)}
                         className="min-w-0 text-left"
                       >
                         <p className="truncate text-sm text-vercel-text">{connection.email}</p>
-                        <p className="text-[11px] uppercase tracking-[0.14em] text-[#8b949e]">
+                        <p className="text-[11px] uppercase tracking-[0.14em] text-[#858585]">
                           {connection.provider} | {connection.status}
                           {connection.last_error ? ` | ${connection.last_error}` : ""}
                         </p>
@@ -941,7 +941,7 @@ export default function OutreachPage() {
             )}
 
             {showSmtpForm && (
-              <div className="grid grid-cols-1 gap-2 border border-[#30363d] bg-black/30 p-3 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 border border-[#3c3c3c] bg-[#252526] p-3 md:grid-cols-2">
                 {[
                   ["email", "Sender email"],
                   ["display_name", "Display name"],
@@ -958,7 +958,7 @@ export default function OutreachPage() {
                   ["imap_mailbox", "Mailbox"]
                 ].map(([key, label]) => (
                   <label key={key} className={key === "imap_mailbox" ? "md:col-span-2" : ""}>
-                    <span className="mb-1 block text-[10px] uppercase tracking-[0.16em] text-[#8b949e]">{label}</span>
+                    <span className="mb-1 block text-[10px] uppercase tracking-[0.16em] text-[#858585]">{label}</span>
                     <input
                       className="ide-input h-9 w-full px-2 text-xs"
                       type={key.includes("password") ? "password" : "text"}
@@ -997,7 +997,7 @@ export default function OutreachPage() {
           </div>
         </CollapsibleBox>
 
-        <CollapsibleBox title="Lead Intake" eyebrow={`${leadsReady} ready`} icon={<MailCheck size={16} className="text-[#00ffff]" />}>
+        <CollapsibleBox title="Lead Intake" eyebrow={`${leadsReady} ready`} icon={<MailCheck size={16} className="text-[#569cd6]" />}>
           <div className="space-y-3">
             <div className="grid grid-cols-[1fr_auto] gap-2">
               <select
@@ -1017,8 +1017,8 @@ export default function OutreachPage() {
                 Import
               </button>
             </div>
-            <div className="border border-[#30363d] bg-black/30 p-2">
-              <p className="mb-2 text-[10px] uppercase tracking-[0.16em] text-[#8b949e]">Lead rows from chat or file</p>
+            <div className="border border-[#3c3c3c] bg-[#252526] p-2">
+              <p className="mb-2 text-[10px] uppercase tracking-[0.16em] text-[#858585]">Lead rows from chat or file</p>
               <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-vercel-muted">
                 {pastedLeads || "No leads extracted yet."}
               </pre>
@@ -1030,7 +1030,7 @@ export default function OutreachPage() {
           </div>
         </CollapsibleBox>
 
-        <CollapsibleBox title="Launch Control" eyebrow={campaign?.status || "draft"} icon={<Sparkles size={16} className="text-[#00ffff]" />}>
+        <CollapsibleBox title="Launch Control" eyebrow={campaign?.status || "draft"} icon={<Sparkles size={16} className="text-[#569cd6]" />}>
           {message && <div className="mb-3 border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{message}</div>}
           <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
             <button type="button" onClick={() => void createCampaign()} disabled={Boolean(loading) || leadsReady === 0} className="ide-btn ide-btn-primary inline-flex h-11 items-center justify-center gap-2 px-3 text-sm disabled:opacity-50">
@@ -1053,15 +1053,15 @@ export default function OutreachPage() {
               ["Sent", stats.sent],
               ["Replies", stats.replies]
             ].map(([label, value]) => (
-              <div key={String(label)} className="border border-[#30363d] bg-black/30 p-2">
-                <p className="text-[#8b949e]">{label}</p>
+              <div key={String(label)} className="border border-[#3c3c3c] bg-[#252526] p-2">
+                <p className="text-[#858585]">{label}</p>
                 <p className="mt-1 text-lg font-semibold text-vercel-text">{value}</p>
               </div>
             ))}
           </div>
         </CollapsibleBox>
 
-        <CollapsibleBox title="Stats" eyebrow="live campaign" icon={<BarChart3 size={16} className="text-[#00ffff]" />}>
+        <CollapsibleBox title="Stats" eyebrow="live campaign" icon={<BarChart3 size={16} className="text-[#569cd6]" />}>
           <div className="grid grid-cols-2 gap-2 text-xs">
             {[
               ["Initial sent", stats.initial],
@@ -1069,18 +1069,18 @@ export default function OutreachPage() {
               ["Queued", stats.queued],
               ["Failed", stats.failed]
             ].map(([label, value]) => (
-              <div key={String(label)} className="border border-[#30363d] bg-black/30 p-2">
-                <p className="text-[#8b949e]">{label}</p>
+              <div key={String(label)} className="border border-[#3c3c3c] bg-[#252526] p-2">
+                <p className="text-[#858585]">{label}</p>
                 <p className="mt-1 text-xl font-semibold text-vercel-text">{value}</p>
               </div>
             ))}
           </div>
         </CollapsibleBox>
 
-        <CollapsibleBox title="Lead Status And Templates" eyebrow={`${leads.length} campaign leads`} icon={<Eye size={16} className="text-[#00ffff]" />} className="xl:col-span-2 min-h-[340px]">
+        <CollapsibleBox title="Lead Status And Templates" eyebrow={`${leads.length} campaign leads`} icon={<Eye size={16} className="text-[#569cd6]" />} className="xl:col-span-2 min-h-[340px]">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[840px] text-left text-xs">
-              <thead className="text-[#8b949e]">
+              <thead className="text-[#858585]">
                 <tr>
                   <th className="px-2 py-2">Lead</th>
                   <th className="px-2 py-2">Email</th>
@@ -1145,7 +1145,7 @@ export default function OutreachPage() {
         leadWorkspace.terminalJobId ? (
           <DualLiveTerminal jobId={leadWorkspace.terminalJobId} initialEvents={leadWorkspace.terminalEvents} />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs text-[#8b949e]">
+          <div className="flex h-full w-full items-center justify-center text-xs text-[#858585]">
             Select a recent lead session to inspect logs.
           </div>
         )

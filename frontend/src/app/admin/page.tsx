@@ -29,7 +29,7 @@ export default function AdminPage() {
         workspace.terminalJobId ? (
           <DualLiveTerminal jobId={workspace.terminalJobId} initialEvents={workspace.terminalEvents} />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs text-[#8b949e]">
+          <div className="flex h-full w-full items-center justify-center text-xs text-[#858585]">
             Select a job from the jobs panel to inspect logs.
           </div>
         )

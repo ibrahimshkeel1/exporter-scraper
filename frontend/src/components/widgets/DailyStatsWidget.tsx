@@ -70,13 +70,13 @@ export function DailyStatsWidget({ snapshot }: DailyStatsWidgetProps) {
         label: "Leads Today",
         value: leadsToday.toLocaleString(),
         change: percentChange(leadsToday, leadsYesterday),
-        color: "#00ffff",
+        color: "#569cd6",
       },
       {
         label: "Jobs Today",
         value: String(todayJobs.length),
         change: percentChange(todayJobs.length, yesterdayJobs.length),
-        color: "#00ff00",
+        color: "#6a9955",
       },
       {
         label: "Success (7d)",
@@ -101,7 +101,7 @@ export function DailyStatsWidget({ snapshot }: DailyStatsWidgetProps) {
           return (
             <div
               key={stat.label}
-              className="flex flex-col justify-between border border-[#30363d] bg-[#0d1117] p-2.5"
+              className="flex flex-col justify-between border border-[#3c3c3c] bg-[#1e1e1e] p-2.5"
             >
               <span className="text-[10px] uppercase tracking-wider text-vercel-muted">{stat.label}</span>
               <div className="mt-1 flex items-end justify-between">
@@ -110,7 +110,7 @@ export function DailyStatsWidget({ snapshot }: DailyStatsWidgetProps) {
                 </span>
                 <span
                   className={`flex items-center gap-0.5 text-[10px] font-mono ${
-                    up ? "text-[#00ff00]" : "text-[#ff6b6b]"
+                    up ? "text-[#6a9955]" : "text-[#ff6b6b]"
                   }`}
                 >
                   {up ? <TrendingUp size={10} /> : <TrendingDown size={10} />}

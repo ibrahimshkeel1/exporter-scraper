@@ -1,18 +1,33 @@
 @import "tailwindcss";
 
 @theme {
-  --color-vercel-bg: #1e1e1e;
-  --color-vercel-panel: #252526;
-  --color-vercel-border: #3c3c3c;
-  --color-vercel-text: #d4d4d4;
-  --color-vercel-muted: #858585;
-  --color-vercel-accent: #007acc;
-  --color-vercel-accent-hover: #1f8ad6;
-  --color-vercel-success: #6a9955;
-  --color-vercel-error: #f14c4c;
-  --color-matrix-green: #6a9955;
-  --color-matrix-cyan: #569cd6;
-  --color-ide-black: #1e1e1e;
+  --color-vscode-bg: #1e1e1e;
+  --color-vscode-sidebar: #252526;
+  --color-vscode-activity: #333333;
+  --color-vscode-panel: #1e1e1e;
+  --color-vscode-border: #3c3c3c;
+  --color-vscode-text: #d4d4d4;
+  --color-vscode-muted: #858585;
+  --color-vscode-accent: #007acc;
+  --color-vscode-accent-hover: #1f8ad6;
+  --color-vscode-keyword: #569cd6;
+  --color-vscode-string: #ce9178;
+  --color-vscode-comment: #6a9955;
+  --color-vscode-error: #f48771;
+  --color-vscode-warning: #dcdcaa;
+
+  --color-vercel-bg: var(--color-vscode-bg);
+  --color-vercel-panel: var(--color-vscode-sidebar);
+  --color-vercel-border: var(--color-vscode-border);
+  --color-vercel-text: var(--color-vscode-text);
+  --color-vercel-muted: var(--color-vscode-muted);
+  --color-vercel-accent: var(--color-vscode-accent);
+  --color-vercel-accent-hover: var(--color-vscode-accent-hover);
+  --color-vercel-success: var(--color-vscode-comment);
+  --color-vercel-error: var(--color-vscode-error);
+  --color-matrix-green: var(--color-vscode-comment);
+  --color-matrix-cyan: var(--color-vscode-keyword);
+  --color-ide-black: var(--color-vscode-bg);
 
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), "Geist Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -26,79 +41,80 @@
 body {
   font-family: var(--font-sans);
   min-height: 100vh;
-  background: var(--color-vercel-bg);
+  background: var(--color-vscode-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 * {
   box-sizing: border-box;
-  border-radius: 0;
 }
 
 *:focus-visible {
-  outline: 1px solid var(--color-matrix-cyan);
-  outline-offset: 0;
+  outline: 1px solid var(--color-vscode-accent);
+  outline-offset: 2px;
 }
 
 .ide-panel {
-  border: 1px solid var(--color-vercel-border);
-  background: var(--color-vercel-panel);
-  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--color-vscode-border) 70%, transparent);
+  background: var(--color-vscode-sidebar);
+  border-radius: 4px;
 }
 
 .ide-terminal {
-  border: 1px solid var(--color-vercel-border);
-  background: #1e1e1e;
-  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--color-vscode-border) 70%, transparent);
+  background: var(--color-vscode-bg);
+  border-radius: 4px;
 }
 
 .ide-btn {
-  border: 1px solid var(--color-vercel-border);
+  border: 1px solid color-mix(in srgb, var(--color-vscode-border) 72%, transparent);
   background: transparent;
-  color: var(--color-vercel-text);
-  border-radius: 0;
+  color: var(--color-vscode-text);
+  border-radius: 4px;
   transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
 }
 
 .ide-btn:hover {
-  background: #2d2d2d;
-  border-color: var(--color-matrix-cyan);
+  background: color-mix(in srgb, var(--color-vscode-activity) 70%, transparent);
+  border-color: var(--color-vscode-border);
   color: #ffffff;
 }
 
 .ide-btn-primary {
-  border: 1px solid var(--color-matrix-cyan);
-  background: #0e293f;
-  color: var(--color-matrix-cyan);
+  border-color: var(--color-vscode-accent);
+  background: color-mix(in srgb, var(--color-vscode-accent) 22%, var(--color-vscode-bg));
+  color: #ffffff;
 }
 
 .ide-btn-primary:hover {
-  background: #153c5c;
+  border-color: var(--color-vscode-accent-hover);
+  background: var(--color-vscode-accent);
   color: #ffffff;
 }
 
 .ide-input {
-  border: 1px solid var(--color-vercel-border);
-  background: var(--color-ide-black);
-  color: var(--color-vercel-text);
-  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--color-vscode-border) 72%, transparent);
+  background: var(--color-vscode-bg);
+  color: var(--color-vscode-text);
+  border-radius: 4px;
 }
 
 .ide-input:focus {
   outline: none;
-  border-color: var(--color-matrix-cyan);
-  box-shadow: inset 0 0 0 1px var(--color-matrix-cyan);
+  border-color: var(--color-vscode-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-vscode-accent) 50%, transparent);
 }
 
 .ide-status {
-  border: 1px solid var(--color-vercel-border);
-  background: var(--color-vercel-panel);
-  color: var(--color-vercel-text);
+  border: 1px solid color-mix(in srgb, var(--color-vscode-border) 72%, transparent);
+  background: var(--color-vscode-sidebar);
+  color: var(--color-vscode-text);
   padding: 0.1rem 0.45rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 11px;
+  border-radius: 999px;
 }
 
 /* react-resizable-panels custom styles */
@@ -117,26 +133,26 @@ body {
 
 .ide-panel-handle {
   position: relative;
-  background: #252526;
+  background: var(--color-vscode-sidebar);
   transition: background-color 120ms ease;
 }
 
 .ide-panel-handle:hover {
-  background: #333333;
+  background: var(--color-vscode-activity);
 }
 
 .ide-panel-handle[data-panel-resize-handle-state="drag"],
 .ide-panel-handle[data-resize-handle-state="drag"] {
-  background: var(--color-vercel-accent);
+  background: var(--color-vscode-accent);
 }
 
 .ide-panel-handle-x {
-  width: 4px;
+  width: 2px;
   cursor: col-resize;
 }
 
 .ide-panel-handle-y {
-  height: 4px;
+  height: 2px;
   cursor: row-resize;
 }
 
@@ -156,12 +172,12 @@ body {
 
 .react-grid-item.resizing {
   z-index: 100;
-  box-shadow: 0 0 0 1px var(--color-matrix-cyan), 0 0 20px rgba(86, 156, 214, 0.15);
+  box-shadow: 0 0 0 1px var(--color-vscode-accent), 0 0 16px rgba(0, 122, 204, 0.16);
 }
 
 .react-grid-item.react-grid-placeholder {
-  background: rgba(86, 156, 214, 0.08) !important;
-  border: 1px dashed var(--color-matrix-cyan) !important;
+  background: rgba(0, 122, 204, 0.08) !important;
+  border: 1px dashed var(--color-vscode-accent) !important;
   opacity: 1 !important;
 }
 
@@ -182,14 +198,14 @@ body {
   bottom: 4px;
   width: 8px;
   height: 8px;
-  border-right: 2px solid var(--color-vercel-border);
-  border-bottom: 2px solid var(--color-vercel-border);
+  border-right: 1px solid var(--color-vscode-border);
+  border-bottom: 1px solid var(--color-vscode-border);
   transition: border-color 120ms ease;
 }
 
 .react-grid-item:hover .react-resizable-handle::after {
-  border-right-color: var(--color-matrix-cyan);
-  border-bottom-color: var(--color-matrix-cyan);
+  border-right-color: var(--color-vscode-accent);
+  border-bottom-color: var(--color-vscode-accent);
 }
 
 .react-grid-item > .react-resizable-handle.react-resizable-handle-se {
@@ -223,7 +239,7 @@ body {
   background: #424242;
   border: 2px solid transparent;
   background-clip: padding-box;
-  border-radius: 0;
+  border-radius: 8px;
   min-height: 40px;
 }
 

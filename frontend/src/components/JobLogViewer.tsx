@@ -239,8 +239,8 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
         className="ide-panel flex h-[90vh] w-full max-w-[84rem] flex-col overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-4 py-2">
-          <div className="inline-flex items-center gap-2 text-xs font-mono text-[#00ffff]">
+        <div className="flex items-center justify-between border-b border-[#3c3c3c] bg-[#252526] px-4 py-2">
+          <div className="inline-flex items-center gap-2 text-xs font-mono text-[#569cd6]">
             <Terminal size={13} />
             JOB {jobId.slice(0, 8)}... LIVE LOGS
           </div>
@@ -259,8 +259,8 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
               { key: "duckduckgo", label: "DISCOVERY / DUCKDUCKGO", ref: discoveryDuckRef },
               { key: "yahoo", label: "DISCOVERY / YAHOO", ref: discoveryYahooRef },
             ].map((laneRow) => (
-              <div key={laneRow.key} className="flex min-h-0 flex-col overflow-hidden border border-[#30363d] bg-black">
-                <header className="flex items-center justify-between border-b border-[#30363d] px-2 py-1.5 text-[10px] font-mono text-[#00ffff]">
+              <div key={laneRow.key} className="flex min-h-0 flex-col overflow-hidden border border-[#3c3c3c] bg-[#1e1e1e]">
+                <header className="flex items-center justify-between border-b border-[#3c3c3c] px-2 py-1.5 text-[10px] font-mono text-[#569cd6]">
                   <span>{laneRow.label}</span>
                   <div className="inline-flex items-center gap-2">
                     <span>{state.toUpperCase()}</span>
@@ -274,19 +274,19 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
                     </button>
                   </div>
                 </header>
-                <div ref={laneRow.ref} className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-[#00ff00]">
+                <div ref={laneRow.ref} className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-[#6a9955]">
                   {(discoveryLogs[laneRow.key as DiscoveryLane] || []).map((log, index) => (
                     <div key={`${laneRow.key}-${index}`} className="whitespace-pre-wrap break-words">
-                      <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
+                      <span className="text-[#569cd6]">[{log.time}]</span> {log.message}
                       {log.proxyBefore && log.proxyAfter && (
-                        <div className="text-[10px] text-[#00ffff]">
+                        <div className="text-[10px] text-[#569cd6]">
                           proxy rotated: {log.proxyBefore} → {log.proxyAfter}
                         </div>
                       )}
                     </div>
                   ))}
                   {(discoveryLogs[laneRow.key as DiscoveryLane] || []).length === 0 && (
-                    <div className="text-[#8b949e]">Waiting for {laneRow.key} lane...</div>
+                    <div className="text-[#858585]">Waiting for {laneRow.key} lane...</div>
                   )}
                 </div>
               </div>
@@ -294,7 +294,7 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
           </section>
 
           <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-2 xl:row-span-1">
-            <header className="flex items-center justify-between border-b border-[#30363d] px-3 py-1.5 text-[11px] font-mono text-[#00ffff]">
+            <header className="flex items-center justify-between border-b border-[#3c3c3c] px-3 py-1.5 text-[11px] font-mono text-[#569cd6]">
               <span>ENRICH / SCORE</span>
               <div className="inline-flex items-center gap-2">
                 <span>{state.toUpperCase()}</span>
@@ -308,23 +308,23 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
                 </button>
               </div>
             </header>
-            <div ref={enrichmentRef} className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-xs leading-5 text-[#00ff00]">
+            <div ref={enrichmentRef} className="min-h-0 flex-1 overflow-y-auto p-2 font-mono text-xs leading-5 text-[#6a9955]">
               {enrichmentLogs.map((log, index) => (
                 <div key={`e-${index}`} className="whitespace-pre-wrap break-words">
-                  <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
+                  <span className="text-[#569cd6]">[{log.time}]</span> {log.message}
                   {log.proxyBefore && log.proxyAfter && (
-                    <div className="text-[11px] text-[#00ffff]">
+                    <div className="text-[11px] text-[#569cd6]">
                       proxy rotated: {log.proxyBefore} → {log.proxyAfter}
                     </div>
                   )}
                 </div>
               ))}
-              {enrichmentLogs.length === 0 && <div className="text-[#8b949e]">Waiting for enrichment lane...</div>}
+              {enrichmentLogs.length === 0 && <div className="text-[#858585]">Waiting for enrichment lane...</div>}
             </div>
           </section>
 
           <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-1 xl:row-span-1">
-            <header className="border-b border-[#30363d] bg-[#161b22] px-3 py-2 text-[11px] font-mono text-[#8b949e]">MILESTONES</header>
+            <header className="border-b border-[#3c3c3c] bg-[#252526] px-3 py-2 text-[11px] font-mono text-[#858585]">MILESTONES</header>
             <div ref={eventRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 font-mono text-[11px] leading-5">
               {latestReport !== null && (
                 <div className="mb-3 font-sans">
@@ -332,8 +332,8 @@ export function JobLogViewer({ jobId, initialEvents, onClose }: JobLogViewerProp
                 </div>
               )}
               {sortedEvents.map((event, index) => (
-                <div key={event.id || `event-${index}`} className="border border-[#30363d] bg-black p-2">
-                  <p className="text-[10px] uppercase text-[#00ffff]">{event.status || "event"}</p>
+                <div key={event.id || `event-${index}`} className="border border-[#3c3c3c] bg-[#1e1e1e] p-2">
+                  <p className="text-[10px] uppercase text-[#569cd6]">{event.status || "event"}</p>
                   <p className="whitespace-pre-wrap text-vercel-text">{event.message || ""}</p>
                 </div>
               ))}

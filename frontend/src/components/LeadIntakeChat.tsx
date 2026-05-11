@@ -227,11 +227,11 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_34%),linear-gradient(180deg,#171717,#070707)] shadow-2xl">
+    <div className="overflow-hidden rounded-2xl border border-[#3c3c3c] bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_34%),linear-gradient(180deg,#171717,#070707)]">
       <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr]">
         <section className="flex min-h-[680px] flex-col border-b border-vercel-border xl:border-b-0 xl:border-r">
           <div className="border-b border-vercel-border px-6 py-5">
-            <span className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-300/80">AI lead strategist</span>
+            <span className="text-xs font-bold uppercase tracking-[0.24em] text-[#569cd6]">AI lead strategist</span>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-vercel-text">Chat through the lead plan. Run only when the brief is ready.</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-vercel-muted">The assistant asks follow-ups, finalizes audience and filters, then creates the scraper job from that context.</p>
           </div>
@@ -240,7 +240,7 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
             {messages.map((item, index) => (
               <div key={`${item.role}-${index}`} className={`flex gap-3 ${item.role === "user" ? "justify-end" : "justify-start"}`}>
                 {item.role === "assistant" && (
-                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-matrix-green text-white rounded-none">
+                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-matrix-green text-white rounded">
                     <Bot size={16} />
                   </div>
                 )}
@@ -248,7 +248,7 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
                   {item.content}
                 </div>
                 {item.role === "user" && (
-                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-vercel-accent text-white rounded-none">
+                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-vercel-accent text-white rounded">
                     <UserRound size={16} />
                   </div>
                 )}
@@ -257,10 +257,10 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
 
             {isThinking && (
               <div className="flex gap-3">
-                <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-matrix-green text-white rounded-none">
+                <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-matrix-green text-white rounded">
                   <Bot size={16} />
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cyan-100">
+                <div className="inline-flex items-center gap-2 rounded-2xl border border-[#3c3c3c] bg-[#252526] px-4 py-3 text-sm text-[#d4d4d4]">
                   <Loader2 size={15} className="animate-spin" />
                   Thinking through audience, markets, and filters...
                 </div>

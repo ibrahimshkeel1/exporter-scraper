@@ -19,9 +19,9 @@ export function OutreachSummaryWidget({ snapshot }: OutreachSummaryWidgetProps) 
   const activeLeads = leads.length;
 
   const metrics = [
-    { label: "Campaigns", value: campaigns.length, icon: Send, color: "#00ffff" },
+    { label: "Campaigns", value: campaigns.length, icon: Send, color: "#569cd6" },
     { label: "Queued", value: queued, icon: MailOpen, color: "#ff9f43" },
-    { label: "Sent", value: sent, icon: Mail, color: "#00ff00" },
+    { label: "Sent", value: sent, icon: Mail, color: "#6a9955" },
     { label: "Replies", value: replied, icon: MessageSquare, color: "#7fff00" },
     { label: "Failed", value: failed, icon: UserCheck, color: "#ff6b6b" },
   ];
@@ -32,13 +32,13 @@ export function OutreachSummaryWidget({ snapshot }: OutreachSummaryWidgetProps) 
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-1">
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 border border-[#30363d] bg-[#0d1117] px-2 py-1">
+        <div className="flex items-center gap-1.5 border border-[#3c3c3c] bg-[#1e1e1e] px-2 py-1">
           <span className="text-[10px] uppercase tracking-wider text-vercel-muted">Send Rate</span>
-          <span className="text-xs font-mono font-bold text-[#00ff00]">{sendRate}%</span>
+          <span className="text-xs font-mono font-bold text-[#6a9955]">{sendRate}%</span>
         </div>
-        <div className="flex items-center gap-1.5 border border-[#30363d] bg-[#0d1117] px-2 py-1">
+        <div className="flex items-center gap-1.5 border border-[#3c3c3c] bg-[#1e1e1e] px-2 py-1">
           <span className="text-[10px] uppercase tracking-wider text-vercel-muted">Reply Rate</span>
-          <span className="text-xs font-mono font-bold text-[#00ffff]">{replyRate}%</span>
+          <span className="text-xs font-mono font-bold text-[#569cd6]">{replyRate}%</span>
         </div>
       </div>
 
@@ -48,7 +48,7 @@ export function OutreachSummaryWidget({ snapshot }: OutreachSummaryWidgetProps) 
           return (
             <div
               key={metric.label}
-              className="flex items-center justify-between border border-[#30363d] bg-[#0d1117] px-2 py-1.5"
+              className="flex items-center justify-between border border-[#3c3c3c] bg-[#1e1e1e] px-2 py-1.5"
             >
               <div className="flex items-center gap-2">
                 <Icon size={12} style={{ color: metric.color }} />

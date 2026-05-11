@@ -70,11 +70,11 @@ export default function SettingsPage() {
     <div className="grid h-full min-h-0 w-full grid-cols-1 gap-4 overflow-auto p-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
       <section className="ide-panel h-fit space-y-4 p-4">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-[#8b949e]">Preferences</p>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-[#858585]">Preferences</p>
           <h1 className="text-lg font-semibold text-vercel-text">Workspace behavior</h1>
         </div>
 
-        <label className="flex items-center justify-between border border-[#30363d] bg-black/30 px-3 py-2 text-sm">
+        <label className="flex items-center justify-between border border-[#3c3c3c] bg-[#252526] px-3 py-2 text-sm">
           <span className="text-vercel-text">Auto refresh jobs panel</span>
           <input
             type="checkbox"
@@ -84,7 +84,7 @@ export default function SettingsPage() {
           />
         </label>
 
-        <label className="flex items-center justify-between border border-[#30363d] bg-black/30 px-3 py-2 text-sm">
+        <label className="flex items-center justify-between border border-[#3c3c3c] bg-[#252526] px-3 py-2 text-sm">
           <span className="text-vercel-text">Compact dashboard widgets</span>
           <input
             type="checkbox"
@@ -94,7 +94,7 @@ export default function SettingsPage() {
           />
         </label>
 
-        <label className="flex items-center justify-between border border-[#30363d] bg-black/30 px-3 py-2 text-sm">
+        <label className="flex items-center justify-between border border-[#3c3c3c] bg-[#252526] px-3 py-2 text-sm">
           <span className="text-vercel-text">Persist widget layout</span>
           <input
             type="checkbox"
@@ -104,7 +104,7 @@ export default function SettingsPage() {
           />
         </label>
 
-        <div className="border border-[#30363d] bg-[#0d1117] px-3 py-2 text-xs text-[#8b949e]">
+        <div className="border border-[#3c3c3c] bg-[#1e1e1e] px-3 py-2 text-xs text-[#858585]">
           Keyboard: `Ctrl/Cmd+B` toggle left, `Ctrl/Cmd+Shift+B` toggle right, `Ctrl/Cmd+J` toggle terminal.
         </div>
       </section>
@@ -131,7 +131,7 @@ export default function SettingsPage() {
         workspace.terminalJobId ? (
           <DualLiveTerminal jobId={workspace.terminalJobId} initialEvents={workspace.terminalEvents} />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs text-[#8b949e]">
+          <div className="flex h-full w-full items-center justify-center text-xs text-[#858585]">
             Select a lead session to inspect logs.
           </div>
         )

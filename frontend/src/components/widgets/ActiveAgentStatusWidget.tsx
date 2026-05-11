@@ -28,10 +28,10 @@ export function ActiveAgentStatusWidget({ snapshot }: ActiveAgentStatusWidgetPro
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5">
           <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00ff00] opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#00ff00]" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#6a9955] opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#6a9955]" />
           </span>
-          <span className="text-[11px] font-medium uppercase tracking-wider text-[#00ff00]">LIVE</span>
+          <span className="text-[11px] font-medium uppercase tracking-wider text-[#6a9955]">LIVE</span>
         </div>
         <span className="text-[11px] text-vercel-muted">{runningJobs.length} running</span>
         {failedCount > 0 && (
@@ -44,7 +44,7 @@ export function ActiveAgentStatusWidget({ snapshot }: ActiveAgentStatusWidgetPro
 
       <div className="flex-1 overflow-y-auto space-y-2 pr-1">
         {runningJobs.length === 0 && (
-          <div className="flex h-full items-center justify-center border border-[#30363d] bg-[#0d1117] text-xs text-vercel-muted">
+          <div className="flex h-full items-center justify-center border border-[#3c3c3c] bg-[#1e1e1e] text-xs text-vercel-muted">
             No active jobs.
           </div>
         )}
@@ -57,15 +57,15 @@ export function ActiveAgentStatusWidget({ snapshot }: ActiveAgentStatusWidgetPro
           return (
             <div
               key={job.id}
-              className="border border-[#30363d] bg-[#0d1117] p-2.5 transition-colors hover:border-[#30363d]/80"
+              className="border border-[#3c3c3c] bg-[#1e1e1e] p-2.5 transition-colors hover:border-[#3c3c3c]/80"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  {job.status === "running" && <Activity size={12} className="text-[#00ffff]" />}
-                  {job.status === "queued" && <Clock size={12} className="text-[#8b949e]" />}
+                  {job.status === "running" && <Activity size={12} className="text-[#569cd6]" />}
+                  {job.status === "queued" && <Clock size={12} className="text-[#858585]" />}
                   <span className="text-xs font-medium text-vercel-text">{job.id.slice(0, 8)}</span>
                 </div>
-                <span className="text-[10px] font-mono uppercase text-[#00ff00]">{job.status}</span>
+                <span className="text-[10px] font-mono uppercase text-[#6a9955]">{job.status}</span>
               </div>
 
               <div className="mt-2">
@@ -73,13 +73,13 @@ export function ActiveAgentStatusWidget({ snapshot }: ActiveAgentStatusWidgetPro
                   <span>{progress}%</span>
                   <span className="font-mono">{latestEvent?.status || "running"}</span>
                 </div>
-                <div className="h-1.5 w-full bg-[#21262d]">
-                  <div className="h-full bg-[#00ffff] transition-all" style={{ width: `${progress}%` }} />
+                <div className="h-1.5 w-full bg-[#333333]">
+                  <div className="h-full bg-[#569cd6] transition-all" style={{ width: `${progress}%` }} />
                 </div>
               </div>
 
               <div className="mt-2 flex flex-wrap gap-1">
-                <span className="inline-flex items-center gap-1 border border-[#30363d] bg-[#161b22] px-1.5 py-0.5 text-[9px] text-vercel-muted">
+                <span className="inline-flex items-center gap-1 border border-[#3c3c3c] bg-[#252526] px-1.5 py-0.5 text-[9px] text-vercel-muted">
                   <Search size={8} />
                   {laneTag}
                 </span>

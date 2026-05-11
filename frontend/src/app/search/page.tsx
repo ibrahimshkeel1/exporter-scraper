@@ -40,7 +40,7 @@ export default function SearchPage() {
         workspace.terminalJobId ? (
           <DualLiveTerminal jobId={workspace.terminalJobId} initialEvents={workspace.terminalEvents} />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs text-[#8b949e]">
+          <div className="flex h-full w-full items-center justify-center text-xs text-[#858585]">
             No lead session yet. Start a search or select a recent job.
           </div>
         )

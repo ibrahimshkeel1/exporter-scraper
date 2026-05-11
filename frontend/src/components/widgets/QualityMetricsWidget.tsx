@@ -54,7 +54,7 @@ export function QualityMetricsWidget({ snapshot }: QualityMetricsWidgetProps) {
         { metric: "Validation", value: Math.round(validation), fullMark: 100 },
       ],
       pie: [
-        { name: "AI Reported", value: Math.round(aiCoverage), color: "#00ffff" },
+        { name: "AI Reported", value: Math.round(aiCoverage), color: "#569cd6" },
         { name: "No Report", value: Math.round(fallback), color: "#ff6b6b" },
       ],
       avgScore: Math.round(avgScore),
@@ -65,11 +65,11 @@ export function QualityMetricsWidget({ snapshot }: QualityMetricsWidgetProps) {
   return (
     <div className="flex h-full flex-col gap-3 overflow-hidden p-1">
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 border border-[#30363d] bg-[#0d1117] px-2 py-1">
+        <div className="flex items-center gap-2 border border-[#3c3c3c] bg-[#1e1e1e] px-2 py-1">
           <span className="text-[10px] uppercase tracking-wider text-vercel-muted">Avg Score</span>
-          <span className="text-sm font-mono font-bold text-[#00ff00]">{metrics.avgScore}</span>
+          <span className="text-sm font-mono font-bold text-[#6a9955]">{metrics.avgScore}</span>
         </div>
-        <div className="flex items-center gap-2 border border-[#30363d] bg-[#0d1117] px-2 py-1">
+        <div className="flex items-center gap-2 border border-[#3c3c3c] bg-[#1e1e1e] px-2 py-1">
           <span className="text-[10px] uppercase tracking-wider text-vercel-muted">No Report</span>
           <span className="text-sm font-mono font-bold text-[#ff6b6b]">{metrics.fallback}%</span>
         </div>
@@ -79,10 +79,10 @@ export function QualityMetricsWidget({ snapshot }: QualityMetricsWidgetProps) {
         <div className="min-h-0">
           <ResponsiveContainer width="100%" height="100%">
             <RadarChart data={metrics.radar} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-              <PolarGrid stroke="#30363d" />
-              <PolarAngleAxis dataKey="metric" tick={{ fill: "#8b949e", fontSize: 9, fontFamily: "monospace" }} />
+              <PolarGrid stroke="#3c3c3c" />
+              <PolarAngleAxis dataKey="metric" tick={{ fill: "#858585", fontSize: 9, fontFamily: "monospace" }} />
               <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
-              <Radar name="Quality" dataKey="value" stroke="#00ffff" strokeWidth={1.5} fill="#00ffff" fillOpacity={0.15} />
+              <Radar name="Quality" dataKey="value" stroke="#569cd6" strokeWidth={1.5} fill="#569cd6" fillOpacity={0.15} />
             </RadarChart>
           </ResponsiveContainer>
         </div>
