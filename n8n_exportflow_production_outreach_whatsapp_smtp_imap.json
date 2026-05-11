@@ -188,9 +188,9 @@
                   },
                   {
                       "parameters":  {
-                                         "content":  "## 2. Launch campaign\n\nWebsite calls `exportflow-outreach-launch` after readiness checks pass. ExportFlow decides which sequences are approved and eligible; n8n only tells the backend to activate queueing.",
-                                         "height":  220,
-                                         "width":  420
+                                         "content":  "## 2. Launch campaign\n\nWebsite calls `exportflow-outreach-launch` after readiness checks pass. ExportFlow queues the initial messages, waits 5 seconds for the queue write to settle, then immediately continues into Send Due Emails so the first outreach does not depend on the schedule trigger.",
+                                         "height":  260,
+                                         "width":  520
                                      },
                       "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000015",
                       "name":  "Sticky Note - Launch",
@@ -265,7 +265,20 @@
                   },
                   {
                       "parameters":  {
-                                         "content":  "## 3. Send approved due emails\n\nRuns on schedule or manual webhook exportflow-outreach-send-due.\n\nExportFlow backend sends through the campaign owner's connected email account and uses the approved per-lead sequence already saved on the website. n8n only triggers the backend send route and persists the result.",
+                                         "jsCode":  "await new Promise((resolve) => setTimeout(resolve, 5000));\nreturn $input.all();"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000036",
+                      "name":  "Wait - Let Queue Commit",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1000,
+                                       520
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "## 3. Send approved due emails\n\nRuns from three paths: immediately after launch, manual webhook exportflow-outreach-send-due, and a 1-minute backup schedule.\n\nExportFlow backend sends through the campaign owner's connected email account and uses the approved per-lead sequence already saved on the website. n8n only triggers the backend send route and persists the result.",
                                          "height":  260,
                                          "width":  460
                                      },
@@ -281,7 +294,7 @@
                   {
                       "parameters":  {
                                          "unit":  "minutes",
-                                         "value":  15
+                                         "value":  1
                                      },
                       "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000020",
                       "name":  "Schedule - Send Due Emails",
@@ -791,6 +804,28 @@
                                                                     ]
                                                                 ]
                                                    },
+                        "ExportFlow API - Launch Production Campaign":  {
+                                                                            "main":  [
+                                                                                         [
+                                                                                             {
+                                                                                                 "node":  "Wait - Let Queue Commit",
+                                                                                                 "type":  "main",
+                                                                                                 "index":  0
+                                                                                             }
+                                                                                         ]
+                                                                                     ]
+                                                                        },
+                        "Wait - Let Queue Commit":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Prepare Due Messages Request",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
                         "Schedule - Send Due Emails":  {
                                                            "main":  [
                                                                         [
