@@ -321,7 +321,7 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
 
   return (
     <div className="grid h-full min-h-0 w-full grid-cols-1 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-2 overflow-hidden xl:grid-cols-3">
-      <div className="ide-terminal flex min-w-0 items-center justify-between gap-2 px-2 py-1 font-mono text-[10px] text-[#00ffff] xl:col-span-3">
+      <div className="ide-terminal flex min-w-0 items-center justify-between gap-2 px-2 py-1 font-mono text-[10px] text-vercel-text xl:col-span-3">
         <span className="truncate">worker stream tails new output by default</span>
         <div className="inline-flex flex-shrink-0 items-center gap-2">
           <button
@@ -352,7 +352,7 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
           { key: "yahoo", label: "DISCOVERY / YAHOO", ref: discoveryYahooRef },
         ].map((laneRow) => (
           <div key={laneRow.key} className="flex h-full min-h-0 flex-col overflow-hidden border border-[#30363d] bg-black">
-            <div className="flex items-center justify-between border-b border-[#30363d] px-2 py-1 text-[10px] font-mono text-[#00ffff]">
+            <div className="flex items-center justify-between border-b border-[#30363d] px-2 py-1 text-[10px] font-mono text-vercel-text">
               <span className="inline-flex items-center gap-1.5">
                 <Terminal size={11} />
                 {laneRow.label}
@@ -369,12 +369,12 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
                 </button>
               </div>
             </div>
-            <div ref={laneRow.ref} className="flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-[#00ff00]">
+            <div ref={laneRow.ref} className="flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-matrix-green">
               {(discoveryLogs[laneRow.key as DiscoveryLane] || []).map((log, index) => (
                 <div key={`${laneRow.key}-${index}`} className="whitespace-pre-wrap break-words">
-                  <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
+                  <span className="text-vercel-text">[{log.time}]</span> {log.message}
                   {log.proxyBefore && log.proxyAfter && (
-                    <div className="text-[10px] text-[#00ffff]">
+                    <div className="text-[10px] text-vercel-text">
                       proxy rotated: {log.proxyBefore} → {log.proxyAfter}
                     </div>
                   )}
@@ -388,7 +388,7 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
         ))}
       </section>
       <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-3">
-        <div className="flex items-center justify-between border-b border-[#30363d] px-3 py-1.5 text-[11px] font-mono text-[#00ffff]">
+        <div className="flex items-center justify-between border-b border-[#30363d] px-3 py-1.5 text-[11px] font-mono text-vercel-text">
           <span className="inline-flex items-center gap-1.5">
             <Terminal size={12} />
             ENRICH / SCORE
@@ -405,12 +405,12 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
             </button>
           </div>
         </div>
-        <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-2 font-mono text-xs leading-5 text-[#00ff00]">
+        <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-2 font-mono text-xs leading-5 text-matrix-green">
           {enrichmentLogs.map((log, index) => (
             <div key={`e-${index}`} className="whitespace-pre-wrap break-words">
-              <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
+              <span className="text-vercel-text">[{log.time}]</span> {log.message}
               {log.proxyBefore && log.proxyAfter && (
-                <div className="text-[11px] text-[#00ffff]">
+                <div className="text-[11px] text-vercel-text">
                   proxy rotated: {log.proxyBefore} → {log.proxyAfter}
                 </div>
               )}
@@ -513,7 +513,7 @@ function ReportDownloads({
 
 function AiGlyph({ active = false }: { active?: boolean }) {
   return (
-    <span className="relative inline-flex h-7 w-7 flex-shrink-0 items-center justify-center border border-black/30 bg-black text-[#2dd4bf] shadow-[inset_0_0_0_1px_rgba(45,212,191,0.35),0_0_18px_rgba(0,0,0,0.25)]">
+    <span className="relative inline-flex h-7 w-7 flex-shrink-0 items-center justify-center border border-black/30 bg-black text-vercel-accent shadow-[inset_0_0_0_1px_rgba(45,212,191,0.35),0_0_18px_rgba(0,0,0,0.25)]">
       {active && <span className="absolute -inset-1 animate-ping border border-black/30" />}
       {active && <span className="absolute h-1 w-1 animate-pulse bg-[#2dd4bf]" />}
       <svg
@@ -946,14 +946,10 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
             <div key={message.id}>
               {message.type === "text" && (
                 <div
-                  className={`relative flex items-start gap-2 overflow-hidden border px-3 py-2 text-sm leading-6 ${
-                    message.role === "user"
-                      ? "border-[#30363d] bg-[#1b2028] text-[#00ffff] shadow-[inset_2px_0_0_#00ffff]"
-                      : "border-[#00f5d4] bg-[linear-gradient(135deg,#38f8d5_0%,#16d9c5_52%,#00a7a7_100%)] text-black shadow-[0_0_28px_rgba(45,212,191,0.22)]"
-                  }`}
+                  className={`relative flex items-start gap-2 overflow-hidden rounded-md border px-3 py-2 text-sm leading-6 ${message.role === "user" ? "bg-vercel-accent/20 border-vercel-accent/30 text-vercel-text flex-row-reverse" : "bg-vercel-panel border-vercel-border text-vercel-text whitespace-pre-wrap"}`}
                 >
                   {message.role === "assistant" && (
-                    <span className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.18))]" />
+                    <span className="hidden" />
                   )}
                   {message.role === "user" ? (
                     <span className="mt-0.5 font-mono text-[#8b949e]">&gt;</span>
@@ -1028,7 +1024,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
           ))}
 
           {isThinking && (
-            <div className="inline-flex items-center gap-2 border border-[#00f5d4] bg-[linear-gradient(135deg,#38f8d5,#00a7a7)] px-3 py-2 text-sm text-black shadow-[0_0_28px_rgba(45,212,191,0.24)]">
+            <div className="inline-flex items-center gap-2 rounded-md border border-vercel-border bg-vercel-panel px-3 py-2 text-sm text-vercel-text">
               <AiGlyph active />
               reasoning through target fit...
             </div>
@@ -1149,12 +1145,12 @@ function ConfigWidget({
 
   if (localStartedConfig) {
     return (
-      <div className="ide-panel space-y-2 border-[#2dd4bf] bg-[#2dd4bf] px-3 py-3 text-sm text-black">
+      <div className="ide-panel space-y-2 px-3 py-3 text-sm text-vercel-text">
         <p className="font-semibold">Job started with this brief config:</p>
-        <p className="text-xs uppercase tracking-[0.14em] text-black/70">
+        <p className="text-xs uppercase tracking-[0.14em] text-vercel-muted">
           {localStartedConfig.leadCount} leads • {localStartedConfig.market} • min score {localStartedConfig.minScore}
         </p>
-        <p className="text-xs text-black/70">
+        <p className="text-xs text-vercel-muted">
           Missing email allowed: {localStartedConfig.allowNoEmail ? "yes" : "no"}
         </p>
       </div>
@@ -1163,7 +1159,7 @@ function ConfigWidget({
 
   return (
     <div className="ide-panel space-y-4 p-4">
-      <div className="flex items-center gap-2 text-[#00ff00]">
+      <div className="flex items-center gap-2 text-matrix-green">
         <CheckCircle2 size={18} />
         <h3 className="font-semibold">Brief ready to run</h3>
       </div>
@@ -1286,7 +1282,7 @@ function OutreachLauncherWidget({
 
   return (
     <div className="ide-panel space-y-3 p-4">
-      <div className="flex items-center gap-2 text-[#00ffff]">
+      <div className="flex items-center gap-2 text-vercel-text">
         <Mail size={16} />
         <h3 className="font-semibold">Quick outreach campaign</h3>
       </div>
