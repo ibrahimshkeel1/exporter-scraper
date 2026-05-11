@@ -35,6 +35,7 @@ export type OutreachLeadInput = {
 export type OutreachCampaign = {
   id: string;
   user_id: string;
+  email_connection_id: string | null;
   status: OutreachCampaignStatus;
   business_plan: string;
   offer: string;

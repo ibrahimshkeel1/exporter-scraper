@@ -16,6 +16,11 @@ export function getPublicAppUrl() {
   return (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/+$/, "");
 }
 
+function isTrue(value: string | undefined, fallback = false) {
+  if (value == null || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
+}
+
 export async function postN8nWebhook(url: string | undefined, payload: Record<string, unknown>) {
   if (!url) {
     return { ok: false, error: "n8n outreach webhook URL is not configured." };
@@ -73,11 +78,36 @@ export function toLeadRows(campaignId: string, userId: string, leads: OutreachLe
 
 export function testSender() {
   return {
-    email: process.env.OUTREACH_TEST_GMAIL_FROM_EMAIL || "",
+    email: process.env.OUTREACH_SMTP_FROM_EMAIL || process.env.OUTREACH_TEST_GMAIL_FROM_EMAIL || "",
     name: process.env.OUTREACH_TEST_SENDER_NAME || "ExportFlow",
     accessToken: process.env.OUTREACH_TEST_GMAIL_ACCESS_TOKEN || "",
     testMode: String(process.env.OUTREACH_TEST_MODE || "true").toLowerCase() !== "false",
     testRecipient: process.env.OUTREACH_TEST_RECIPIENT || "ibrahimshkeel1@gmail.com"
+  };
+}
+
+export function outreachDeliveryConfig() {
+  return {
+    testMode: String(process.env.OUTREACH_TEST_MODE || "true").toLowerCase() !== "false",
+    testRecipient: process.env.OUTREACH_TEST_RECIPIENT || "ibrahimshkeel1@gmail.com",
+    senderName: process.env.OUTREACH_SMTP_FROM_NAME || process.env.OUTREACH_TEST_SENDER_NAME || "ExportFlow",
+    replyTo: process.env.OUTREACH_SMTP_REPLY_TO || "",
+    smtp: {
+      host: process.env.OUTREACH_SMTP_HOST || "",
+      port: Number(process.env.OUTREACH_SMTP_PORT || 587),
+      secure: isTrue(process.env.OUTREACH_SMTP_SECURE, false),
+      user: process.env.OUTREACH_SMTP_USER || "",
+      pass: process.env.OUTREACH_SMTP_PASSWORD || process.env.OUTREACH_SMTP_PASS || "",
+      fromEmail: process.env.OUTREACH_SMTP_FROM_EMAIL || process.env.OUTREACH_TEST_GMAIL_FROM_EMAIL || ""
+    },
+    imap: {
+      host: process.env.OUTREACH_IMAP_HOST || "",
+      port: Number(process.env.OUTREACH_IMAP_PORT || 993),
+      secure: isTrue(process.env.OUTREACH_IMAP_SECURE, true),
+      user: process.env.OUTREACH_IMAP_USER || "",
+      pass: process.env.OUTREACH_IMAP_PASSWORD || process.env.OUTREACH_IMAP_PASS || "",
+      mailbox: process.env.OUTREACH_IMAP_MAILBOX || "INBOX"
+    }
   };
 }
 

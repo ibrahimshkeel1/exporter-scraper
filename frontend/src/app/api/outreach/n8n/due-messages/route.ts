@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyOutreachWebhook, getPublicAppUrl, testSender } from "../../../../../lib/outreach-server";
+import { verifyOutreachWebhook, getPublicAppUrl, outreachDeliveryConfig } from "../../../../../lib/outreach-server";
 import { createAdminSupabase } from "../../../../../lib/supabase-admin";
 
 type DueMessageRow = {
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const limit = Math.max(1, Math.min(25, Number(body.batch_limit || 5)));
-    const sender = testSender();
+    const delivery = outreachDeliveryConfig();
     const supabase = createAdminSupabase();
 
     const { data, error } = await supabase
@@ -52,13 +52,13 @@ export async function POST(request: NextRequest) {
         message_id: row.id,
         campaign_id: row.campaign_id,
         lead_id: row.lead_id,
+        user_id: row.user_id,
+        email_connection_id: campaign.email_connection_id || null,
         step: row.step,
         approved_templates: campaign.approved_templates || campaign.generated_templates || null,
-        gmail_access_token: sender.accessToken,
-        gmail_from_email: sender.email || campaign.sender_email || "",
         sender: {
-          name: campaign.sender_name || sender.name,
-          email: sender.email || campaign.sender_email || ""
+          name: delivery.senderName || campaign.sender_name || "ExportFlow",
+          email: delivery.smtp.fromEmail || campaign.sender_email || ""
         },
         campaign: {
           id: campaign.id,
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ messages, appUrl: getPublicAppUrl(), test_mode: sender.testMode, test_recipient: sender.testRecipient });
+    return NextResponse.json({ messages, appUrl: getPublicAppUrl(), test_mode: delivery.testMode, test_recipient: delivery.testRecipient });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not fetch due outreach messages.";
     return NextResponse.json({ messages: [], warning: message });

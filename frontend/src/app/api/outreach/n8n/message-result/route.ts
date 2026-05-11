@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
     status: success ? status : "failed",
     subject: body.subject || null,
     body_html: body.body_html || null,
+    body_text: body.body_text || null,
     generated: body.generated || {},
     gmail_message_id: body.gmail_message_id || null,
     gmail_thread_id: body.gmail_thread_id || null,

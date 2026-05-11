@@ -1,0 +1,984 @@
+{
+    "name":  "ExportFlow - Per User Email Outreach Sequences",
+    "description":  "ExportFlow outreach automation using Gemini for per-lead sequences. n8n calls the website API; the website sends and checks replies through each user's connected Google Workspace/Gmail or SMTP account.",
+    "active":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "content":  "## Required n8n env\n\nEXPORTFLOW_APP_URL=https://exportflow-lovat.vercel.app\nN8N_OUTREACH_WEBHOOK_SECRET=same value as frontend\nGEMINI_API_KEY=...\nGEMINI_MODEL=gemini-3-flash-preview\nEXPORTFLOW_SEND_BATCH_LIMIT=5\nEXPORTFLOW_FOLLOWUP_1_DAYS=3\nEXPORTFLOW_FOLLOWUP_2_DAYS=7\nEXPORTFLOW_REPLY_CHECK_LIMIT=10\n\nWebsite/Vercel must also have:\nEMAIL_ENCRYPTION_KEY\nEMAIL_OAUTH_STATE_SECRET\nGOOGLE_CLIENT_ID\nGOOGLE_CLIENT_SECRET\nGOOGLE_REDIRECT_URI=https://exportflow-lovat.vercel.app/api/email/google/callback\nOUTREACH_TEST_MODE\nOUTREACH_TEST_RECIPIENT\n\nOptional shared fallback SMTP/IMAP env can stay configured, but per-user senders are stored from the website Email Sender box.\n\nDo not paste live keys into this JSON.",
+                                         "height":  400,
+                                         "width":  460
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000001",
+                      "name":  "Sticky Note - Production Env",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -420,
+                                       -420
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "## 1. Generate per-lead templates\\n\\nWebsite calls exportflow-outreach-generate after a campaign draft has leads and business context.\\n\\nThis branch:\\n- Fetches campaign context from ExportFlow\\n- Sends it to Gemini\\n- Saves initial + follow-up templates and per-lead sequences back to the website\\n\\nThe website can then render each lead with a View Template button.",
+                                         "height":  320,
+                                         "width":  420
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000002",
+                      "name":  "Sticky Note - Generate Templates",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       -420
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "exportflow-outreach-generate",
+                                         "responseMode":  "onReceived",
+                                         "responseData":  "{\n  \"ok\": true,\n  \"message\": \"Production outreach sequence generation accepted.\"\n}"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000003",
+                      "name":  "Webhook - Generate Lead Sequences",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       -40
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const body = $input.first().json.body || $input.first().json || {};\nconst appUrl = String($env.EXPORTFLOW_APP_URL || \u0027https://exportflow-lovat.vercel.app\u0027).replace(/\\/+$/, \u0027\u0027);\nconst campaignId = body.campaign_id || body.campaignId;\nif (!campaignId) throw new Error(\u0027campaign_id is required.\u0027);\nconst secret = $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || \u0027\u0027;\nreturn [{ json: { appUrl, campaign_id: campaignId, secret, gemini_key: $env.GEMINI_API_KEY || \u0027\u0027, gemini_model: $env.GEMINI_MODEL || \u0027gemini-3-flash-preview\u0027 } }];"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000004",
+                      "name":  "Prepare Generate Request",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       400,
+                                       -40
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/generate-context\u0027 }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "x-exportflow-secret",
+                                                                                         "value":  "={{ $json.secret }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ campaign_id: $json.campaign_id, production: true }) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000005",
+                      "name":  "ExportFlow API - Get Campaign Context",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       700,
+                                       -40
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const cfg = $(\u0027Prepare Generate Request\u0027).first().json;\nconst context = $input.first().json;\nif (!cfg.gemini_key) throw new Error(\u0027Missing GEMINI_API_KEY in n8n environment.\u0027);\nconst leads = Array.isArray(context.leads) ? context.leads : [];\nif (leads.length === 0) throw new Error(\u0027Campaign has no leads.\u0027);\nconst prompt = [\n  \u0027You are writing production B2B cold outreach for ExportFlow.\u0027,\n  \u0027Return JSON only. No markdown fences.\u0027,\n  \u0027Required schema: {\"campaign_summary\": string, \"sequences\": [{\"lead_id\": string, \"company_name\": string, \"contact_name\": string, \"email\": string, \"website\": string, \"approval_summary\": string, \"personalization_evidence\": string[], \"initial\": {\"subject\": string, \"body_text\": string}, \"followup_1\": {\"subject\": string, \"body_text\": string}, \"followup_2\": {\"subject\": string, \"body_text\": string}, \"safety_notes\": string[] }], \"global_safety_notes\": string[] }\u0027,\n  \u0027Write a different sequence for every lead. Follow-ups must reference the initial email naturally and must not sound automated.\u0027,\n  \u0027Use receiver personal name when available. Use website/evidence only; do not invent facts.\u0027,\n  \u0027Keep each email short, human, specific, and plain-text friendly. No spammy claims, no fake urgency, no attachments, no tracking language.\u0027,\n  \u0027Include the user CTA and signature only if present in context. Preserve compliance fields from context.\u0027,\n  \u0027If a lead has weak evidence, mention only safe observable facts or keep personalization light.\u0027,\n  \u0027\u0027,\n  `Context JSON: ${JSON.stringify(context)}`\n].join(\u0027\\n\u0027);\nreturn [{ json: { ...cfg, context, prompt } }];"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000006",
+                      "name":  "Build Gemini Sequence Prompt",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1000,
+                                       -40
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ \u0027https://generativelanguage.googleapis.com/v1beta/models/\u0027 + $json.gemini_model + \u0027:generateContent?key=\u0027 + $json.gemini_key }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ contents: [{ role: \u0027user\u0027, parts: [{ text: $json.prompt }] }], generationConfig: { temperature: 0.72, responseMimeType: \u0027application/json\u0027 } }) }}",
+                                         "options":  {
+                                                         "timeout":  180000
+                                                     }
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000007",
+                      "name":  "Gemini API - Generate Lead Sequences",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "retryOnFail":  true,
+                      "maxTries":  5,
+                      "waitBetweenTries":  15000,
+                      "position":  [
+                                       1300,
+                                       -40
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const cfg = $(\u0027Build Gemini Sequence Prompt\u0027).first().json;\nconst payload = $input.first().json;\nconst text = payload?.candidates?.[0]?.content?.parts?.[0]?.text || \u0027{}\u0027;\nconst cleaned = String(text).replace(/^```json\\s*/i, \u0027\u0027).replace(/^```\\s*/i, \u0027\u0027).replace(/```$/i, \u0027\u0027).trim();\nlet generated;\ntry {\n  generated = JSON.parse(cleaned);\n} catch (error) {\n  generated = { campaign_summary: \u0027Gemini returned non-JSON output.\u0027, sequences: [], raw_text: text, parse_error: String(error?.message || error) };\n}\nif (!Array.isArray(generated.sequences)) generated.sequences = [];\nreturn [{ json: { appUrl: cfg.appUrl, secret: cfg.secret, campaign_id: cfg.campaign_id, generated, context: cfg.context } }];"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000008",
+                      "name":  "Parse Sequence Output",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1580,
+                                       -40
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/sequences-generated\u0027 }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "x-exportflow-secret",
+                                                                                         "value":  "={{ $json.secret }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ campaign_id: $json.campaign_id, generated: $json.generated, context: $json.context }) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000009",
+                      "name":  "ExportFlow API - Save Generated Sequences",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       1880,
+                                       -40
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "## 2. Launch campaign\n\nWebsite calls `exportflow-outreach-launch` after readiness checks pass. ExportFlow queues the initial messages, waits 5 seconds for the queue write to settle, then immediately continues into Send Due Emails so the first outreach does not depend on the schedule trigger.",
+                                         "height":  260,
+                                         "width":  520
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000015",
+                      "name":  "Sticky Note - Launch",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       220
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "exportflow-outreach-launch",
+                                         "responseMode":  "onReceived",
+                                         "responseData":  "{\n  \"ok\": true,\n  \"message\": \"Production campaign launch accepted.\"\n}"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000016",
+                      "name":  "Webhook - Launch Campaign",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       520
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const body = $input.first().json.body || $input.first().json || {};\nconst appUrl = String($env.EXPORTFLOW_APP_URL || \u0027https://exportflow-lovat.vercel.app\u0027).replace(/\\/+$/, \u0027\u0027);\nconst campaignId = body.campaign_id || body.campaignId;\nif (!campaignId) throw new Error(\u0027campaign_id is required.\u0027);\nreturn [{ json: { appUrl, campaign_id: campaignId, secret: $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || \u0027\u0027 } }];"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000017",
+                      "name":  "Prepare Launch Request",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       400,
+                                       520
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/launch\u0027 }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "x-exportflow-secret",
+                                                                                         "value":  "={{ $json.secret }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ campaign_id: $json.campaign_id }) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000018",
+                      "name":  "ExportFlow API - Launch Production Campaign",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       700,
+                                       520
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "await new Promise((resolve) => setTimeout(resolve, 5000));\nreturn $input.all();"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000036",
+                      "name":  "Wait - Let Queue Commit",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1000,
+                                       520
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "## 3. Send approved due emails\n\nRuns from three paths: immediately after launch, manual webhook exportflow-outreach-send-due, and a 1-minute backup schedule.\n\nExportFlow backend sends through the campaign owner's connected email account and uses the approved per-lead sequence already saved on the website. n8n only triggers the backend send route and persists the result.",
+                                         "height":  260,
+                                         "width":  460
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000019",
+                      "name":  "Sticky Note - Send Due",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       700
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "unit":  "minutes",
+                                         "value":  1
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000020",
+                      "name":  "Schedule - Send Due Emails",
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       1040
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "exportflow-outreach-send-due",
+                                         "responseMode":  "onReceived",
+                                         "responseData":  "{\n  \"ok\": true,\n  \"message\": \"Production send-due run accepted.\"\n}"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000021",
+                      "name":  "Webhook - Send Due Emails Now",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       1200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const appUrl = String($env.EXPORTFLOW_APP_URL || \u0027https://exportflow-lovat.vercel.app\u0027).replace(/\\/+$/, \u0027\u0027);\nreturn [{ json: { appUrl, secret: $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || \u0027\u0027, batch_limit: Number($env.EXPORTFLOW_SEND_BATCH_LIMIT || 5) } }];"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000022",
+                      "name":  "Prepare Due Messages Request",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       400,
+                                       1120
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/due-messages\u0027 }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "x-exportflow-secret",
+                                                                                         "value":  "={{ $json.secret }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ batch_limit: $json.batch_limit }) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000023",
+                      "name":  "ExportFlow API - Get Due Approved Messages",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       700,
+                                       1120
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const prep = $(\u0027Prepare Due Messages Request\u0027).first().json;\nconst payload = $input.first().json || {};\nconst messages = Array.isArray(payload.messages) ? payload.messages : [];\nreturn messages.map((message) =\u003e ({ json: { ...message, appUrl: prep.appUrl, secret: prep.secret, notify_on_send: prep.notify_on_send } }));"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000024",
+                      "name":  "Split Due Messages",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1000,
+                                       1120
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/send-smtp-message\u0027 }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "x-exportflow-secret",
+                                                                                         "value":  "={{ $json.secret }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify($json) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000025",
+                      "name":  "ExportFlow API - Send SMTP Message",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       1300,
+                                       1120
+                                   ],
+                      "continueOnFail":  true
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const sentItems = $input.all();\nconst dueItems = $('Split Due Messages').all();\nreturn sentItems.map((sent, index) => {\n  const due = dueItems[index]?.json || {};\n  const response = sent.json || {};\n  const status = response.status || (response.ok || response.success ? 'sent' : 'failed');\n  const success = status === 'sent' || status === 'test_sent' || Boolean(response.ok || response.success);\n  return {\n    json: {\n      appUrl: due.appUrl,\n      secret: due.secret,\n      campaign_id: due.campaign_id,\n      lead_id: due.lead_id,\n      message_id: due.message_id || due.id,\n      step: due.step,\n      status,\n      success,\n      sent_at: response.sent_at || new Date().toISOString(),\n      gmail_message_id: response.gmail_message_id || null,\n      gmail_thread_id: response.gmail_thread_id || null,\n      to_email: response.to_email || due.lead?.email || null,\n      original_to_email: response.original_to_email || due.lead?.original_email || due.lead?.email || null,\n      subject: response.subject || null,\n      body_html: response.body_html || null,\n      body_text: response.body_text || null,\n      generated: response.generated || {},\n      error: response.error || response.message || null\n    }\n  };\n});"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000026",
+                      "name":  "Prepare SMTP Send Result",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1580,
+                                       1120
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/message-result\u0027 }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "x-exportflow-secret",
+                                                                                         "value":  "={{ $json.secret }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify($json) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000027",
+                      "name":  "ExportFlow API - Save SMTP Result",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       1880,
+                                       1120
+                                   ],
+                      "continueOnFail":  true
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "## 4. Queue follow-ups\n\nRuns on schedule. Backend enforces:\n- Follow-up 1 after 3 days from initial sent\n- Follow-up 2 after 7 days from initial sent\n- Stop if replied, bounced, unsubscribed, failed, held, or manually stopped",
+                                         "height":  240,
+                                         "width":  460
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000030",
+                      "name":  "Sticky Note - Queue Followups",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       1420
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "unit":  "hours",
+                                         "value":  1
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000031",
+                      "name":  "Schedule - Queue Follow Ups",
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       1740
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const appUrl = String($env.EXPORTFLOW_APP_URL || \u0027https://exportflow-lovat.vercel.app\u0027).replace(/\\/+$/, \u0027\u0027);\nconst secret = $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || \u0027\u0027;\nreturn [\n  { json: { appUrl, secret, step: \u0027followup_1\u0027, after_days: Number($env.EXPORTFLOW_FOLLOWUP_1_DAYS || 3) } },\n  { json: { appUrl, secret, step: \u0027followup_2\u0027, after_days: Number($env.EXPORTFLOW_FOLLOWUP_2_DAYS || 7) } }\n];"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000032",
+                      "name":  "Prepare Follow Up Queue Requests",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       400,
+                                       1740
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/queue-followups\u0027 }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "x-exportflow-secret",
+                                                                                         "value":  "={{ $json.secret }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ step: $json.step, after_days: $json.after_days }) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000033",
+                      "name":  "ExportFlow API - Queue Production Followups",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       700,
+                                       1740
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "## 5. Check replies and stop follow-ups\n\nThis branch asks ExportFlow to check recent replies through each campaign owner's connected Gmail/Workspace or SMTP/IMAP account. When a reply references a stored outbound Message-ID, the lead is marked replied and queued follow-ups are skipped.",
+                                         "height":  240,
+                                         "width":  460
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000034",
+                      "name":  "Sticky Note - Reply Checks",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       1940
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "unit":  "minutes",
+                                         "value":  15
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000035",
+                      "name":  "Schedule - Check IMAP Replies",
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       2260
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "exportflow-outreach-check-replies",
+                                         "responseMode":  "onReceived",
+                                         "responseData":  "{\n  \"ok\": true,\n  \"message\": \"Reply check accepted.\"\n}"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000036",
+                      "name":  "Webhook - Check Replies Now",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       2420
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const appUrl = String($env.EXPORTFLOW_APP_URL || \u0027https://exportflow-lovat.vercel.app\u0027).replace(/\\/+$/, \u0027\u0027);\nreturn [{ json: { appUrl, secret: $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || \u0027\u0027, limit: Number($env.EXPORTFLOW_REPLY_CHECK_LIMIT || 10) } }];"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000037",
+                      "name":  "Prepare Reply Check Request",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       400,
+                                       2340
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/check-imap-replies\u0027 }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "x-exportflow-secret",
+                                                                                         "value":  "={{ $json.secret }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ limit: $json.limit }) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000038",
+                      "name":  "ExportFlow API - Check IMAP Replies",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       700,
+                                       2340
+                                   ],
+                      "continueOnFail":  true
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "## 6. Stats rebuild\n\nKeeps dashboard totals fresh: sent, initial, follow-ups, pending approvals, replies, bounces, unsubscribes, failures, and upcoming scheduled emails.",
+                                         "height":  220,
+                                         "width":  460
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000042",
+                      "name":  "Sticky Note - Stats",
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       2640
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "unit":  "minutes",
+                                         "value":  1
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000043",
+                      "name":  "Schedule - Rebuild Outreach Stats",
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       120,
+                                       2940
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const appUrl = String($env.EXPORTFLOW_APP_URL || \u0027https://exportflow-lovat.vercel.app\u0027).replace(/\\/+$/, \u0027\u0027);\nreturn [{ json: { appUrl, secret: $env.N8N_OUTREACH_WEBHOOK_SECRET || $env.N8N_WEBHOOK_SECRET || \u0027\u0027, rebuilt_at: new Date().toISOString() } }];"
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000044",
+                      "name":  "Prepare Stats Request",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       400,
+                                       2940
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "={{ $json.appUrl + \u0027/api/outreach/n8n/rebuild-stats\u0027 }}",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "x-exportflow-secret",
+                                                                                         "value":  "={{ $json.secret }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={{ JSON.stringify({ rebuilt_at: $json.rebuilt_at, production: true }) }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000045",
+                      "name":  "ExportFlow API - Rebuild Outreach Stats",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       700,
+                                       2940
+                                   ],
+                      "continueOnFail":  true
+                  }
+              ],
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Webhook - Generate Lead Sequences":  {
+                                                                  "main":  [
+                                                                               [
+                                                                                   {
+                                                                                       "node":  "Prepare Generate Request",
+                                                                                       "type":  "main",
+                                                                                       "index":  0
+                                                                                   }
+                                                                               ]
+                                                                           ]
+                                                              },
+                        "Prepare Generate Request":  {
+                                                         "main":  [
+                                                                      [
+                                                                          {
+                                                                              "node":  "ExportFlow API - Get Campaign Context",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          }
+                                                                      ]
+                                                                  ]
+                                                     },
+                        "ExportFlow API - Get Campaign Context":  {
+                                                                      "main":  [
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Build Gemini Sequence Prompt",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ]
+                                                                               ]
+                                                                  },
+                        "Build Gemini Sequence Prompt":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "Gemini API - Generate Lead Sequences",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
+                        "Gemini API - Generate Lead Sequences":  {
+                                                                     "main":  [
+                                                                                  [
+                                                                                      {
+                                                                                          "node":  "Parse Sequence Output",
+                                                                                          "type":  "main",
+                                                                                          "index":  0
+                                                                                      }
+                                                                                  ]
+                                                                              ]
+                                                                 },
+                        "Parse Sequence Output":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "ExportFlow API - Save Generated Sequences",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "Webhook - Launch Campaign":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Prepare Launch Request",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "Prepare Launch Request":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "ExportFlow API - Launch Production Campaign",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "ExportFlow API - Launch Production Campaign":  {
+                                                                            "main":  [
+                                                                                         [
+                                                                                             {
+                                                                                                 "node":  "Wait - Let Queue Commit",
+                                                                                                 "type":  "main",
+                                                                                                 "index":  0
+                                                                                             }
+                                                                                         ]
+                                                                                     ]
+                                                                        },
+                        "Wait - Let Queue Commit":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Prepare Due Messages Request",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Schedule - Send Due Emails":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "Prepare Due Messages Request",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                        "Webhook - Send Due Emails Now":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "Prepare Due Messages Request",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                        "Prepare Due Messages Request":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "ExportFlow API - Get Due Approved Messages",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
+                        "ExportFlow API - Get Due Approved Messages":  {
+                                                                           "main":  [
+                                                                                        [
+                                                                                            {
+                                                                                                "node":  "Split Due Messages",
+                                                                                                "type":  "main",
+                                                                                                "index":  0
+                                                                                            }
+                                                                                        ]
+                                                                                    ]
+                                                                       },
+                        "Split Due Messages":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "ExportFlow API - Send SMTP Message",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "ExportFlow API - Send SMTP Message":  {
+                                                                   "main":  [
+                                                                                [
+                                                                                    {
+                                                                                        "node":  "Prepare SMTP Send Result",
+                                                                                        "type":  "main",
+                                                                                        "index":  0
+                                                                                    }
+                                                                                ]
+                                                                            ]
+                                                               },
+                        "Prepare SMTP Send Result":  {
+                                                         "main":  [
+                                                                      [
+                                                                          {
+                                                                              "node":  "ExportFlow API - Save SMTP Result",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          }
+                                                                      ]
+                                                                  ]
+                                                     },
+                        "Schedule - Queue Follow Ups":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Prepare Follow Up Queue Requests",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                        "Prepare Follow Up Queue Requests":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "ExportFlow API - Queue Production Followups",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "Schedule - Check IMAP Replies":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "Prepare Reply Check Request",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                        "Webhook - Check Replies Now":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Prepare Reply Check Request",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                        "Prepare Reply Check Request":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "ExportFlow API - Check IMAP Replies",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                        "Schedule - Rebuild Outreach Stats":  {
+                                                                  "main":  [
+                                                                               [
+                                                                                   {
+                                                                                       "node":  "Prepare Stats Request",
+                                                                                       "type":  "main",
+                                                                                       "index":  0
+                                                                                   }
+                                                                               ]
+                                                                           ]
+                                                              },
+                        "Prepare Stats Request":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "ExportFlow API - Rebuild Outreach Stats",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  }
+                    }
+}
