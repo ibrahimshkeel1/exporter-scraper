@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
 @theme {
-  --color-vercel-bg: #0d1117;
-  --color-vercel-panel: #161b22;
-  --color-vercel-border: #30363d;
-  --color-vercel-text: #c9d1d9;
-  --color-vercel-muted: #8b949e;
-  --color-vercel-accent: #00ffff;
-  --color-vercel-accent-hover: #7fffff;
-  --color-vercel-success: #00ff00;
-  --color-vercel-error: #ff6b6b;
-  --color-matrix-green: #00ff00;
-  --color-matrix-cyan: #00ffff;
-  --color-ide-black: #010409;
+  --color-vercel-bg: #1e1e1e;
+  --color-vercel-panel: #252526;
+  --color-vercel-border: #3c3c3c;
+  --color-vercel-text: #d4d4d4;
+  --color-vercel-muted: #858585;
+  --color-vercel-accent: #007acc;
+  --color-vercel-accent-hover: #1f8ad6;
+  --color-vercel-success: #6a9955;
+  --color-vercel-error: #f14c4c;
+  --color-matrix-green: #6a9955;
+  --color-matrix-cyan: #569cd6;
+  --color-ide-black: #1e1e1e;
 
-  --font-sans: "Geist Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --font-mono: "Geist Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: var(--font-geist-sans), "Geist Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-mono: var(--font-geist-mono), "Geist Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 :root {
@@ -49,7 +49,7 @@ body {
 
 .ide-terminal {
   border: 1px solid var(--color-vercel-border);
-  background: #000000;
+  background: #1e1e1e;
   border-radius: 0;
 }
 
@@ -62,19 +62,19 @@ body {
 }
 
 .ide-btn:hover {
-  background: #1f242d;
+  background: #2d2d2d;
   border-color: var(--color-matrix-cyan);
   color: #ffffff;
 }
 
 .ide-btn-primary {
   border: 1px solid var(--color-matrix-cyan);
-  background: #0f1a24;
+  background: #0e293f;
   color: var(--color-matrix-cyan);
 }
 
 .ide-btn-primary:hover {
-  background: #13212e;
+  background: #153c5c;
   color: #ffffff;
 }
 
@@ -93,7 +93,7 @@ body {
 
 .ide-status {
   border: 1px solid var(--color-vercel-border);
-  background: #0d1117;
+  background: var(--color-vercel-panel);
   color: var(--color-vercel-text);
   padding: 0.1rem 0.45rem;
   text-transform: uppercase;
@@ -117,17 +117,17 @@ body {
 
 .ide-panel-handle {
   position: relative;
-  background: #0f141b;
+  background: #252526;
   transition: background-color 120ms ease;
 }
 
 .ide-panel-handle:hover {
-  background: #13212e;
+  background: #333333;
 }
 
 .ide-panel-handle[data-panel-resize-handle-state="drag"],
 .ide-panel-handle[data-resize-handle-state="drag"] {
-  background: #00ffff;
+  background: var(--color-vercel-accent);
 }
 
 .ide-panel-handle-x {
@@ -156,11 +156,11 @@ body {
 
 .react-grid-item.resizing {
   z-index: 100;
-  box-shadow: 0 0 0 1px var(--color-matrix-cyan), 0 0 20px rgba(0, 255, 255, 0.15);
+  box-shadow: 0 0 0 1px var(--color-matrix-cyan), 0 0 20px rgba(86, 156, 214, 0.15);
 }
 
 .react-grid-item.react-grid-placeholder {
-  background: rgba(0, 255, 255, 0.08) !important;
+  background: rgba(86, 156, 214, 0.08) !important;
   border: 1px dashed var(--color-matrix-cyan) !important;
   opacity: 1 !important;
 }
@@ -216,26 +216,29 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d1117;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #424242;
-  border: 2px solid #0d1117;
+  border: 2px solid transparent;
+  background-clip: padding-box;
   border-radius: 0;
   min-height: 40px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: #4f4f4f;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:active {
-  background: #00ffff;
+  background: #569cd6;
 }
 
 ::-webkit-scrollbar-corner {
-  background: #0d1117;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-button {
@@ -245,7 +248,7 @@ body {
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #424242 #0d1117;
+  scrollbar-color: #424242 transparent;
 }
 
 /* Scrollbar inside widget panels - slightly more subtle */
@@ -257,16 +260,17 @@ body {
 
 .ide-panel ::-webkit-scrollbar-thumb,
 .ide-terminal ::-webkit-scrollbar-thumb {
-  background: #30363d;
-  border: 1px solid #0d1117;
+  background: #424242;
+  border: 1px solid transparent;
+  background-clip: padding-box;
 }
 
 .ide-panel ::-webkit-scrollbar-thumb:hover,
 .ide-terminal ::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
+  background: #4f4f4f;
 }
 
 .ide-panel ::-webkit-scrollbar-thumb:active,
 .ide-terminal ::-webkit-scrollbar-thumb:active {
-  background: #00ffff;
+  background: #569cd6;
 }
