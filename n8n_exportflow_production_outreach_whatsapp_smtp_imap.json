@@ -125,13 +125,16 @@
                                          "specifyBody":  "json",
                                          "jsonBody":  "={{ JSON.stringify({ contents: [{ role: \u0027user\u0027, parts: [{ text: $json.prompt }] }], generationConfig: { temperature: 0.72, responseMimeType: \u0027application/json\u0027 } }) }}",
                                          "options":  {
-
+                                                         "timeout":  180000
                                                      }
                                      },
                       "id":  "0f8f3f90-4c2c-4e0e-9a5f-000000000007",
                       "name":  "Gemini API - Generate Lead Sequences",
                       "type":  "n8n-nodes-base.httpRequest",
                       "typeVersion":  4.2,
+                      "retryOnFail":  true,
+                      "maxTries":  5,
+                      "waitBetweenTries":  15000,
                       "position":  [
                                        1300,
                                        -40
