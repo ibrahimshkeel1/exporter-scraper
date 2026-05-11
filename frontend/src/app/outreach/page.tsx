@@ -435,20 +435,33 @@ export default function OutreachPage() {
     return session?.access_token || null;
   }
 
-  async function api(path: string, options: RequestInit = {}) {
+  async function api(path: string, options: RequestInit = {}, timeoutMs = 45000) {
     const accessToken = await token();
     if (!accessToken) throw new Error("Sign in first.");
-    const response = await fetch(path, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        ...(options.headers || {})
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(path, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+          ...(options.headers || {})
+        }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Request failed.");
+      return payload;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error("This request took too long. Try again with a shorter message or smaller file.");
       }
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Request failed.");
-    return payload;
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async function refreshCampaign(id = campaign?.id) {
@@ -593,15 +606,19 @@ export default function OutreachPage() {
   }
 
   async function askAssistant(nextMessages: ChatMessage[], leadFile?: LeadUploadPayload) {
-    const payload = await api("/api/outreach/assistant", {
-      method: "POST",
-      body: JSON.stringify({
-        messages: nextMessages.map(({ role, content }) => ({ role, content })),
-        draft: form,
-        pasted_leads: pastedLeads,
-        lead_file: leadFile
-      })
-    });
+    const payload = await api(
+      "/api/outreach/assistant",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          messages: nextMessages.map(({ role, content }) => ({ role, content })),
+          draft: form,
+          pasted_leads: pastedLeads,
+          lead_file: leadFile
+        })
+      },
+      60000
+    );
     applyAssistantPayload(payload);
   }
 

@@ -112,6 +112,20 @@ function parseGeminiJson(raw: string) {
   }
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function POST(request: NextRequest) {
   const { user, error } = await getUserFromRequest(request);
   if (!user) {
@@ -184,17 +198,32 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts }],
-      generationConfig: {
-        temperature: 0.2,
-        responseMimeType: "application/json"
-      }
-    })
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            temperature: 0.2,
+            responseMimeType: "application/json"
+          }
+        })
+      },
+      45000
+    );
+  } catch (fetchError) {
+    const fallbackLeads = currentLeads || (leadFile?.format === "csv" ? text(leadFile.text_content) : "");
+    return NextResponse.json({
+      ...fallbackReply(messages, currentDraft, fallbackLeads),
+      warning: fetchError instanceof Error && fetchError.name === "AbortError"
+        ? "Gemini took too long, so local fallback was used."
+        : "Gemini could not be reached, so local fallback was used."
+    });
+  }
 
   if (!response.ok) {
     const fallbackLeads = currentLeads || (leadFile?.format === "csv" ? text(leadFile.text_content) : "");
