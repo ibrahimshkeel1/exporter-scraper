@@ -7,7 +7,7 @@
 
 slug: textile-apparel
 display_name: "Textile & Apparel Importers"
-version: 4
+version: 7
 quality_tier: "A+"
 
 # --------------------------------------------------
@@ -52,43 +52,66 @@ triggers:
 discovery:
 
   # --- Product Seed Terms ---
+  # Trimmed to specific buyer-facing categories (removed "fabric","fashion","clothing","textile"
+  # which are too broad and return mostly manufacturer/supplier results).
   product_seeds:
     - denim
     - jeans
-    - home textile
     - activewear
     - sportswear
     - streetwear
-    - garment
-    - fabric
-    - fashion
-    - apparel
-    - clothing
-    - textile
+    - home textile
     - towel
     - leather
+    - garment
+    - apparel
 
   # --- Search Query Templates ---
+  # Only first 8 are executed (_search_sources caps at queries[:8] for apparel).
+  # Ordered by signal strength: owned brand/retailer pages > procurement/sourcing > broad.
+  search_engines:
+    - bing
+    - yahoo
+
+  search_engine_runtime:
+    bing:
+      max_requests: 24
+      min_delay_seconds: 11
+      cooldown_seconds: 120
+      failure_threshold: 4
+    yahoo:
+      max_requests: 20
+      min_delay_seconds: 10
+      cooldown_seconds: 90
+      failure_threshold: 4
+
+  # Textile tuning should start from structured textile directories, not legacy generic apparel seeds.
+  seed_urls_enabled: false
+
   # {base} = product seed, {market} = target market
   search_queries:
-    # Core apparel buyer queries (extracted from _buyer_search_queries)
-    - '{base} importer wholesaler distributor "{market}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '{base} wholesale buyer retailer "{market}" contact email -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    # TIER 1: Owned company pages from buyer-side brands, boutiques, and retailers.
+    - '{base} brand "our story" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} collection "contact us" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} boutique wholesale "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} retailer "vendor application" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} brand sourcing "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} private label brand "contact us" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} wholesale account brand "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} trade account boutique "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    # TIER 2: Procurement pages after owned-brand discovery.
     - '{base} private label clothing brand sourcing "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} procurement vendor application retailer "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} supplier application retailer "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    - '{base} vendor portal retailer "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+    # TIER 3: Broader queries (executed only if budget remains after tier 1-2)
     - '{base} boutique retailer wholesale distributor "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '{base} supplier application "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '{base} vendor portal "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} wholesale account "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} trade account "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} stockist "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} line sheet "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} buying office "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '{base} sourcing manager "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '"{base} importer" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '"{base} wholesaler" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '"{base} distributor" "{market}" "contact" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
-    - '"{base} retailer" "vendor application" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '"{base} brand" "wholesale" "contact" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '"{base} brand" "supplier portal" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     - '"{base} brand" "buying office" "{market}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
@@ -96,11 +119,13 @@ discovery:
   # --- Per-Region Extra Search Queries ---
   region_extra_queries:
     europe:
-      - '{base} importer wholesaler distributor "{country}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+      - '{base} brand "our story" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+      - '{base} collection "contact us" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
       - '{base} retailer "supplier portal" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
       - '{base} brand "vendor application" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
     international:
-      - '{base} importer wholesaler distributor "{country}" contact -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+      - '{base} brand "our story" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
+      - '{base} collection "contact us" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
       - '{base} retailer "supplier portal" "{country}" -Pakistan -India -Bangladesh -China -manufacturer -factory -exporter'
 
   # --- Noise Exclusions appended to all queries ---
@@ -121,6 +146,15 @@ discovery:
     - "-manufacturer"
     - "-factory"
     - "-exporter"
+
+  # User-provided terms like "denim importers" are rewritten into owned-site buyer searches.
+  # This avoids spending the first discovery slots on B2B data platforms ranking for importer terms.
+  search_term_query_templates:
+    - '{base} brand "our story" "{market}"'
+    - '{base} collection "contact us" "{market}"'
+    - '{base} boutique wholesale "{market}"'
+    - '{base} retailer "vendor application" "{market}"'
+    - '{base} brand sourcing "{market}"'
 
   # --- Seed URLs — Known Buyer/Retailer Sites ---
   seed_urls:
@@ -320,43 +354,71 @@ discovery:
   # --- Directory Sources per Region ---
   directory_sources:
     usa:
+      - type: thomasnet
+        url: "https://www.thomasnet.com/search.html?what={base_query}"
+        selectors: ["a.profile-link[href]", "h2 a[href]", "a.track-visit-website[href]", "a[data-company-name]", "a[href*='/profile/']", "a[href*='/company/']", "a[href*='/supplier-discovery/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
+        description: "Thomasnet - North American textile/apparel sourcing profiles"
+      - type: kompass
+        url: "https://www.kompass.com/z/us/y/importer/s/textil-odevy-koza-hodinarstvo-sperky/05/"
+        selectors: ["a[href*='/c/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
+        description: "Kompass - US textile and apparel importers"
+      - type: magic
+        url: "https://www.magicfashionevents.com/en/events/magic-las-vegas/brand-list.html"
+        selectors: ["a[href*='http']"]
+        description: "MAGIC Las Vegas brand list"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        selectors: [".showroom-name a[href]", "a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
         description: "LA Fashion District Wholesale Directory"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/women-s-wear"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        selectors: [".showroom-name a[href]", "a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
         description: "LA Fashion District — Womenswear"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/menswear"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        selectors: [".showroom-name a[href]", "a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
         description: "LA Fashion District — Menswear"
       - type: la_fashion_district
         url: "https://fashiondistrict.org/wholesale/directory/directory/athletic-wear/sportswear"
-        selectors: ["a[href^='/go/']", "a[href*='/go/']"]
+        selectors: [".showroom-name a[href]", "a[href^='/go/']", "a[href*='/go/']", "a[href*='/showroom/']", "a[href*='/wholesale/directory/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
         description: "LA Fashion District — Sportswear"
-      - type: yellow_pages
-        search: "importers"
-        description: "Yellow Pages - Importers"
-      - type: yellow_pages
-        search: "wholesalers"
-        description: "Yellow Pages - Wholesalers"
-      - type: yellow_pages
-        search: "distributors"
-        description: "Yellow Pages - Distributors"
     uk:
-      - type: yell
-        search: "importer wholesaler distributor"
-        description: "Yell - Buyer Directory Search"
+      - type: kompass
+        url: "https://www.kompass.com/z/gb/y/importer/s/textil-odevy-koza-hodinarstvo-sperky/05/"
+        selectors: ["a[href*='/c/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
+        description: "Kompass - UK textile and apparel importers"
     europe:
-      - type: europages
-        search: "buyer"
-        description: "Europages - Buyer Search"
+      - type: kompass
+        url: "https://www.kompass.com/z/ww/y/importer/s/textil-odevy-koza-hodinarstvo-sperky/05/"
+        selectors: ["a[href*='/c/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
+        description: "Kompass - global textile and apparel importers"
     international:
-      - type: europages
-        search: "buyer"
-        description: "Europages - Buyer Search"
+      - type: kompass
+        url: "https://www.kompass.com/z/ww/y/importer/s/textil-odevy-koza-hodinarstvo-sperky/05/"
+        selectors: ["a[href*='/c/']", "a[href*='http']"]
+        include_directory_links: true
+        candidate_kind: directory_profile
+        description: "Kompass - global textile and apparel importers"
+      - type: magic
+        url: "https://www.magicfashionevents.com/en/events/magic-las-vegas/brand-list.html"
+        selectors: ["a[href*='http']"]
+        description: "MAGIC Las Vegas brand list"
 
   # --- Region Target Markets ---
   region_markets:
@@ -380,7 +442,6 @@ discovery:
     host_parts:
       - google.
       - bing.
-      - duckduckgo.
       - yahoo.
       - microsoft.
       - youtube.
@@ -411,6 +472,13 @@ discovery:
       - superpages.
       - dnb.
       - zoominfo.
+      - apollo.
+      - lusha.
+      - rocketreach.
+      - signalhire.
+      - leadiq.
+      - adapt.
+      - seamless.
       - crunchbase.
       - glassdoor.
       - indeed.
@@ -441,6 +509,26 @@ discovery:
       - baidu.com
       - zhihu.com
       - cookie-script.com
+      - alibaba.com
+      - exportersindia.com
+      - eworldtrade.com
+      - go4worldbusiness.com
+      - importgenius.com
+      - zoominfo.com
+      - apollo.io
+      - lusha.com
+      - rocketreach.co
+      - signalhire.com
+      - leadiq.com
+      - adapt.io
+      - seamless.ai
+      - panjiva.com
+      - seair.co.in
+      - textileinfomedia.com
+      - tradeford.com
+      - tradewheel.com
+      - tradeindia.com
+      - volza.com
       - vocabulary.com
       - visable.com
       - wiktionary.org
@@ -475,6 +563,9 @@ discovery:
       - .pk
       - .tr
       - .vn
+
+lead_pack_selection:
+  backfill_mode: conservative
 
 # --------------------------------------------------
 # SCORING
@@ -513,16 +604,28 @@ scoring:
       - woven
 
     strong_buyer_keywords:
+      - "apparel importer"
       - "become a supplier"
       - "become a vendor"
       - "buying office"
+      - "buying team"
+      - "brand sourcing"
+      - "custom private label"
+      - "denim importer"
       - distributor
+      - "global sourcing"
       - "import and distribute"
+      - "importer of record"
       - importer
+      - imported
       - imports
+      - "private label brand"
+      - "private label program"
+      - "private label sourcing"
       - procurement
       - purchasing
       - sourcing
+      - "sourcing department"
       - "supplier application"
       - "supplier code"
       - "supplier diversity"
@@ -536,6 +639,8 @@ scoring:
       - "vendor registration"
       - "vendor relations"
       - "vendor portal"
+      - "wholesale account"
+      - "wholesale distribution"
       - "wholesale distributor"
       - wholesaler
 
@@ -559,6 +664,11 @@ scoring:
       - brand
       - "bulk order"
       - catalog
+      - collection
+      - collections
+      - "lookbook"
+      - "our story"
+      - "private label"
       - retail
       - retailer
       - stockist
@@ -579,25 +689,40 @@ scoring:
 
     platform_keywords:
       - "advertise with us"
+      - "b2b data"
       - directory
+      - "exhibitor directory"
+      - "fashion marketplace"
+      - "import export data"
+      - "import data"
       - marketplace
+      - "online marketplace"
       - platform
+      - "seller marketplace"
       - "sponsored listings"
+      - "supplier directory"
+      - "wholesale marketplace"
 
     supplier_competitor_keywords:
       - "apparel manufacturer"
       - "clothing manufacturer"
       - "contract manufacturer"
       - "cut and sew"
+      - "dyeing facility"
       - factory
+      - "fabric mill"
       - "full package production"
       - "garment manufacturer"
       - manufacturer
       - manufacturing
+      - "our factory"
       - "private label manufacturer"
       - "production facility"
       - sewing
+      - "spinning mill"
+      - "textile mill"
       - "we manufacture"
+      - "we produce"
 
     procurement_side_keywords:
       - "become a supplier"
@@ -650,12 +775,32 @@ scoring:
       - vietnam
 
     noisy_domain_markers:
+      - alibaba.com
       - apparelnews.net
+      - apollo.io
+      - adapt.io
+      - exportersindia.com
+      - eworldtrade.com
       - fashionnetwork.com
       - fiber2fashion.com
       - fibre2fashion.com
+      - go4worldbusiness.com
+      - importgenius.com
       - just-style.com
+      - leadiq.com
+      - lusha.com
+      - panjiva.com
+      - rocketreach.co
+      - seair.co.in
+      - seamless.ai
+      - signalhire.com
+      - textileinfomedia.com
       - textileworld.com
+      - tradeford.com
+      - tradewheel.com
+      - tradeindia.com
+      - volza.com
+      - zoominfo.com
       - cambridge.org
       - dictionary.com
       - merriam-webster.com
@@ -663,11 +808,31 @@ scoring:
       - wiktionary.org
 
   blocked_domains:
+    - alibaba.com
+    - apollo.io
+    - adapt.io
     - cloudflare.com
+    - exportersindia.com
+    - eworldtrade.com
+    - go4worldbusiness.com
+    - importgenius.com
+    - leadiq.com
     - localsearch.com
+    - lusha.com
     - networkadvertising.org
     - nike.com
+    - panjiva.com
+    - rocketreach.co
+    - seair.co.in
+    - seamless.ai
+    - signalhire.com
+    - textileinfomedia.com
     - thryv.com
+    - tradeford.com
+    - tradewheel.com
+    - tradeindia.com
+    - volza.com
+    - zoominfo.com
 
   blocked_domain_markers:
     - "dictionary."
@@ -705,13 +870,16 @@ scoring:
       require_buyer_evidence: true
       require_email: decision
     a:
-      min_score: 75
+      min_score: 68
       require_hard_checks: true
-      require_email: any
+      require_email: any_or_contact_form
     manual_review:
       min_score: 55
 
-  quality_mode: balanced
+  quality_mode: buyer_discovery
+  delivery_rules:
+    allow_contact_form_without_email: true
+    soften_platform_penalty_for_direct_buyers: true
 
   pitch_angles:
     importer: "We are a Pakistan-based manufacturer of premium {products}. We see you actively import {category} and would love to discuss becoming one of your trusted suppliers with competitive MOQs and landed-cost advantage."
@@ -731,6 +899,9 @@ enrichment:
     - /contact-us
     - /pages/contact
     - /pages/contact-us
+    - /pages/our-story
+    - /pages/lookbook
+    - /pages/stockists
     - /about
     - /about-us
     - /brands
@@ -896,41 +1067,48 @@ enrichment:
 # SIGNALS (from signal_map.py manufacturing_expansion cluster)
 # --------------------------------------------------
 signals:
-  cluster: manufacturing_expansion
-  search_intent: manufacturing_expansion
+  cluster: textile_buyer_sourcing
+  search_intent: textile_buyer_sourcing
 
   signal_catalog:
-    - name: facility-expansion
-      why_now: "Facility expansion or new line announcements indicate immediate project demand."
-      confidence: 0.82
-      query_templates:
-        - '{industry} {market} new facility opening'
-        - '{industry} {market} plant expansion project'
-
-    - name: equipment-investment
-      why_now: "Equipment financing and modernization usually align with broader capex cycles."
-      confidence: 0.74
-      query_templates:
-        - '{industry} {market} equipment modernization project'
-        - '{industry} {market} capex expansion'
-
-    - name: trade-show-activity
-      why_now: "Trade show season drives buyer-seller matching."
-      confidence: 0.85
-      query_templates:
-        - '{industry} trade show "{market}" buyer exhibitor'
-        - '{industry} fashion week "{market}" buyer list'
-
-    - name: import-export-data
-      why_now: "Import/export records reveal active buyers."
+    - name: brand-owned-pages
+      why_now: "Brand collection, story, and contact pages surface actual apparel buyers instead of B2B data directories."
       confidence: 0.90
       query_templates:
-        - '{industry} import data "{market}" panjiva'
-        - '{industry} customs shipment "{market}" importer'
+        - '{base} brand "our story" "{market}"'
+        - '{base} collection "contact us" "{market}"'
 
-    - name: active-growth-intent
-      why_now: "Recent growth announcements often map to near-term buying intent."
-      confidence: 0.70
+    - name: boutique-retailer-pages
+      why_now: "Boutique and retailer pages expose companies buying finished apparel and denim assortments."
+      confidence: 0.88
       query_templates:
-        - '{industry} {market} expansion contact'
-        - '{industry} {market} project request proposal'
+        - '{base} boutique wholesale "{market}"'
+        - '{base} retailer "vendor application" "{market}"'
+
+    - name: private-label-sourcing
+      why_now: "Private-label brands and sourcing teams are likely manufacturer-buyers."
+      confidence: 0.86
+      query_templates:
+        - '{base} private label brand sourcing "{market}"'
+        - '{base} private label program "contact us" "{market}"'
+
+    - name: vendor-procurement-pages
+      why_now: "Vendor application and supplier portal pages reveal buyer-side onboarding."
+      confidence: 0.84
+      query_templates:
+        - '{base} vendor application retailer "{market}"'
+        - '{base} supplier portal procurement "{market}"'
+
+    - name: wholesale-account-pages
+      why_now: "Wholesale and trade-account pages identify contactable buyers with category fit."
+      confidence: 0.80
+      query_templates:
+        - '{base} wholesale account brand "{market}"'
+        - '{base} trade account boutique "{market}"'
+
+    - name: trade-show-buyers
+      why_now: "Trade show brand lists surface companies actively buying and selling textile categories."
+      confidence: 0.76
+      query_templates:
+        - '{base} MAGIC Las Vegas brand list'
+        - '{base} Texworld NYC exhibitor list'

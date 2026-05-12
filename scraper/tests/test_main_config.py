@@ -3,7 +3,9 @@ import sys
 import unittest
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from pathlib import Path
 
+import yaml
 
 SCRAPER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SCRAPER_DIR not in sys.path:
@@ -15,8 +17,10 @@ from main import (
     apply_recent_dedupe,
     build_lead_pack,
     compute_discovery_limit,
+    _configured_delivery_min_score,
     load_recent_domains,
     pad_lead_pack_with_repeats,
+    partition_discovery_sources,
     relaxed_score_thresholds,
     resolve_proxy_pool,
     save_recent_domains,
@@ -193,6 +197,127 @@ class MainConfigTests(unittest.TestCase):
         self.assertEqual(effective_min_score, 75)
         self.assertEqual(len(leads), 2)
         self.assertTrue(any(event[0] in {"hard_check_backfill", "exploratory_backfill", "forced_backfill"} for event in events))
+
+    def test_build_lead_pack_conservative_mode_does_not_backfill_tuning_runs(self):
+        class DummyScoring:
+            @staticmethod
+            def rank_and_filter(candidates, limit, min_score):
+                return []
+
+        scored_candidates = [
+            {"domain": "alpha.com", "score": 52, "passes_hard_checks": True, "fetch_ok": True, "noisy_domain_hits": 0},
+        ]
+        leads, _, events = build_lead_pack(
+            scoring=DummyScoring(),
+            scored_candidates=scored_candidates,
+            limit=2,
+            min_score=75,
+            fill_until_complete=False,
+            backfill_mode="conservative",
+        )
+
+        self.assertEqual(leads, [])
+        self.assertEqual(events, [("strict", 75, 0)])
+
+    def test_build_lead_pack_conservative_mode_only_uses_hard_check_backfill(self):
+        class DummyScoring:
+            @staticmethod
+            def rank_and_filter(candidates, limit, min_score):
+                return []
+
+        scored_candidates = [
+            {"domain": "alpha.com", "score": 62, "passes_hard_checks": True, "fetch_ok": True, "noisy_domain_hits": 0},
+            {"domain": "beta.com", "score": 58, "passes_hard_checks": False, "fetch_ok": True, "noisy_domain_hits": 0},
+        ]
+        leads, _, events = build_lead_pack(
+            scoring=DummyScoring(),
+            scored_candidates=scored_candidates,
+            limit=2,
+            min_score=75,
+            fill_until_complete=True,
+            backfill_mode="conservative",
+        )
+
+        self.assertEqual([lead["domain"] for lead in leads], ["alpha.com"])
+        self.assertTrue(any(event[0] == "hard_check_backfill" for event in events))
+        self.assertFalse(any(event[0] in {"exploratory_backfill", "forced_backfill"} for event in events))
+
+    def test_configured_delivery_min_score_uses_specialist_floor(self):
+        self.assertEqual(
+            _configured_delivery_min_score(
+                75,
+                {"scoring": {"tiers": {"a": {"min_score": 68}}}},
+            ),
+            68,
+        )
+        self.assertEqual(
+            _configured_delivery_min_score(
+                60,
+                {"scoring": {"tiers": {"a": {"min_score": 68}}}},
+            ),
+            60,
+        )
+
+    def test_textile_config_does_not_enable_duckduckgo(self):
+        config_path = Path(SCRAPER_DIR) / "configs" / "textile-apparel.yml"
+        with config_path.open("r", encoding="utf-8") as handle:
+            config = yaml.safe_load(handle)
+
+        discovery = config.get("discovery", {})
+        self.assertEqual(discovery.get("search_engines"), ["bing", "yahoo"])
+        self.assertNotIn("duckduckgo.", discovery.get("exclusions", {}).get("host_parts", []))
+
+        scoring = config.get("scoring", {})
+        self.assertEqual(scoring.get("tiers", {}).get("a", {}).get("min_score"), 68)
+        self.assertTrue(scoring.get("delivery_rules", {}).get("allow_contact_form_without_email"))
+
+    def test_textile_config_prioritizes_brand_discovery_over_importer_queries(self):
+        config_path = Path(SCRAPER_DIR) / "configs" / "textile-apparel.yml"
+        with config_path.open("r", encoding="utf-8") as handle:
+            config = yaml.safe_load(handle)
+
+        discovery = config.get("discovery", {})
+        early_queries = discovery.get("search_queries", [])[:8]
+        self.assertTrue(early_queries)
+        self.assertTrue(any("brand" in query for query in early_queries))
+        self.assertTrue(any("boutique" in query for query in early_queries))
+        self.assertFalse(any("importer" in query.lower() for query in early_queries))
+
+        exclusions = discovery.get("exclusions", {}).get("root_domains", [])
+        scoring_blocked = config.get("scoring", {}).get("blocked_domains", [])
+        for domain in ("volza.com", "tradeford.com", "tradewheel.com", "apollo.io", "zoominfo.com"):
+            self.assertIn(domain, exclusions)
+            self.assertIn(domain, scoring_blocked)
+
+        runtime = discovery.get("search_engine_runtime", {})
+        self.assertGreaterEqual(runtime.get("bing", {}).get("max_requests", 0), 20)
+        self.assertGreaterEqual(runtime.get("yahoo", {}).get("max_requests", 0), 18)
+
+        usa_directories = discovery.get("directory_sources", {}).get("usa", [])
+        thomasnet = next(item for item in usa_directories if item.get("type") == "thomasnet")
+        la_dirs = [item for item in usa_directories if item.get("type") == "la_fashion_district"]
+        self.assertIn("a.profile-link[href]", thomasnet.get("selectors", []))
+        self.assertIn("h2 a[href]", thomasnet.get("selectors", []))
+        self.assertIn("a.track-visit-website[href]", thomasnet.get("selectors", []))
+        self.assertTrue(any(".showroom-name" in selector for item in la_dirs for selector in item.get("selectors", [])))
+        self.assertTrue(any("showroom" in selector for item in la_dirs for selector in item.get("selectors", [])))
+
+        likely_paths = config.get("enrichment", {}).get("likely_paths", [])
+        self.assertIn("/pages/our-story", likely_paths)
+        self.assertIn("/pages/lookbook", likely_paths)
+        self.assertIn("/pages/stockists", likely_paths)
+
+    def test_partition_discovery_sources_orders_engine_lanes(self):
+        sources = [
+            SimpleNamespace(search_engine="duckduckgo"),
+            SimpleNamespace(search_engine="bing"),
+            SimpleNamespace(search_engine=""),
+            SimpleNamespace(search_engine="yahoo"),
+        ]
+        groups = partition_discovery_sources(sources)
+
+        self.assertEqual(list(groups.keys()), ["main", "bing", "yahoo", "duckduckgo"])
+        self.assertEqual(groups["main"][0].search_engine, "")
 
 
 if __name__ == "__main__":

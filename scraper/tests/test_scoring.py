@@ -1,6 +1,9 @@
 import unittest
 import os
 import sys
+from pathlib import Path
+
+import yaml
 
 SCRAPER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SCRAPER_DIR not in sys.path:
@@ -264,6 +267,40 @@ class LeadScoringTests(unittest.TestCase):
         self.assertEqual(scored["lead_pack_status"], "manual_review")
         self.assertFalse(self.scoring.is_a_plus(scored))
 
+    def test_generic_context_words_do_not_create_buyer_evidence(self):
+        scoring = LeadScoring(
+            scoring_context={
+                "product_keywords": ["apparel"],
+                "buyer_keywords": [
+                    "contact",
+                    "email",
+                    "pricing",
+                    "vendor",
+                    "supplier",
+                    "procurement",
+                ],
+            },
+        )
+        candidate = {
+            "domain": "genericstore.com",
+            "url": "https://genericstore.com",
+            "content": "Apparel catalog with contact email pricing for customers and supplier notes.",
+            "emails": ["info@genericstore.com"],
+            "high_quality_emails": ["info@genericstore.com"],
+            "email_quality": "decision",
+            "social_urls": [],
+            "linkedin_url": None,
+            "fetch_ok": True,
+            "fetch_status_codes": [200, 200],
+            "crawled_pages": ["https://genericstore.com", "https://genericstore.com/contact"],
+        }
+        scored = scoring.evaluate_candidate(candidate)
+
+        self.assertNotIn("contact", scored["buyer_side_evidence"])
+        self.assertNotIn("email", scored["buyer_side_evidence"])
+        self.assertNotIn("supplier", scored["buyer_side_evidence"])
+        self.assertFalse(scored["passes_hard_checks"])
+
     def test_supplier_application_with_decision_email_can_be_a_plus(self):
         candidate = {
             "domain": "nationalretailer.com",
@@ -313,6 +350,85 @@ class LeadScoringTests(unittest.TestCase):
         self.assertEqual(scored["contact_route"], "contact_form")
         self.assertFalse(scored["passes_hard_checks"])
         self.assertFalse(self.scoring.is_a_plus(scored))
+
+    def test_textile_config_allows_form_only_buyer_delivery_but_not_a_plus(self):
+        config_path = Path(SCRAPER_DIR) / "configs" / "textile-apparel.yml"
+        with config_path.open("r", encoding="utf-8") as handle:
+            config = yaml.safe_load(handle)
+        scoring = LeadScoring(
+            require_email=True,
+            require_buyer_evidence=True,
+            industry="textile apparel denim importers",
+            config=config,
+        )
+        candidate = {
+            "domain": "denimbuyer.com",
+            "url": "https://denimbuyer.com",
+            "content": (
+                "Denim apparel brand with supplier application, vendor portal, "
+                "purchasing team, sourcing team, collections, catalog, shop, and wholesale account."
+            ),
+            "emails": [],
+            "high_quality_emails": [],
+            "email_quality": "none",
+            "contact_form_urls": ["https://denimbuyer.com/vendor-application"],
+            "social_urls": ["https://linkedin.com/company/denimbuyer"],
+            "linkedin_url": "https://linkedin.com/company/denimbuyer",
+            "fetch_ok": True,
+            "fetch_status_codes": [200, 200, 200],
+            "crawled_pages": [
+                "https://denimbuyer.com",
+                "https://denimbuyer.com/vendor-application",
+                "https://denimbuyer.com/contact",
+            ],
+        }
+
+        scored = scoring.evaluate_candidate(candidate)
+        results = scoring.rank_and_filter([scored], limit=10, min_score=68)
+
+        self.assertTrue(scored["passes_hard_checks"])
+        self.assertEqual(scored["contact_route"], "contact_form")
+        self.assertEqual(scored["lead_pack_status"], "sellable_a")
+        self.assertEqual(results, [scored])
+        self.assertFalse(scoring.is_a_plus(scored))
+
+    def test_textile_config_softens_marketplace_phrase_on_direct_buyer_site(self):
+        config_path = Path(SCRAPER_DIR) / "configs" / "textile-apparel.yml"
+        with config_path.open("r", encoding="utf-8") as handle:
+            config = yaml.safe_load(handle)
+        scoring = LeadScoring(
+            require_email=True,
+            require_buyer_evidence=True,
+            industry="textile apparel denim importers",
+            config=config,
+        )
+        candidate = {
+            "domain": "directdenimbrand.com",
+            "url": "https://directdenimbrand.com",
+            "content": (
+                "Denim apparel brand online marketplace with supplier application, "
+                "vendor portal, sourcing, collections, catalog, shop, and wholesale account."
+            ),
+            "emails": [],
+            "high_quality_emails": [],
+            "email_quality": "none",
+            "contact_form_urls": ["https://directdenimbrand.com/supplier-application"],
+            "social_urls": ["https://linkedin.com/company/directdenimbrand"],
+            "linkedin_url": "https://linkedin.com/company/directdenimbrand",
+            "fetch_ok": True,
+            "fetch_status_codes": [200, 200, 200],
+            "crawled_pages": [
+                "https://directdenimbrand.com",
+                "https://directdenimbrand.com/supplier-application",
+                "https://directdenimbrand.com/contact",
+            ],
+        }
+
+        scored = scoring.evaluate_candidate(candidate)
+
+        self.assertTrue(scored["passes_hard_checks"])
+        self.assertNotIn("platform/marketplace/directory", scored["disqualification_reasons"])
+        self.assertLessEqual(scored["score_breakdown"]["negative_penalty"], 8)
 
     def test_generic_scoring_context_qualifies_non_apparel_lead(self):
         scoring = LeadScoring(

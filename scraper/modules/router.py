@@ -217,7 +217,12 @@ class IndustryRouter:
                 with urlopen(request, timeout=10) as response:
                     data = json.loads(response.read().decode("utf-8"))
                 return data if isinstance(data, list) else []
-            except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            except HTTPError as exc:
+                if exc.code == 404:
+                    return []
+                print(f"[Router] Feedback query failed: {exc}")
+                return []
+            except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
                 print(f"[Router] Feedback query failed: {exc}")
                 return []
 

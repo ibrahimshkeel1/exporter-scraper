@@ -165,7 +165,7 @@ export function JobTable({
   if (compact) {
     return (
       <div className="ide-panel flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
+        <div className="flex items-center justify-between border-b border-[#3c3c3c] bg-[#252526] px-3 py-2">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-vercel-text">Jobs</h2>
             <p className="text-[11px] text-vercel-muted">Session queue and status</p>
@@ -176,33 +176,33 @@ export function JobTable({
           </button>
         </div>
 
-        {message && <div className="border-b border-[#30363d] bg-[#220b0b] px-3 py-2 text-xs text-[#ff6b6b]">{message}</div>}
+        {message && <div className="border-b border-[#3c3c3c] bg-[#220b0b] px-3 py-2 text-xs text-[#ff6b6b]">{message}</div>}
 
         <div className="min-h-0 flex-1 overflow-hidden">
           <div className="flex h-full min-h-0 flex-col">
-            <div className="border-b border-[#30363d]">
+            <div className="border-b border-[#3c3c3c]">
               <button
                 type="button"
                 onClick={() => setJobsCollapsed((value) => !value)}
-                className="flex w-full items-center justify-between bg-[#0d1117] px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-[#8b949e]"
+                className="flex w-full items-center justify-between bg-[#1e1e1e] px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-[#858585]"
               >
                 <span>Jobs ({jobs.length})</span>
                 {jobsCollapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
               {!jobsCollapsed && (
                 <div className="max-h-[46vh] overflow-y-auto">
-                  <div className="divide-y divide-[#30363d]">
+                  <div className="divide-y divide-[#3c3c3c]">
                     {jobs.length === 0 && <p className="px-3 py-3 text-xs text-vercel-muted">No jobs yet.</p>}
                     {jobs.map((job) => (
                       <button
                         key={job.id}
                         type="button"
                         onClick={() => setSelectedJobId(job.id)}
-                        className={`w-full space-y-1 px-3 py-2 text-left ${selectedJobId === job.id ? "bg-[#13212e]" : "bg-transparent hover:bg-[#161b22]"}`}
+                        className={`w-full space-y-1 px-3 py-2 text-left ${selectedJobId === job.id ? "bg-[#2a3440]" : "bg-transparent hover:bg-[#252526]"}`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <StatusPill status={job.status} />
-                          <span className="font-mono text-[10px] text-[#8b949e]">{job.id.slice(0, 8)}</span>
+                          <span className="font-mono text-[10px] text-[#858585]">{job.id.slice(0, 8)}</span>
                         </div>
                         <p className="text-xs text-vercel-text">{job.target_region} | {job.refined_industry || job.original_industry}</p>
                         <p className="text-[11px] text-vercel-muted">{new Date(job.created_at).toLocaleString()}</p>
@@ -218,7 +218,7 @@ export function JobTable({
                 <button
                   type="button"
                   onClick={() => setFilesCollapsed((value) => !value)}
-                  className="flex w-full items-center justify-between border-b border-[#30363d] bg-[#0d1117] px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-[#8b949e]"
+                  className="flex w-full items-center justify-between border-b border-[#3c3c3c] bg-[#1e1e1e] px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-[#858585]"
                 >
                   <span>Files & Audit</span>
                   {filesCollapsed ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -228,8 +228,8 @@ export function JobTable({
                     {!selectedJob && <p className="text-xs text-vercel-muted">Select a job to view files.</p>}
                     {selectedJob && (
                       <div className="space-y-3">
-                        <div className="border border-[#30363d] bg-black p-2 text-xs text-vercel-text">
-                          <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8b949e]">Selected Job</p>
+                        <div className="border border-[#3c3c3c] bg-[#1e1e1e] p-2 text-xs text-vercel-text">
+                          <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#858585]">Selected Job</p>
                           <p>{selectedJob.target_region} | {selectedJob.refined_industry || selectedJob.original_industry}</p>
                           {selectedJob.error_message && <p className="mt-1 text-[#ff6b6b]">{selectedJob.error_message}</p>}
                         </div>
@@ -249,7 +249,7 @@ export function JobTable({
                                     {isAudit ? <FileSpreadsheet size={12} /> : <FileJson2 size={12} />}
                                     {file.storage_path?.split("/").at(-1) || file.format.toUpperCase()}
                                   </span>
-                                  <span className="text-[#8b949e]">{file.row_count ?? "-"} rows</span>
+                                  <span className="text-[#858585]">{file.row_count ?? "-"} rows</span>
                                 </button>
                               );
                             })
@@ -266,7 +266,7 @@ export function JobTable({
                               type="button"
                               onClick={() => void requestReport(selectedJob.id)}
                               disabled={reportJobId === selectedJob.id}
-                              className="ide-btn inline-flex w-full items-center justify-center gap-1.5 border-[#00ff00] px-3 py-1.5 text-xs font-medium text-[#00ff00] disabled:opacity-60"
+                              className="ide-btn inline-flex w-full items-center justify-center gap-1.5 border-[#6a9955] px-3 py-1.5 text-xs font-medium text-[#6a9955] disabled:opacity-60"
                             >
                               {reportJobId === selectedJob.id ? "Generating..." : "Generate Analysis"}
                             </button>
@@ -321,10 +321,10 @@ export function JobTable({
 
       {message && <div className="border border-[#ff6b6b] bg-[#220b0b] px-4 py-3 text-sm text-[#ff6b6b]">{message}</div>}
 
-      <div className="overflow-x-auto border border-[#30363d] bg-[#0d1117]">
+      <div className="overflow-x-auto border border-[#3c3c3c] bg-[#1e1e1e]">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
-            <tr className="border-b border-[#30363d] bg-[#161b22]">
+            <tr className="border-b border-[#3c3c3c] bg-[#252526]">
               <th className="py-4 px-4 font-medium text-vercel-muted">Status</th>
               <th className="py-4 px-4 font-medium text-vercel-muted">Pack</th>
               <th className="py-4 px-4 font-medium text-vercel-muted">Target</th>
@@ -332,7 +332,7 @@ export function JobTable({
               <th className="py-4 px-4 font-medium text-vercel-muted">Exports & Logs</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#30363d]">
+          <tbody className="divide-y divide-[#3c3c3c]">
             {jobs.length === 0 && (
               <tr>
                 <td colSpan={5} className="py-8 px-4 text-center text-vercel-muted">
@@ -341,7 +341,7 @@ export function JobTable({
               </tr>
             )}
             {jobs.map((job) => (
-              <tr key={job.id} className="group hover:bg-[#161b22]">
+              <tr key={job.id} className="group hover:bg-[#252526]">
                 <td className="py-4 px-4 align-top">
                   <div className="flex flex-col gap-1.5 items-start">
                     <StatusPill status={job.status} />
@@ -366,7 +366,7 @@ export function JobTable({
                     {job.payment_status === "pending" && (
                       <PaymentProofUpload jobId={job.id} amountUsd={job.price_usd} onUploaded={loadJobs} />
                     )}
-                    {job.payment_status !== "pending" && job.admin_note && <p className="mt-1 border border-[#30363d] bg-black p-2 text-xs text-vercel-muted">{job.admin_note}</p>}
+                    {job.payment_status !== "pending" && job.admin_note && <p className="mt-1 border border-[#3c3c3c] bg-[#1e1e1e] p-2 text-xs text-vercel-muted">{job.admin_note}</p>}
                   </div>
                 </td>
                 <td className="py-4 px-4 align-top">
@@ -393,7 +393,7 @@ export function JobTable({
                           type="button"
                           onClick={() => void requestReport(job.id)}
                           disabled={reportJobId === job.id}
-                          className="ide-btn inline-flex items-center gap-1.5 border-[#00ff00] px-3 py-1.5 text-xs font-medium text-[#00ff00] disabled:opacity-60"
+                          className="ide-btn inline-flex items-center gap-1.5 border-[#6a9955] px-3 py-1.5 text-xs font-medium text-[#6a9955] disabled:opacity-60"
                         >
                           {reportJobId === job.id ? "Generating..." : "Generate Analysis"}
                         </button>

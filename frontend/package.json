@@ -27,6 +27,7 @@
     "tailwindcss": "^4.2.4"
   },
   "devDependencies": {
+    "@types/imapflow": "^1.0.23",
     "@types/node": "^22.10.2",
     "@types/nodemailer": "^8.0.0",
     "@types/react": "^19.0.2",

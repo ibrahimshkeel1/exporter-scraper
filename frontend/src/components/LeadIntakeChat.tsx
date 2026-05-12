@@ -227,11 +227,11 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_34%),linear-gradient(180deg,#171717,#070707)] shadow-2xl">
+    <div className="overflow-hidden rounded-2xl border border-[#3c3c3c] bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_34%),linear-gradient(180deg,#171717,#070707)]">
       <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr]">
-        <section className="flex min-h-[680px] flex-col border-b border-white/10 xl:border-b-0 xl:border-r">
-          <div className="border-b border-white/10 px-6 py-5">
-            <span className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-300/80">AI lead strategist</span>
+        <section className="flex min-h-[680px] flex-col border-b border-vercel-border xl:border-b-0 xl:border-r">
+          <div className="border-b border-vercel-border px-6 py-5">
+            <span className="text-xs font-bold uppercase tracking-[0.24em] text-[#569cd6]">AI lead strategist</span>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-vercel-text">Chat through the lead plan. Run only when the brief is ready.</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-vercel-muted">The assistant asks follow-ups, finalizes audience and filters, then creates the scraper job from that context.</p>
           </div>
@@ -240,15 +240,15 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
             {messages.map((item, index) => (
               <div key={`${item.role}-${index}`} className={`flex gap-3 ${item.role === "user" ? "justify-end" : "justify-start"}`}>
                 {item.role === "assistant" && (
-                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
+                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-matrix-green text-white rounded">
                     <Bot size={16} />
                   </div>
                 )}
-                <div className={`max-w-[86%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 shadow-lg ${item.role === "user" ? "bg-white text-black" : "border border-white/10 bg-black/40 text-vercel-text"}`}>
+                <div className={`max-w-[86%] whitespace-pre-wrap rounded-md px-4 py-3 text-sm leading-6 ${item.role === "user" ? "bg-vercel-accent/20 border border-vercel-accent/30 text-vercel-text" : "border border-vercel-border bg-vercel-panel text-vercel-text"}`}>
                   {item.content}
                 </div>
                 {item.role === "user" && (
-                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white">
+                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-vercel-accent text-white rounded">
                     <UserRound size={16} />
                   </div>
                 )}
@@ -257,10 +257,10 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
 
             {isThinking && (
               <div className="flex gap-3">
-                <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
+                <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-matrix-green text-white rounded">
                   <Bot size={16} />
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cyan-100">
+                <div className="inline-flex items-center gap-2 rounded-2xl border border-[#3c3c3c] bg-[#252526] px-4 py-3 text-sm text-[#d4d4d4]">
                   <Loader2 size={15} className="animate-spin" />
                   Thinking through audience, markets, and filters...
                 </div>
@@ -268,16 +268,16 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
             )}
           </div>
 
-          <div className="border-t border-white/10 bg-black/30 p-4">
+          <div className="border-t border-vercel-border bg-vercel-bg p-4">
             <form className="flex flex-col gap-3 sm:flex-row" onSubmit={appendUserMessage}>
               <textarea
-                className="min-h-[92px] flex-1 resize-none rounded-xl border border-white/10 bg-black/60 px-4 py-3 text-sm leading-6 text-vercel-text outline-none transition focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/10"
+                className="min-h-[92px] flex-1 resize-none rounded-md border border-vercel-border bg-vercel-panel px-4 py-3 text-sm leading-6 text-vercel-text outline-none transition focus:border-vercel-accent"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder="Describe your business, target customer, geography, exclusions, or changes to the current brief..."
                 disabled={isThinking || submitting}
               />
-              <button className="inline-flex min-w-[150px] items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50" type="submit" disabled={isThinking || submitting || !draft.trim()}>
+              <button className="ide-btn ide-btn-primary inline-flex min-w-[150px] items-center justify-center gap-2 rounded-md px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50" type="submit" disabled={isThinking || submitting || !draft.trim()}>
                 {isThinking ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                 Send
               </button>
@@ -286,15 +286,15 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
         </section>
 
         <aside className="space-y-5 p-5">
-          <div className="rounded-2xl border border-white/10 bg-black/35 p-4">
+          <div className="ide-panel p-4">
             <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-vercel-muted">Lead package</h3>
-            <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl border border-white/10 bg-black/40 p-1.5">
+            <div className="mt-4 grid grid-cols-3 gap-2 border border-vercel-border bg-vercel-panel p-1.5">
               {leadPacks.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => setPackId(item.id)}
-                  className={`rounded-lg px-2 py-2 text-xs font-medium transition ${item.id === packId ? "bg-white text-black" : "text-vercel-muted hover:bg-white/10 hover:text-white"}`}
+                  className={`ide-btn px-2 py-2 text-xs font-medium transition ${item.id === packId ? "ide-btn-primary" : "text-vercel-muted hover:text-white"}`}
                 >
                   {item.leads} leads
                 </button>
@@ -304,8 +304,8 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
           </div>
 
           {brief && (
-            <div className={`rounded-2xl border p-4 ${brief.needsMoreInfo ? "border-amber-300/20 bg-amber-300/5" : "border-emerald-300/20 bg-emerald-300/5"}`}>
-              <div className={`flex items-center gap-2 ${brief.needsMoreInfo ? "text-amber-200" : "text-emerald-300"}`}>
+            <div className={`ide-panel p-4 ${brief.needsMoreInfo ? "border-vercel-accent/50" : "border-matrix-green/50"}`}>
+              <div className={`flex items-center gap-2 ${brief.needsMoreInfo ? "text-vercel-accent" : "text-matrix-green"}`}>
                 <CheckCircle2 size={17} />
                 <h3 className="font-semibold">{brief.needsMoreInfo ? "Draft brief" : "Final brief"}</h3>
               </div>
@@ -332,25 +332,25 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
                 </div>
               </dl>
               {brief.warnings.length > 0 && <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-5 text-amber-200">{brief.warnings.join(" ")}</p>}
-              <button className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-300 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={createJob} disabled={submitting || !canRun}>
+              <button className="ide-btn ide-btn-primary mt-5 inline-flex w-full items-center justify-center gap-2 px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={createJob} disabled={submitting || !canRun}>
                 {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                 {submitting ? "Creating job..." : "Run this search"}
               </button>
             </div>
           )}
 
-          <div className="rounded-2xl border border-white/10 bg-black/35 p-4">
+          <div className="ide-panel p-4">
             <button className="text-sm font-semibold text-vercel-muted transition hover:text-vercel-text" type="button" onClick={() => setShowAdvanced((value) => !value)}>
               {showAdvanced ? "Hide manual controls" : "Manual controls"}
             </button>
             {showAdvanced && (
               <div className="mt-4 grid grid-cols-1 gap-3">
-                <select className="rounded-xl border border-white/10 bg-black/50 px-3 py-2 text-sm text-vercel-text" value={market} onChange={(event) => setMarket(event.target.value)}>
+                <select className="ide-input px-3 py-2 text-sm" value={market} onChange={(event) => setMarket(event.target.value)}>
                   {[...regions, "International"].map((item) => (
                     <option key={item}>{item}</option>
                   ))}
                 </select>
-                <select className="rounded-xl border border-white/10 bg-black/50 px-3 py-2 text-sm text-vercel-text" value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
+                <select className="ide-input px-3 py-2 text-sm" value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
                   {exportFormats.map((item) => (
                     <option key={item.id} value={item.id}>{item.label}</option>
                   ))}
@@ -367,12 +367,12 @@ export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
                   <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} />
                   Allow form/LinkedIn leads
                 </label>
-                <input className="rounded-xl border border-white/10 bg-black/50 px-3 py-2 text-sm text-vercel-text placeholder:text-gray-600" value={adminBypassCode} onChange={(event) => setAdminBypassCode(event.target.value)} placeholder="Admin bypass code" />
+                <input className="ide-input px-3 py-2 text-sm" value={adminBypassCode} onChange={(event) => setAdminBypassCode(event.target.value)} placeholder="Admin bypass code" />
               </div>
             )}
           </div>
 
-          {message && <div className="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm text-vercel-text">{message}</div>}
+          {message && <div className="ide-panel p-4 text-sm text-vercel-text">{message}</div>}
         </aside>
       </div>
     </div>

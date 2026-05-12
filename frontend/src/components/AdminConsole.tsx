@@ -113,13 +113,13 @@ export function AdminConsole() {
           </div>
         </div>
 
-        {message && <div className="mt-2 border border-[#30363d] bg-[#010409] px-3 py-2 text-xs text-vercel-text">{message}</div>}
+        {message && <div className="mt-2 border border-[#3c3c3c] bg-[#252526] px-3 py-2 text-xs text-vercel-text">{message}</div>}
       </div>
 
       <div className="ide-panel overflow-x-auto">
         <table className="w-full border-collapse text-left text-sm">
           <thead>
-            <tr className="border-b border-[#30363d] bg-[#161b22]">
+            <tr className="border-b border-[#3c3c3c] bg-[#252526]">
               <th className="px-3 py-2 text-xs text-vercel-muted">Status</th>
               <th className="px-3 py-2 text-xs text-vercel-muted">Customer</th>
               <th className="px-3 py-2 text-xs text-vercel-muted">Target</th>
@@ -136,7 +136,7 @@ export function AdminConsole() {
               </tr>
             )}
             {jobs.map((job) => (
-              <tr key={job.id} className="border-b border-[#30363d]">
+              <tr key={job.id} className="border-b border-[#3c3c3c]">
                 <td className="px-3 py-3 align-top">
                   <div className="flex flex-col gap-1">
                     <StatusPill status={job.status} />

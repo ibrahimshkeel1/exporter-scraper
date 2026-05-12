@@ -1,0 +1,388 @@
+"use client";
+
+import { FormEvent, useMemo, useState } from "react";
+import { Bot, CheckCircle2, Loader2, Send, Sparkles, UserRound } from "lucide-react";
+import { exportFormats, getLeadPack, leadPacks, regions } from "../lib/pricing";
+import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
+import { TargetingPreflight } from "../lib/types";
+
+type IntakeMessage = {
+  role: "assistant" | "user";
+  content: string;
+};
+
+type LeadIntakeChatProps = {
+  onJobCreated?: () => void;
+};
+
+const initialMessages: IntakeMessage[] = [
+  {
+    role: "assistant",
+    content:
+      "Tell me what you sell, your website, who you want as clients, where you want to find them, and what makes a lead useful. I’ll ask follow-ups only if the search is still vague, then I’ll confirm the lead plan before we run it."
+  }
+];
+
+function briefValue(value: unknown, fallback = "Not specified") {
+  if (Array.isArray(value)) return value.length ? value.join(", ") : fallback;
+  if (typeof value === "string") return value.trim() || fallback;
+  return fallback;
+}
+
+function normalizeRegion(value: string) {
+  const lower = value.trim().toLowerCase();
+  if (["usa", "us", "u.s.", "u.s.a.", "united states", "united states of america", "america", "american"].includes(lower)) {
+    return "USA";
+  }
+  if (["uk", "u.k.", "united kingdom", "britain", "great britain", "england"].includes(lower)) {
+    return "UK";
+  }
+  if (["eu", "europe", "european union"].includes(lower)) {
+    return "Europe";
+  }
+  if (["international", "global", "worldwide"].includes(lower)) {
+    return "International";
+  }
+  return value;
+}
+
+function finalBriefMessage(brief: TargetingPreflight) {
+  return [
+    "I have enough context to run the lead search.",
+    "",
+    `Audience: ${briefValue(brief.buyerTypes)}`,
+    `Markets: ${briefValue(brief.targetMarkets)}`,
+    `Signals I’ll look for: ${briefValue(brief.qualificationSignals)}`,
+    `I’ll avoid: ${briefValue(brief.disqualificationSignals)}`,
+    "",
+    "If this looks right, press Run this search. If not, tell me what to change."
+  ].join("\n");
+}
+
+function followUpMessage(brief: TargetingPreflight) {
+  const questions = brief.followUpQuestions?.length
+    ? brief.followUpQuestions
+    : [
+        "Which countries or regions should I prioritize?",
+        "What exact type of customer should I avoid?",
+        "Do you require email addresses, or are contact forms and LinkedIn acceptable?"
+      ];
+
+  return [
+    "I can draft the search, but I need a bit more context before running it.",
+    "",
+    ...questions.map((question, index) => `${index + 1}. ${question}`)
+  ].join("\n");
+}
+
+export function LeadIntakeChat({ onJobCreated }: LeadIntakeChatProps) {
+  const supabase = useMemo(() => (isSupabaseConfigured() ? createBrowserSupabase() : null), []);
+  const [messages, setMessages] = useState<IntakeMessage[]>(initialMessages);
+  const [draft, setDraft] = useState("");
+  const [brief, setBrief] = useState<TargetingPreflight | null>(null);
+  const [packId, setPackId] = useState("starter");
+  const [market, setMarket] = useState("International");
+  const [exportFormat, setExportFormat] = useState("all");
+  const [adminBypassCode, setAdminBypassCode] = useState("");
+  const [minScore, setMinScore] = useState(55);
+  const [allowNoEmail, setAllowNoEmail] = useState(true);
+  const [allowWeakBuyerEvidence, setAllowWeakBuyerEvidence] = useState(true);
+  const [isThinking, setIsThinking] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const pack = getLeadPack(packId);
+  const canRun = Boolean(brief && !brief.needsMoreInfo);
+
+  async function analyzeConversation(nextMessages: IntakeMessage[]) {
+    setIsThinking(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/preflight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          region: market,
+          productCategory: brief?.refinedIndustry || "",
+          buyerType: "",
+          notes: "",
+          conversation: nextMessages
+        })
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not analyze the lead search.");
+      }
+
+      const nextBrief = payload.preflight as TargetingPreflight;
+      setBrief(nextBrief);
+
+      if (nextBrief.recommendedMinScore) {
+        setMinScore(Math.max(35, Math.min(85, nextBrief.recommendedMinScore)));
+      }
+
+      if (nextBrief.targetMarkets?.[0]) {
+        const inferredMarket = nextBrief.targetMarkets[0];
+        setMarket(normalizeRegion(inferredMarket));
+      }
+
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: nextBrief.needsMoreInfo ? followUpMessage(nextBrief) : finalBriefMessage(nextBrief)
+        }
+      ]);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Could not analyze the lead search.";
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: `I could not analyze that yet: ${errorMessage} Try sending the key business details again.`
+        }
+      ]);
+    } finally {
+      setIsThinking(false);
+    }
+  }
+
+  async function appendUserMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const content = draft.trim();
+    if (!content || isThinking) return;
+
+    const nextMessages: IntakeMessage[] = [...messages, { role: "user", content }];
+    setMessages(nextMessages);
+    setDraft("");
+    setBrief(null);
+    setMessage("");
+    await analyzeConversation(nextMessages);
+  }
+
+  async function createJob() {
+    if (!brief) return;
+
+    setSubmitting(true);
+    setMessage("");
+
+    if (!supabase) {
+      setSubmitting(false);
+      setMessage("Supabase public env vars are not configured.");
+      return;
+    }
+
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+
+    if (!token) {
+      setSubmitting(false);
+      setMessage("Sign in before creating a lead job.");
+      return;
+    }
+
+    const userMessages = messages.filter((item) => item.role === "user");
+    const productCategory = brief.offerSummary || brief.refinedIndustry || userMessages.at(-1)?.content || "AI lead search";
+    const buyerType = brief.buyerTypes?.[0] || brief.idealCustomerProfile || "Ideal customers";
+    const region = normalizeRegion(market || brief.targetMarkets?.[0] || "International");
+
+    const response = await fetch("/api/jobs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        packId,
+        region,
+        productCategory,
+        buyerType,
+        notes: messages.map((item) => `${item.role}: ${item.content}`).join("\n"),
+        exportFormat,
+        adminBypassCode: adminBypassCode || undefined,
+        preflight: brief,
+        conversation: messages,
+        advanced: {
+          allowNoEmail,
+          allowWeakBuyerEvidence,
+          minScore
+        }
+      })
+    });
+
+    const payload = await response.json();
+    setSubmitting(false);
+
+    if (!response.ok) {
+      setMessage(payload.error ?? "Could not create job.");
+      return;
+    }
+
+    setMessage(payload.job?.status === "queued" ? "AI lead job queued. Watch live logs for progress." : "Lead job created. Upload payment proof from the job table to start admin review.");
+    onJobCreated?.();
+  }
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_34%),linear-gradient(180deg,#171717,#070707)] shadow-2xl">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr]">
+        <section className="flex min-h-[680px] flex-col border-b border-vercel-border xl:border-b-0 xl:border-r">
+          <div className="border-b border-vercel-border px-6 py-5">
+            <span className="text-xs font-bold uppercase tracking-[0.24em] text-cyan-300/80">AI lead strategist</span>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-vercel-text">Chat through the lead plan. Run only when the brief is ready.</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-vercel-muted">The assistant asks follow-ups, finalizes audience and filters, then creates the scraper job from that context.</p>
+          </div>
+
+          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-6">
+            {messages.map((item, index) => (
+              <div key={`${item.role}-${index}`} className={`flex gap-3 ${item.role === "user" ? "justify-end" : "justify-start"}`}>
+                {item.role === "assistant" && (
+                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-matrix-green text-white rounded-none">
+                    <Bot size={16} />
+                  </div>
+                )}
+                <div className={`max-w-[86%] whitespace-pre-wrap rounded-md px-4 py-3 text-sm leading-6 ${item.role === "user" ? "bg-vercel-accent/20 border border-vercel-accent/30 text-vercel-text" : "border border-vercel-border bg-vercel-panel text-vercel-text"}`}>
+                  {item.content}
+                </div>
+                {item.role === "user" && (
+                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-vercel-accent text-white rounded-none">
+                    <UserRound size={16} />
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {isThinking && (
+              <div className="flex gap-3">
+                <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center bg-matrix-green text-white rounded-none">
+                  <Bot size={16} />
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cyan-100">
+                  <Loader2 size={15} className="animate-spin" />
+                  Thinking through audience, markets, and filters...
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-vercel-border bg-vercel-bg p-4">
+            <form className="flex flex-col gap-3 sm:flex-row" onSubmit={appendUserMessage}>
+              <textarea
+                className="min-h-[92px] flex-1 resize-none rounded-md border border-vercel-border bg-vercel-panel px-4 py-3 text-sm leading-6 text-vercel-text outline-none transition focus:border-vercel-accent"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="Describe your business, target customer, geography, exclusions, or changes to the current brief..."
+                disabled={isThinking || submitting}
+              />
+              <button className="ide-btn ide-btn-primary inline-flex min-w-[150px] items-center justify-center gap-2 rounded-md px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50" type="submit" disabled={isThinking || submitting || !draft.trim()}>
+                {isThinking ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                Send
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <aside className="space-y-5 p-5">
+          <div className="ide-panel p-4">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-vercel-muted">Lead package</h3>
+            <div className="mt-4 grid grid-cols-3 gap-2 border border-vercel-border bg-vercel-panel p-1.5">
+              {leadPacks.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setPackId(item.id)}
+                  className={`ide-btn px-2 py-2 text-xs font-medium transition ${item.id === packId ? "ide-btn-primary" : "text-vercel-muted hover:text-white"}`}
+                >
+                  {item.leads} leads
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 text-xs leading-5 text-vercel-muted">The AI decides the lead strategy. This only controls output volume.</p>
+          </div>
+
+          {brief && (
+            <div className={`ide-panel p-4 ${brief.needsMoreInfo ? "border-vercel-accent/50" : "border-matrix-green/50"}`}>
+              <div className={`flex items-center gap-2 ${brief.needsMoreInfo ? "text-vercel-accent" : "text-matrix-green"}`}>
+                <CheckCircle2 size={17} />
+                <h3 className="font-semibold">{brief.needsMoreInfo ? "Draft brief" : "Final brief"}</h3>
+              </div>
+              <dl className="mt-4 space-y-3 text-sm">
+                <div>
+                  <dt className="text-vercel-muted">Business</dt>
+                  <dd className="text-vercel-text">{briefValue(brief.businessSummary || brief.offerSummary)}</dd>
+                </div>
+                <div>
+                  <dt className="text-vercel-muted">Clients</dt>
+                  <dd className="text-vercel-text">{briefValue(brief.buyerTypes)}</dd>
+                </div>
+                <div>
+                  <dt className="text-vercel-muted">Markets</dt>
+                  <dd className="text-vercel-text">{briefValue(brief.targetMarkets)}</dd>
+                </div>
+                <div>
+                  <dt className="text-vercel-muted">Search terms</dt>
+                  <dd className="text-vercel-text">{brief.searchTerms.slice(0, 4).join(" | ")}</dd>
+                </div>
+                <div>
+                  <dt className="text-vercel-muted">Signals</dt>
+                  <dd className="text-vercel-text">{briefValue(brief.qualificationSignals)}</dd>
+                </div>
+              </dl>
+              {brief.warnings.length > 0 && <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-5 text-amber-200">{brief.warnings.join(" ")}</p>}
+              <button className="ide-btn ide-btn-primary mt-5 inline-flex w-full items-center justify-center gap-2 px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={createJob} disabled={submitting || !canRun}>
+                {submitting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {submitting ? "Creating job..." : "Run this search"}
+              </button>
+            </div>
+          )}
+
+          <div className="ide-panel p-4">
+            <button className="text-sm font-semibold text-vercel-muted transition hover:text-vercel-text" type="button" onClick={() => setShowAdvanced((value) => !value)}>
+              {showAdvanced ? "Hide manual controls" : "Manual controls"}
+            </button>
+            {showAdvanced && (
+              <div className="mt-4 grid grid-cols-1 gap-3">
+                <select className="ide-input px-3 py-2 text-sm" value={market} onChange={(event) => setMarket(event.target.value)}>
+                  {[...regions, "International"].map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+                <select className="ide-input px-3 py-2 text-sm" value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
+                  {exportFormats.map((item) => (
+                    <option key={item.id} value={item.id}>{item.label}</option>
+                  ))}
+                </select>
+                <label className="flex flex-col gap-2 text-sm text-vercel-text">
+                  Minimum score: {minScore}
+                  <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} />
+                </label>
+                <label className="flex items-center gap-3 text-sm text-vercel-text">
+                  <input type="checkbox" checked={allowWeakBuyerEvidence} onChange={(event) => setAllowWeakBuyerEvidence(event.target.checked)} />
+                  Allow exploratory evidence
+                </label>
+                <label className="flex items-center gap-3 text-sm text-vercel-text">
+                  <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} />
+                  Allow form/LinkedIn leads
+                </label>
+                <input className="ide-input px-3 py-2 text-sm" value={adminBypassCode} onChange={(event) => setAdminBypassCode(event.target.value)} placeholder="Admin bypass code" />
+              </div>
+            )}
+          </div>
+
+          {message && <div className="ide-panel p-4 text-sm text-vercel-text">{message}</div>}
+        </aside>
+      </div>
+    </div>
+  );
+}
+    </aside>
+      </div>
+    </div>
+  );
+}
+v>
+  );
+}

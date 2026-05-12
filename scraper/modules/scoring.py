@@ -2,6 +2,21 @@ import re
 
 
 class LeadScoring:
+    WEAK_CONTEXT_BUYER_TERMS = {
+        "book",
+        "contact",
+        "email",
+        "partner",
+        "portal",
+        "portals",
+        "pricing",
+        "quote",
+        "services",
+        "solutions",
+        "supplier",
+        "vendor",
+    }
+
     def __init__(self, require_email=True, require_buyer_evidence=True, scoring_context=None, industry=None, config=None):
         self.require_email = require_email
         self.require_buyer_evidence = require_buyer_evidence
@@ -239,6 +254,11 @@ class LeadScoring:
             "publication",
         }
         self.quality_mode = str(scoring_context.get("quality_mode", "balanced")).strip().lower() or "balanced"
+        delivery_rules = scoring_cfg.get("delivery_rules", {}) if isinstance(scoring_cfg, dict) else {}
+        self.allow_contact_form_without_email = bool(delivery_rules.get("allow_contact_form_without_email", False))
+        self.soften_platform_penalty_for_direct_buyers = bool(
+            delivery_rules.get("soften_platform_penalty_for_direct_buyers", False)
+        )
         if self.config:
             self._apply_config_keywords(scoring_cfg)
         self._apply_scoring_context(scoring_context)
@@ -277,13 +297,22 @@ class LeadScoring:
                 terms.append(text)
         return terms
 
+    @classmethod
+    def _filter_context_buyer_keywords(cls, keywords):
+        return [
+            keyword
+            for keyword in keywords
+            if keyword not in cls.WEAK_CONTEXT_BUYER_TERMS
+        ]
+
     def _apply_config_keywords(self, scoring_cfg):
         """Load keyword lists and scoring parameters from specialist config."""
         kw = scoring_cfg.get("keywords", {})
         if kw.get("product_keywords"):
             self.product_keywords = list(dict.fromkeys(kw["product_keywords"] + self.product_keywords))
         if kw.get("strong_buyer_keywords"):
-            self.strong_buyer_keywords = list(dict.fromkeys(kw["strong_buyer_keywords"] + self.strong_buyer_keywords))
+            strong_keywords = self._filter_context_buyer_keywords(kw["strong_buyer_keywords"])
+            self.strong_buyer_keywords = list(dict.fromkeys(strong_keywords + self.strong_buyer_keywords))
         if kw.get("ambiguous_sales_keywords"):
             self.ambiguous_sales_keywords = list(dict.fromkeys(kw["ambiguous_sales_keywords"] + self.ambiguous_sales_keywords))
         if kw.get("moderate_buyer_keywords"):
@@ -325,7 +354,9 @@ class LeadScoring:
 
     def _apply_scoring_context(self, scoring_context):
         product_keywords = self._normalize_keywords(scoring_context.get("product_keywords", []))
-        buyer_keywords = self._normalize_keywords(scoring_context.get("buyer_keywords", []))
+        buyer_keywords = self._filter_context_buyer_keywords(
+            self._normalize_keywords(scoring_context.get("buyer_keywords", []))
+        )
         negative_keywords = self._normalize_keywords(scoring_context.get("negative_keywords", []))
         blocked_domains = self._normalize_terms(scoring_context.get("blocked_domains", []))
         blocked_host_markers = self._normalize_terms(scoring_context.get("blocked_host_markers", []))
@@ -601,7 +632,13 @@ class LeadScoring:
             reach_score = min(self.weights["reachability"], reach_score + 2)
             reasons.append("LinkedIn profile found")
 
-        if self.require_email and not emails:
+        form_only_buyer_route = (
+            self.allow_contact_form_without_email
+            and bool(contact_forms)
+            and has_buyer_evidence
+            and not noisy_domain_hits
+        )
+        if self.require_email and not emails and not form_only_buyer_route:
             disqualification_reasons.append("no usable candidate-owned email")
 
         if len(commercial_hits) >= 3 and socials:
@@ -657,8 +694,11 @@ class LeadScoring:
             soft_multiplier = 1 if self.quality_mode == "balanced_growth" else 2
             penalty += min(len(soft_negative_hits) * soft_multiplier, 8)
         if platform_hits:
-            penalty += 20
-            disqualification_reasons.append("platform/marketplace/directory, not a direct buyer")
+            if self.soften_platform_penalty_for_direct_buyers and has_buyer_evidence and product_hits:
+                penalty += 8
+            else:
+                penalty += 20
+                disqualification_reasons.append("platform/marketplace/directory, not a direct buyer")
         if supplier_competitor_hits and not procurement_side_hits:
             penalty += 25
             disqualification_reasons.append("manufacturer/supplier competitor signal without buyer-side procurement evidence")

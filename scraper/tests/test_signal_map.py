@@ -1,6 +1,9 @@
 import os
 import sys
 import unittest
+from pathlib import Path
+
+import yaml
 
 
 SCRAPER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -32,6 +35,22 @@ class SignalMapTests(unittest.TestCase):
         self.assertIn("expansion", context["buyer_keywords"])
         self.assertIn("github.com", context["blocked_domains"])
         self.assertIn(".edu", context["blocked_tlds"])
+
+    def test_textile_config_signal_queries_use_product_base(self):
+        config_path = Path(SCRAPER_DIR) / "configs" / "textile-apparel.yml"
+        with config_path.open("r", encoding="utf-8") as handle:
+            config = yaml.safe_load(handle)
+
+        signal_map = build_signal_map(
+            region="USA",
+            industry="textile apparel denim importers",
+            search_terms=["denim importers"],
+            config=config,
+        )
+
+        first_queries = signal_map["signals"][0]["queries"]
+        self.assertIn('denim brand "our story" "United States"', first_queries)
+        self.assertFalse(any("textile apparel denim importers" in query for query in first_queries))
 
 
 if __name__ == "__main__":

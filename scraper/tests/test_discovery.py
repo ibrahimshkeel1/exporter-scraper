@@ -78,6 +78,185 @@ class LeadDiscoveryTests(unittest.TestCase):
         self.assertTrue(any(source.name.startswith("duckduckgo-p1-") for source in sources))
         self.assertTrue(any(source.name.startswith("yahoo-p1-") for source in sources))
 
+    def test_search_source_pages_prioritize_bing_then_yahoo_then_duckduckgo(self):
+        sources = self.discovery._search_source_pages(
+            "textile importer",
+            "textile-importer",
+            page_depth=1,
+            yahoo_depth=1,
+            search_engines=["duckduckgo", "bing", "yahoo"],
+        )
+        self.assertEqual(
+            [source.name for source in sources],
+            [
+                "bing-p1-textile-importer",
+                "yahoo-p1-textile-importer",
+                "duckduckgo-p1-textile-importer",
+            ],
+        )
+
+    def test_config_can_disable_duckduckgo_search_sources(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            config={
+                "discovery": {
+                    "search_engines": ["bing", "yahoo"],
+                    "search_queries": ['{base} importer "{market}"'],
+                }
+            },
+        )
+        sources = discovery._search_sources("USA", "denim")
+        names = [source.name for source in sources]
+
+        self.assertTrue(any(name.startswith("bing-p1-") for name in names))
+        self.assertTrue(any(name.startswith("yahoo-p1-") for name in names))
+        self.assertFalse(any(name.startswith("duckduckgo-p1-") for name in names))
+
+    def test_config_search_terms_are_prioritized_before_templates(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            search_terms=["jeans private label brand"],
+            config={
+                "discovery": {
+                    "search_queries": ['{base} vendor portal "{market}"'],
+                    "noise_exclusion_suffixes": ["-dictionary"],
+                    "supplier_country_exclusions": ["-Pakistan"],
+                }
+            },
+        )
+        queries = discovery._buyer_search_queries("USA", "denim")
+
+        self.assertTrue(queries[0].startswith('jeans private label brand "United States"'))
+        self.assertIn("contact email", queries[0])
+        self.assertIn("-Pakistan", queries[0])
+        self.assertIn("denim vendor portal", queries[1])
+
+    def test_config_search_term_templates_override_raw_contact_queries(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            search_terms=["denim importers"],
+            config={
+                "discovery": {
+                    "search_term_query_templates": ['{base} brand "our story" "{market}"'],
+                    "search_queries": ['{base} vendor portal "{market}"'],
+                    "noise_exclusion_suffixes": ["-dictionary"],
+                    "supplier_country_exclusions": ["-Pakistan"],
+                }
+            },
+        )
+        queries = discovery._buyer_search_queries("USA", "denim")
+
+        self.assertEqual(
+            queries[0],
+            'denim brand "our story" "United States" -Pakistan -dictionary',
+        )
+        self.assertNotIn("contact email", queries[0])
+        self.assertIn("denim vendor portal", queries[1])
+
+    def test_config_search_engine_runtime_overrides_defaults(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            config={
+                "discovery": {
+                    "search_engines": ["bing"],
+                    "search_engine_runtime": {
+                        "bing": {
+                            "max_requests": 16,
+                            "min_delay_seconds": 9,
+                            "cooldown_seconds": 75,
+                            "failure_threshold": 3,
+                        }
+                    },
+                }
+            },
+        )
+        policy = discovery._engine_runtime_policy("bing")
+        state = discovery._build_engine_runtime_state()
+
+        self.assertEqual(policy["max_requests"], 16)
+        self.assertEqual(policy["min_delay_seconds"], 9)
+        self.assertEqual(policy["cooldown_seconds"], 75)
+        self.assertEqual(policy["failure_threshold"], 3)
+        self.assertEqual(list(state.keys()), ["bing"])
+
+    def test_config_search_directory_sources_expand_to_urls(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            config={
+                "discovery": {
+                    "directory_sources": {
+                        "usa": [
+                            {
+                                "type": "yellow_pages",
+                                "search": "importers",
+                                "description": "Yellow Pages",
+                            }
+                        ]
+                    }
+                }
+            },
+        )
+        sources = discovery._generate_sources_from_config("USA", "denim")
+
+        self.assertEqual(len(sources), 1)
+        self.assertIn("yellowpages.com/search", sources[0].url)
+        self.assertIn("denim+importers", sources[0].url)
+
+    def test_config_can_disable_seed_url_sources(self):
+        discovery = LeadDiscovery(
+            limit=10,
+            config={
+                "discovery": {
+                    "seed_urls_enabled": False,
+                    "seed_urls": {
+                        "usa": {
+                            "buyer_intent": ["https://example.com/suppliers"],
+                        }
+                    },
+                    "directory_sources": {
+                        "usa": [
+                            {
+                                "type": "thomasnet",
+                                "url": "https://www.thomasnet.com/search.html?what={base_query}",
+                                "selectors": ["a[href*='/profile/']"],
+                            }
+                        ]
+                    },
+                }
+            },
+        )
+        sources = discovery._generate_sources_from_config("USA", "denim")
+
+        self.assertEqual(len(sources), 1)
+        self.assertTrue(sources[0].name.startswith("thomasnet-usa"))
+        self.assertFalse(any(source.name.startswith("seed-") for source in sources))
+
+    def test_directory_profile_candidates_keep_profile_url_for_resolution(self):
+        source = DiscoverySource(
+            name="kompass",
+            url="https://www.kompass.com/search",
+            selectors=("a[href]",),
+            include_directory_links=True,
+            discovery_method="directory",
+            candidate_kind="directory_profile",
+        )
+        first = self.discovery._candidate_from_url(
+            "https://www.kompass.com/c/acme/us123/",
+            source,
+            "USA",
+            "denim",
+        )
+        second = self.discovery._candidate_from_url(
+            "https://www.kompass.com/c/bravo/us456/",
+            source,
+            "USA",
+            "denim",
+        )
+
+        self.assertEqual(first["url"], "https://www.kompass.com/c/acme/us123/")
+        self.assertTrue(first["needs_website_resolution"])
+        self.assertIsNotNone(second)
+
     def test_seed_urls_are_source_specific(self):
         buyer_intent_urls = self.discovery.seed_urls("USA", "seed-usa-buyer-intent-pages")
         generic_urls = self.discovery.seed_urls("USA", "seed-usa-apparel-buyers")
@@ -166,6 +345,28 @@ class LeadDiscoveryTests(unittest.TestCase):
         names = [source.name for source in sources]
         self.assertIn("signal-seed-fit-out-rfp", names)
         self.assertTrue(any(name.startswith("signal-bing-p1-fit-out-rfp") for name in names))
+
+    def test_signal_search_sources_respect_configured_engines(self):
+        signal_map = {
+            "signals": [
+                {
+                    "signal": "buyer-intent",
+                    "confidence": 0.9,
+                    "queries": ["denim importer USA"],
+                }
+            ]
+        }
+        discovery = LeadDiscovery(
+            limit=10,
+            signal_map=signal_map,
+            config={"discovery": {"search_engines": ["bing", "yahoo"]}},
+        )
+        sources = discovery._signal_search_sources("USA", "denim")
+        names = [source.name for source in sources]
+
+        self.assertTrue(any(name.startswith("signal-bing-p1-buyer-intent") for name in names))
+        self.assertTrue(any(name.startswith("signal-yahoo-p1-buyer-intent") for name in names))
+        self.assertFalse(any(name.startswith("signal-duckduckgo-p1-buyer-intent") for name in names))
 
     def test_signal_fields_are_carried_to_candidates(self):
         signaled_source = DiscoverySource(

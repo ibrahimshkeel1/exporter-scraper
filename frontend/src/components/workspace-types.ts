@@ -35,6 +35,7 @@ export type WorkspaceArtifact = {
   content?: string;
   externalUrl?: string;
   meta?: string;
+  sessionJobId?: string;
   download?: WorkspaceArtifactDownload;
   preview?: WorkspaceArtifactPreview;
 };

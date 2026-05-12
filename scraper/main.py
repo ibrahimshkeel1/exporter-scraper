@@ -295,9 +295,47 @@ def _append_unique_backfill(selected, ranked_pool, limit, stage, predicate):
     return added
 
 
-def build_lead_pack(scoring, scored_candidates, limit, min_score, fill_until_complete=False):
+def _lead_pack_backfill_mode(config):
+    if not isinstance(config, dict):
+        return "legacy"
+    selection = config.get("lead_pack_selection", {})
+    if isinstance(selection, dict):
+        mode = str(selection.get("backfill_mode", "")).strip().lower()
+        if mode in {"legacy", "conservative", "strict"}:
+            return mode
+    return "legacy"
+
+
+def _configured_delivery_min_score(requested_min_score, config):
+    try:
+        requested = int(requested_min_score)
+    except (TypeError, ValueError):
+        requested = 75
+    if not isinstance(config, dict):
+        return requested
+    try:
+        configured = int(config.get("scoring", {}).get("tiers", {}).get("a", {}).get("min_score"))
+    except (TypeError, ValueError):
+        return requested
+    if configured <= 0:
+        return requested
+    return min(requested, configured)
+
+
+def build_lead_pack(
+    scoring,
+    scored_candidates,
+    limit,
+    min_score,
+    fill_until_complete=False,
+    backfill_mode="legacy",
+):
     if not scored_candidates:
         return [], min_score, []
+
+    backfill_mode = str(backfill_mode or "legacy").strip().lower()
+    if backfill_mode not in {"legacy", "conservative", "strict"}:
+        backfill_mode = "legacy"
 
     ranked_pool = sorted(scored_candidates, key=_candidate_rank_key, reverse=True)
     selected = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
@@ -320,7 +358,12 @@ def build_lead_pack(scoring, scored_candidates, limit, min_score, fill_until_com
             if len(selected) >= limit:
                 break
 
-    if len(selected) < limit:
+    if backfill_mode == "strict":
+        return selected[:limit], effective_min_score, stage_events
+
+    allow_backfill = fill_until_complete or backfill_mode == "legacy"
+
+    if allow_backfill and len(selected) < limit:
         soft_floor = max(30, effective_min_score - 20)
         added = _append_unique_backfill(
             selected=selected,
@@ -336,7 +379,10 @@ def build_lead_pack(scoring, scored_candidates, limit, min_score, fill_until_com
         if added:
             stage_events.append(("hard_check_backfill", soft_floor, len(selected)))
 
-    if len(selected) < limit:
+    if backfill_mode == "conservative":
+        return selected[:limit], effective_min_score, stage_events
+
+    if allow_backfill and len(selected) < limit:
         exploratory_floor = max(20, effective_min_score - 35)
         added = _append_unique_backfill(
             selected=selected,
@@ -352,7 +398,7 @@ def build_lead_pack(scoring, scored_candidates, limit, min_score, fill_until_com
         if added:
             stage_events.append(("exploratory_backfill", exploratory_floor, len(selected)))
 
-    if len(selected) < limit:
+    if allow_backfill and len(selected) < limit:
         added = _append_unique_backfill(
             selected=selected,
             ranked_pool=ranked_pool,
@@ -589,8 +635,8 @@ def partition_discovery_sources(sources):
     groups = {
         "main": [],
         "bing": [],
-        "duckduckgo": [],
         "yahoo": [],
+        "duckduckgo": [],
     }
     for source in sources:
         engine = (getattr(source, "search_engine", "") or "").strip().lower()
@@ -787,6 +833,8 @@ async def run_scraper(
 
     # Resolve specialist config
     config_slug, scraper_config = _resolve_scraper_config(industry, region, job_config)
+    backfill_mode = _lead_pack_backfill_mode(scraper_config)
+    delivery_min_score = _configured_delivery_min_score(min_score, scraper_config)
 
     discovery_limit = compute_discovery_limit(
         limit=limit,
@@ -794,7 +842,7 @@ async def run_scraper(
         max_analyzed=max_analyzed,
     )
     run_id = f"run-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8]}"
-    effective_min_score = min_score
+    effective_min_score = delivery_min_score
 
     candidates = []
     enriched_candidates = []
@@ -980,7 +1028,7 @@ async def run_scraper(
             async with state_lock:
                 enriched_candidates.append(enriched)
                 scored_candidates.append(scored)
-                ranked = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=min_score)
+                ranked = scoring.rank_and_filter(scored_candidates, limit=limit, min_score=delivery_min_score)
                 top_leads.clear()
                 top_leads.extend(ranked)
                 analyzed_count = len(scored_candidates)
@@ -999,7 +1047,7 @@ async def run_scraper(
                 analyzed_count=analyzed_count,
                 qualified_count=qualified_count,
                 target_count=limit,
-                min_score=min_score,
+                min_score=delivery_min_score,
             )
 
             if hit_target:
@@ -1173,8 +1221,9 @@ async def run_scraper(
         scoring=scoring,
         scored_candidates=scored_candidates,
         limit=limit,
-        min_score=min_score,
+        min_score=delivery_min_score,
         fill_until_complete=fill_until_complete,
+        backfill_mode=backfill_mode,
     )
     for stage_name, stage_floor, lead_count in pack_stage_events:
         if stage_name == "strict":
@@ -1643,6 +1692,8 @@ async def run_scraper_adaptive(
         ) from exc
 
     config_slug, scraper_config = _resolve_scraper_config(industry, region, job_config)
+    backfill_mode = _lead_pack_backfill_mode(scraper_config)
+    delivery_min_score = _configured_delivery_min_score(min_score, scraper_config)
 
     discovery_limit = compute_discovery_limit(
         limit=limit,
@@ -1699,7 +1750,7 @@ async def run_scraper_adaptive(
         enrichment_browser = await p.chromium.launch(headless=True)
         enrichment_ctx = await enrichment_browser.new_context(user_agent=user_agent)
 
-        current_min_score = min_score
+        current_min_score = delivery_min_score
 
         # FUTURE: bailout threshold — if Phase 1 produces >500 raw candidates but
         # the first ~100 score below 40 on average, the discovery pool is likely
@@ -1854,6 +1905,7 @@ async def run_scraper_adaptive(
                 limit=limit,
                 min_score=current_min_score,
                 fill_until_complete=False,
+                backfill_mode=backfill_mode,
             )
 
             diagnostics.finish_phase(
@@ -1971,8 +2023,9 @@ async def run_scraper_adaptive(
         scoring=scoring,
         scored_candidates=all_scored_candidates,
         limit=limit,
-        min_score=min_score,
+        min_score=delivery_min_score,
         fill_until_complete=fill_until_complete,
+        backfill_mode=backfill_mode,
     )
     for stage_name, stage_floor, lead_count in pack_stages:
         if stage_name == "strict":

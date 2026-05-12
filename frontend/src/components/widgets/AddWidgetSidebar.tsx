@@ -32,29 +32,29 @@ export function AddWidgetSidebar({ open, onClose, onAdd, existingTypes }: AddWid
         open ? "w-72" : "w-0"
       }`}
     >
-      <div className="flex h-full w-72 flex-col border-l border-[#30363d] bg-[#010409]">
-        <div className="flex items-center justify-between border-b border-[#30363d] px-3 py-2">
+      <div className="flex h-full w-72 flex-col border-l border-[#3c3c3c] bg-[#252526]">
+        <div className="flex items-center justify-between border-b border-[#3c3c3c] px-3 py-2">
           <span className="text-xs font-semibold uppercase tracking-[0.14em] text-vercel-text">
             Widget Catalog
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="text-[#8b949e] hover:text-[#00ffff]"
+            className="text-[#858585] hover:text-[#569cd6]"
           >
             <X size={14} />
           </button>
         </div>
 
         <div className="px-3 py-2">
-          <div className="flex items-center gap-2 border border-[#30363d] bg-[#0d1117] px-2 py-1.5">
-            <Search size={12} className="text-[#8b949e]" />
+          <div className="flex items-center gap-2 border border-[#3c3c3c] bg-[#1e1e1e] px-2 py-1.5">
+            <Search size={12} className="text-[#858585]" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search widgets..."
-              className="flex-1 bg-transparent text-[11px] text-vercel-text placeholder:text-[#8b949e] outline-none"
+              className="flex-1 bg-transparent text-[11px] text-vercel-text placeholder:text-[#858585] outline-none"
             />
           </div>
         </div>
@@ -75,10 +75,10 @@ export function AddWidgetSidebar({ open, onClose, onAdd, existingTypes }: AddWid
                   onAdd(widget.type);
                   setQuery("");
                 }}
-                className="flex w-full items-start gap-2.5 border border-[#30363d] bg-[#0d1117] p-2.5 text-left transition-colors hover:border-[#00ffff] hover:bg-[#161b22]"
+                className="flex w-full items-start gap-2.5 border border-[#3c3c3c] bg-[#1e1e1e] p-2.5 text-left transition-colors hover:border-[#569cd6] hover:bg-[#252526]"
               >
-                <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center border border-[#30363d] bg-[#161b22]">
-                  <Icon size={14} className="text-[#8b949e]" />
+                <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center border border-[#3c3c3c] bg-[#252526]">
+                  <Icon size={14} className="text-[#858585]" />
                 </div>
                 <div className="min-w-0">
                   <div className="text-[11px] font-medium text-vercel-text">{widget.title}</div>
@@ -86,7 +86,7 @@ export function AddWidgetSidebar({ open, onClose, onAdd, existingTypes }: AddWid
                     {widget.description}
                   </div>
                 </div>
-                <Plus size={12} className="ml-auto mt-0.5 flex-shrink-0 text-[#8b949e]" />
+                <Plus size={12} className="ml-auto mt-0.5 flex-shrink-0 text-[#858585]" />
               </button>
             );
           })}

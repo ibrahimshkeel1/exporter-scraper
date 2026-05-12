@@ -5,10 +5,10 @@ import { LayoutDashboard, Mail, Search, Shield } from "lucide-react";
 import { DashboardSnapshot } from "./dashboard-data";
 
 const ACTIONS = [
-  { label: "New Lead Search", href: "/search", icon: Search, color: "text-[#00ffff]", border: "border-[#00ffff]" },
-  { label: "New Outreach", href: "/outreach", icon: Mail, color: "text-[#00ff00]", border: "border-[#00ff00]" },
+  { label: "New Lead Search", href: "/search", icon: Search, color: "text-[#569cd6]", border: "border-[#569cd6]" },
+  { label: "New Outreach", href: "/outreach", icon: Mail, color: "text-[#6a9955]", border: "border-[#6a9955]" },
   { label: "Admin Console", href: "/admin", icon: Shield, color: "text-[#ff6b6b]", border: "border-[#ff6b6b]" },
-  { label: "View All Jobs", href: "/search", icon: LayoutDashboard, color: "text-vercel-text", border: "border-[#30363d]" },
+  { label: "View All Jobs", href: "/search", icon: LayoutDashboard, color: "text-vercel-text", border: "border-[#3c3c3c]" },
 ];
 
 type QuickActionsWidgetProps = {
@@ -25,7 +25,7 @@ export function QuickActionsWidget(_props: QuickActionsWidgetProps) {
             <Link
               key={action.label}
               href={action.href}
-              className={`flex flex-col items-center justify-center gap-1.5 border ${action.border} bg-[#0d1117] p-3 transition-colors hover:bg-[#161b22]`}
+              className={`flex flex-col items-center justify-center gap-1.5 border ${action.border} bg-[#1e1e1e] p-3 transition-colors hover:bg-[#252526]`}
             >
               <Icon size={16} className={action.color} />
               <span className={`text-[10px] font-medium uppercase tracking-wider ${action.color}`}>

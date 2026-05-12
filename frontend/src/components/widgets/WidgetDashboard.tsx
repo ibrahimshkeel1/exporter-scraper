@@ -397,19 +397,19 @@ export function WidgetDashboard() {
   return (
     <div className="flex h-full w-full min-w-0 flex-1 flex-col overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
+      <div className="flex items-center justify-between border-b border-[#3c3c3c] bg-[#252526] px-3 py-2">
         <div className="flex items-center gap-2">
-          <LayoutGrid size={14} className="text-[#8b949e]" />
+          <LayoutGrid size={14} className="text-[#858585]" />
           <span className="text-xs font-semibold uppercase tracking-[0.14em] text-vercel-text">
             Dashboard Hub
           </span>
           {message && (
-            <span className="ml-2 text-[10px] text-[#00ff00]">{message}</span>
+            <span className="ml-2 text-[10px] text-[#6a9955]">{message}</span>
           )}
           {snapshot.error && <span className="ml-2 text-[10px] text-[#ff6b6b]">{snapshot.error}</span>}
-          {!snapshot.error && snapshot.loading && <span className="ml-2 text-[10px] text-[#8b949e]">Refreshing data...</span>}
+          {!snapshot.error && snapshot.loading && <span className="ml-2 text-[10px] text-[#858585]">Refreshing data...</span>}
           {!snapshot.error && snapshot.refreshedAt && (
-            <span className="ml-2 text-[10px] text-[#8b949e]">
+            <span className="ml-2 text-[10px] text-[#858585]">
               Data {new Date(snapshot.refreshedAt).toLocaleTimeString()}
             </span>
           )}
@@ -441,8 +441,8 @@ export function WidgetDashboard() {
             disabled={saving}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium border transition-colors ${
               editMode
-                ? "border-[#00ff00] text-[#00ff00] hover:bg-[#0f1a0f]"
-                : "border-[#30363d] text-vercel-text hover:border-[#00ffff] hover:text-[#00ffff]"
+                ? "border-[#6a9955] text-[#6a9955] hover:bg-[#0f1a0f]"
+                : "border-[#3c3c3c] text-vercel-text hover:border-[#569cd6] hover:text-[#569cd6]"
             }`}
           >
             {editMode ? <Save size={12} /> : <Edit3 size={12} />}
@@ -460,7 +460,7 @@ export function WidgetDashboard() {
             </div>
           ) : activeWidgets.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-vercel-muted">
-              <LayoutGrid size={32} className="text-[#30363d]" />
+              <LayoutGrid size={32} className="text-[#3c3c3c]" />
               <p className="text-sm">Your dashboard is empty.</p>
               <button
                 type="button"

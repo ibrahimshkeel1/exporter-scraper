@@ -1,0 +1,276 @@
+@import "tailwindcss";
+
+@theme {
+  --color-vercel-bg: #1e1e1e;
+  --color-vercel-panel: #252526;
+  --color-vercel-border: #3c3c3c;
+  --color-vercel-text: #d4d4d4;
+  --color-vercel-muted: #858585;
+  --color-vercel-accent: #007acc;
+  --color-vercel-accent-hover: #1f8ad6;
+  --color-vercel-success: #6a9955;
+  --color-vercel-error: #f14c4c;
+  --color-matrix-green: #6a9955;
+  --color-matrix-cyan: #569cd6;
+  --color-ide-black: #1e1e1e;
+
+  --font-sans: var(--font-geist-sans), "Geist Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-mono: var(--font-geist-mono), "Geist Mono", "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+:root {
+  background-color: var(--color-vercel-bg);
+  color: var(--color-vercel-text);
+}
+
+body {
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  background: var(--color-vercel-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
+*:focus-visible {
+  outline: 1px solid var(--color-matrix-cyan);
+  outline-offset: 0;
+}
+
+.ide-panel {
+  border: 1px solid var(--color-vercel-border);
+  background: var(--color-vercel-panel);
+  border-radius: 0;
+}
+
+.ide-terminal {
+  border: 1px solid var(--color-vercel-border);
+  background: #1e1e1e;
+  border-radius: 0;
+}
+
+.ide-btn {
+  border: 1px solid var(--color-vercel-border);
+  background: transparent;
+  color: var(--color-vercel-text);
+  border-radius: 0;
+  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.ide-btn:hover {
+  background: #2d2d2d;
+  border-color: var(--color-matrix-cyan);
+  color: #ffffff;
+}
+
+.ide-btn-primary {
+  border: 1px solid var(--color-matrix-cyan);
+  background: #0e293f;
+  color: var(--color-matrix-cyan);
+}
+
+.ide-btn-primary:hover {
+  background: #153c5c;
+  color: #ffffff;
+}
+
+.ide-input {
+  border: 1px solid var(--color-vercel-border);
+  background: var(--color-ide-black);
+  color: var(--color-vercel-text);
+  border-radius: 0;
+}
+
+.ide-input:focus {
+  outline: none;
+  border-color: var(--color-matrix-cyan);
+  box-shadow: inset 0 0 0 1px var(--color-matrix-cyan);
+}
+
+.ide-status {
+  border: 1px solid var(--color-vercel-border);
+  background: var(--color-vercel-panel);
+  color: var(--color-vercel-text);
+  padding: 0.1rem 0.45rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+
+/* react-resizable-panels custom styles */
+[data-panel-resize-handle-id] {
+  z-index: 10;
+}
+
+[data-panel-resize-handle-state="drag"] {
+  z-index: 20;
+}
+
+/* Ensure panels don't overflow */
+[data-panel] {
+  overflow: hidden;
+}
+
+.ide-panel-handle {
+  position: relative;
+  background: #252526;
+  transition: background-color 120ms ease;
+}
+
+.ide-panel-handle:hover {
+  background: #333333;
+}
+
+.ide-panel-handle[data-panel-resize-handle-state="drag"],
+.ide-panel-handle[data-resize-handle-state="drag"] {
+  background: var(--color-vercel-accent);
+}
+
+.ide-panel-handle-x {
+  width: 4px;
+  cursor: col-resize;
+}
+
+.ide-panel-handle-y {
+  height: 4px;
+  cursor: row-resize;
+}
+
+/* react-grid-layout VS Code aesthetic overrides */
+.react-grid-layout {
+  position: relative;
+}
+
+.react-grid-item {
+  transition: all 200ms ease;
+  transition-property: left, top;
+}
+
+.react-grid-item.cssTransforms {
+  transition-property: transform;
+}
+
+.react-grid-item.resizing {
+  z-index: 100;
+  box-shadow: 0 0 0 1px var(--color-matrix-cyan), 0 0 20px rgba(86, 156, 214, 0.15);
+}
+
+.react-grid-item.react-grid-placeholder {
+  background: rgba(86, 156, 214, 0.08) !important;
+  border: 1px dashed var(--color-matrix-cyan) !important;
+  opacity: 1 !important;
+}
+
+.react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+  z-index: 10;
+}
+
+.react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--color-vercel-border);
+  border-bottom: 2px solid var(--color-vercel-border);
+  transition: border-color 120ms ease;
+}
+
+.react-grid-item:hover .react-resizable-handle::after {
+  border-right-color: var(--color-matrix-cyan);
+  border-bottom-color: var(--color-matrix-cyan);
+}
+
+.react-grid-item > .react-resizable-handle.react-resizable-handle-se {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+
+/* Hide resize handle when not in edit mode */
+.react-grid-item:not(.static) .react-resizable-handle {
+  display: block;
+}
+
+.react-grid-item.static .react-resizable-handle {
+  display: none;
+}
+
+/* ========== VS Code Style Custom Scrollbars ========== */
+
+/* WebKit / Blink (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #424242;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 0;
+  min-height: 40px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4f4f4f;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #569cd6;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #424242 transparent;
+}
+
+/* Scrollbar inside widget panels - slightly more subtle */
+.ide-panel ::-webkit-scrollbar,
+.ide-terminal ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ide-panel ::-webkit-scrollbar-thumb,
+.ide-terminal ::-webkit-scrollbar-thumb {
+  background: #424242;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.ide-panel ::-webkit-scrollbar-thumb:hover,
+.ide-terminal ::-webkit-scrollbar-thumb:hover {
+  background: #4f4f4f;
+}
+
+.ide-panel ::-webkit-scrollbar-thumb:active,
+.ide-terminal ::-webkit-scrollbar-thumb:active {
+  background: #569cd6;
+}

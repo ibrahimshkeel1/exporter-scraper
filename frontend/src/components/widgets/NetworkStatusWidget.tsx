@@ -8,13 +8,13 @@ type NetworkStatusWidgetProps = {
 };
 
 function statusTone(status: "online" | "degraded" | "offline") {
-  if (status === "online") return "bg-[#00ff00]";
+  if (status === "online") return "bg-[#6a9955]";
   if (status === "degraded") return "bg-[#ff9f43]";
   return "bg-[#ff6b6b]";
 }
 
 function latencyTone(latency: number) {
-  if (latency < 100) return "text-[#00ff00]";
+  if (latency < 100) return "text-[#6a9955]";
   if (latency < 220) return "text-[#ff9f43]";
   return "text-[#ff6b6b]";
 }
@@ -65,7 +65,7 @@ export function NetworkStatusWidget({ snapshot }: NetworkStatusWidgetProps) {
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-1">
       <div className="flex items-center gap-2">
-        <Globe size={12} className="text-[#00ffff]" />
+        <Globe size={12} className="text-[#569cd6]" />
         <span className="text-[11px] text-vercel-muted">
           {nodes.filter((node) => node.status === "online").length}/{nodes.length} nodes healthy
         </span>
@@ -76,11 +76,11 @@ export function NetworkStatusWidget({ snapshot }: NetworkStatusWidgetProps) {
         {nodes.map((node) => (
           <div
             key={node.id}
-            className="flex items-center justify-between border border-[#30363d] bg-[#0d1117] px-2 py-1.5"
+            className="flex items-center justify-between border border-[#3c3c3c] bg-[#1e1e1e] px-2 py-1.5"
           >
             <div className="flex items-center gap-2">
               <span className={`h-1.5 w-1.5 ${statusTone(node.status)}`} />
-              <Server size={10} className="text-[#8b949e]" />
+              <Server size={10} className="text-[#858585]" />
               <span className="text-[11px] text-vercel-text">{node.name}</span>
               <span className="text-[9px] text-vercel-muted">{node.region}</span>
             </div>

@@ -114,7 +114,7 @@ export function PaymentProofUpload({ jobId, amountUsd, onUploaded }: PaymentProo
           placeholder="Optional"
         />
       </div>
-      <button className="inline-flex w-fit items-center justify-center gap-2 bg-transparent border border-vercel-border text-vercel-text hover:bg-[#222] rounded-md px-3 py-1.5 text-sm font-medium transition-colors" type="submit" disabled={loading}>
+      <button className="inline-flex w-fit items-center justify-center gap-2 bg-transparent border border-vercel-border text-vercel-text hover:bg-[#333333] rounded-md px-3 py-1.5 text-sm font-medium transition-colors" type="submit" disabled={loading}>
         <Upload size={14} aria-hidden="true" />
         {loading ? "Uploading" : `Submit proof for $${amountUsd}`}
       </button>

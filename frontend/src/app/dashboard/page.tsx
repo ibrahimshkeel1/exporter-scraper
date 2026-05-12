@@ -17,6 +17,7 @@ export default function DashboardPage() {
       activeTerminalJobId={workspace.terminalJobId}
       explorerContext={workspace.explorerContext}
       activeSessionOpenToken={workspace.sessionOpenToken}
+      onSelectSession={(jobId) => workspace.selectJob(jobId, true)}
       terminalSummary={workspace.terminalSummary}
       mainEditor={<WidgetDashboard />}
       jobsPanel={<JobTable refreshSignal={0} compact showFilesPane={false} {...workspace.jobTableProps} />}
@@ -24,7 +25,7 @@ export default function DashboardPage() {
         workspace.terminalJobId ? (
           <DualLiveTerminal jobId={workspace.terminalJobId} initialEvents={workspace.terminalEvents} />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs text-[#8b949e]">
+          <div className="flex h-full w-full items-center justify-center text-xs text-[#858585]">
             Select a recent job to inspect saved and live logs.
           </div>
         )

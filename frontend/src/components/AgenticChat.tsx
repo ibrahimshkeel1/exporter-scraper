@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Check, Copy, Download, Loader2, Mail, Send, Sparkles, Terminal } from "lucide-react";
 import { leadPacks } from "../lib/pricing";
 import { createBrowserSupabase, isSupabaseConfigured } from "../lib/supabase-client";
@@ -55,6 +55,7 @@ const initialMessages: AgenticMessage[] = [
 ];
 
 type HistoricalJobEvent = {
+  id?: string;
   status?: string;
   message?: string;
   created_at?: string;
@@ -122,6 +123,20 @@ function workerLogFromJobEvent(event: HistoricalJobEvent): WorkerLog | null {
   };
 }
 
+function historicalEventKey(event: HistoricalJobEvent, entry: WorkerLog) {
+  return event.id || [
+    event.created_at || "",
+    entry.source,
+    entry.status,
+    entry.lane || "",
+    entry.engine || "",
+    entry.reason || "",
+    entry.proxyBefore || "",
+    entry.proxyAfter || "",
+    entry.message,
+  ].join("\u0001");
+}
+
 type DiscoveryLane = "bing" | "duckduckgo" | "yahoo";
 
 function compactTerminalMessage(value: string) {
@@ -156,19 +171,24 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
   const discoveryDuckRef = useRef<HTMLDivElement>(null);
   const discoveryYahooRef = useRef<HTMLDivElement>(null);
   const enrichmentRef = useRef<HTMLDivElement>(null);
+  const initialEventsRef = useRef(initialEvents);
+  const importedEventKeysRef = useRef<Set<string>>(new Set());
+  const [replayRequest, setReplayRequest] = useState<{ jobId: string; token: number } | null>(null);
 
   useEffect(() => {
-    if (!jobId) return;
-    const sseUrl = `/api/jobs/${encodeURIComponent(jobId)}/logs`;
-    let eventSource: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let closed = false;
+    initialEventsRef.current = initialEvents;
+  }, [initialEvents]);
 
+  function collectEventLogs(events: HistoricalJobEvent[]) {
     const seededDiscoveryLogs: Record<DiscoveryLane, WorkerLog[]> = { bing: [], duckduckgo: [], yahoo: [] };
     const seededEnrichmentLogs: WorkerLog[] = [];
-    for (const event of initialEvents) {
+
+    for (const event of events) {
       const entry = workerLogFromJobEvent(event);
       if (!entry) continue;
+      const key = historicalEventKey(event, entry);
+      if (importedEventKeysRef.current.has(key)) continue;
+      importedEventKeysRef.current.add(key);
       const lane = laneFromPayload(entry);
       if (lane === "enrichment") {
         seededEnrichmentLogs.push(entry);
@@ -176,8 +196,36 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
         seededDiscoveryLogs[lane].push(entry);
       }
     }
+
+    return { seededDiscoveryLogs, seededEnrichmentLogs };
+  }
+
+  const importSavedEvents = useCallback(() => {
+    const { seededDiscoveryLogs, seededEnrichmentLogs } = collectEventLogs(initialEventsRef.current);
+    setDiscoveryLogs((current) => ({
+      bing: [...seededDiscoveryLogs.bing, ...current.bing],
+      duckduckgo: [...seededDiscoveryLogs.duckduckgo, ...current.duckduckgo],
+      yahoo: [...seededDiscoveryLogs.yahoo, ...current.yahoo],
+    }));
+    setEnrichmentLogs((current) => [...seededEnrichmentLogs, ...current]);
+  }, []);
+
+  useEffect(() => {
+    if (!jobId) return;
+    importedEventKeysRef.current.clear();
+    const { seededDiscoveryLogs, seededEnrichmentLogs } = collectEventLogs(initialEventsRef.current);
     setDiscoveryLogs(seededDiscoveryLogs);
     setEnrichmentLogs(seededEnrichmentLogs);
+  }, [jobId]);
+
+  useEffect(() => {
+    if (!jobId) return;
+    const replay = replayRequest?.jobId === jobId ? "1" : "0";
+    const sseUrl = `/api/jobs/${encodeURIComponent(jobId)}/logs?replay=${replay}`;
+    let eventSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
+
     setState("connecting");
 
     const pushLog = (entry: WorkerLog) => {
@@ -231,7 +279,7 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       eventSource?.close();
     };
-  }, [jobId, initialEvents]);
+  }, [jobId, replayRequest]);
 
   useEffect(() => {
     if (discoveryBingRef.current) discoveryBingRef.current.scrollTop = discoveryBingRef.current.scrollHeight;
@@ -272,15 +320,39 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
   }
 
   return (
-    <div className="grid h-full min-h-0 w-full grid-cols-1 gap-2 overflow-hidden xl:grid-cols-3 xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 w-full grid-cols-1 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-2 overflow-hidden xl:grid-cols-3">
+      <div className="ide-terminal flex min-w-0 items-center justify-between gap-2 px-2 py-1 font-mono text-[10px] text-vercel-text xl:col-span-3">
+        <span className="truncate">worker stream tails new output by default</span>
+        <div className="inline-flex flex-shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={importSavedEvents}
+            className="ide-btn inline-flex h-6 items-center px-2 text-[10px]"
+          >
+            Import saved
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDiscoveryLogs({ bing: [], duckduckgo: [], yahoo: [] });
+              setEnrichmentLogs([]);
+              importedEventKeysRef.current.clear();
+              setReplayRequest((current) => ({ jobId, token: (current?.token || 0) + 1 }));
+            }}
+            className="ide-btn inline-flex h-6 items-center px-2 text-[10px]"
+          >
+            Replay stdout
+          </button>
+        </div>
+      </div>
       <section className="ide-terminal grid min-h-0 grid-cols-1 gap-2 overflow-hidden p-2 xl:col-span-3 xl:grid-cols-3">
         {[
           { key: "bing", label: "DISCOVERY / BING", ref: discoveryBingRef },
           { key: "duckduckgo", label: "DISCOVERY / DUCKDUCKGO", ref: discoveryDuckRef },
           { key: "yahoo", label: "DISCOVERY / YAHOO", ref: discoveryYahooRef },
         ].map((laneRow) => (
-          <div key={laneRow.key} className="flex h-full min-h-0 flex-col overflow-hidden border border-[#30363d] bg-black">
-            <div className="flex items-center justify-between border-b border-[#30363d] px-2 py-1 text-[10px] font-mono text-[#00ffff]">
+          <div key={laneRow.key} className="flex h-full min-h-0 flex-col overflow-hidden border border-[#3c3c3c] bg-[#1e1e1e]">
+            <div className="flex items-center justify-between border-b border-[#3c3c3c] px-2 py-1 text-[10px] font-mono text-vercel-text">
               <span className="inline-flex items-center gap-1.5">
                 <Terminal size={11} />
                 {laneRow.label}
@@ -297,26 +369,26 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
                 </button>
               </div>
             </div>
-            <div ref={laneRow.ref} className="flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-[#00ff00]">
+            <div ref={laneRow.ref} className="flex-1 overflow-y-auto p-2 font-mono text-[11px] leading-5 text-matrix-green">
               {(discoveryLogs[laneRow.key as DiscoveryLane] || []).map((log, index) => (
                 <div key={`${laneRow.key}-${index}`} className="whitespace-pre-wrap break-words">
-                  <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
+                  <span className="text-vercel-text">[{log.time}]</span> {log.message}
                   {log.proxyBefore && log.proxyAfter && (
-                    <div className="text-[10px] text-[#00ffff]">
+                    <div className="text-[10px] text-vercel-text">
                       proxy rotated: {log.proxyBefore} → {log.proxyAfter}
                     </div>
                   )}
                 </div>
               ))}
               {(discoveryLogs[laneRow.key as DiscoveryLane] || []).length === 0 && (
-                <div className="text-[#8b949e]">Waiting for {laneRow.key} logs...</div>
+                <div className="text-[#858585]">Waiting for {laneRow.key} logs...</div>
               )}
             </div>
           </div>
         ))}
       </section>
       <section className="ide-terminal flex min-h-0 flex-col overflow-hidden xl:col-span-3">
-        <div className="flex items-center justify-between border-b border-[#30363d] px-3 py-1.5 text-[11px] font-mono text-[#00ffff]">
+        <div className="flex items-center justify-between border-b border-[#3c3c3c] px-3 py-1.5 text-[11px] font-mono text-vercel-text">
           <span className="inline-flex items-center gap-1.5">
             <Terminal size={12} />
             ENRICH / SCORE
@@ -333,18 +405,18 @@ export function DualLiveTerminal({ jobId, initialEvents = [] }: { jobId: string;
             </button>
           </div>
         </div>
-        <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-2 font-mono text-xs leading-5 text-[#00ff00]">
+        <div ref={enrichmentRef} className="flex-1 overflow-y-auto p-2 font-mono text-xs leading-5 text-matrix-green">
           {enrichmentLogs.map((log, index) => (
             <div key={`e-${index}`} className="whitespace-pre-wrap break-words">
-              <span className="text-[#00ffff]">[{log.time}]</span> {log.message}
+              <span className="text-vercel-text">[{log.time}]</span> {log.message}
               {log.proxyBefore && log.proxyAfter && (
-                <div className="text-[11px] text-[#00ffff]">
+                <div className="text-[11px] text-vercel-text">
                   proxy rotated: {log.proxyBefore} → {log.proxyAfter}
                 </div>
               )}
             </div>
           ))}
-          {enrichmentLogs.length === 0 && <div className="text-[#8b949e]">Waiting for enrichment logs...</div>}
+          {enrichmentLogs.length === 0 && <div className="text-[#858585]">Waiting for enrichment logs...</div>}
         </div>
       </section>
     </div>
@@ -363,7 +435,7 @@ function ReportDownloads({
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
 
-  async function openExport(format: "csv" | "xlsx") {
+  async function openExport(format: "csv" | "xlsx" | "audit" | "leads") {
     if (!supabase) return;
     setDownloadError(null);
     setDownloadingFormat(format);
@@ -426,12 +498,12 @@ function ReportDownloads({
         </button>
         <button
           type="button"
-          onClick={() => void openExport("xlsx")}
+          onClick={() => void openExport("audit")}
           disabled={downloadingFormat !== null}
           className="ide-btn inline-flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-50"
         >
           <Download size={14} />
-          Audit XLSX
+          Audit CSV
         </button>
       </div>
       {downloadError && <p className="text-xs text-amber-300">{downloadError}</p>}
@@ -441,9 +513,9 @@ function ReportDownloads({
 
 function AiGlyph({ active = false }: { active?: boolean }) {
   return (
-    <span className="relative inline-flex h-7 w-7 flex-shrink-0 items-center justify-center border border-black/30 bg-black text-[#2dd4bf] shadow-[inset_0_0_0_1px_rgba(45,212,191,0.35),0_0_18px_rgba(0,0,0,0.25)]">
-      {active && <span className="absolute -inset-1 animate-ping border border-black/30" />}
-      {active && <span className="absolute h-1 w-1 animate-pulse bg-[#2dd4bf]" />}
+    <span className="relative inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border border-[#3c3c3c] bg-[#333333] text-vercel-accent">
+      {active && <span className="absolute -inset-1 animate-ping rounded border border-[#007acc]/30" />}
+      {active && <span className="absolute h-1 w-1 animate-pulse bg-[#007acc]" />}
       <svg
         viewBox="0 0 24 24"
         aria-hidden="true"
@@ -858,9 +930,9 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
 
   return (
     <section className="ide-panel flex h-full min-h-0 w-full flex-col">
-      <header className="flex items-center justify-between border-b border-[#30363d] bg-[#161b22] px-3 py-2">
+      <header className="flex items-center justify-between border-b border-[#3c3c3c] bg-[#252526] px-3 py-2">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-[#8b949e]">Agentic Lead Search</p>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-[#858585]">Agentic Lead Search</p>
           <h2 className="text-sm font-semibold text-vercel-text">Live discovery + enrichment workspace</h2>
         </div>
         <div className="inline-flex items-center gap-2">
@@ -874,17 +946,13 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
             <div key={message.id}>
               {message.type === "text" && (
                 <div
-                  className={`relative flex items-start gap-2 overflow-hidden border px-3 py-2 text-sm leading-6 ${
-                    message.role === "user"
-                      ? "border-[#30363d] bg-[#1b2028] text-[#00ffff] shadow-[inset_2px_0_0_#00ffff]"
-                      : "border-[#00f5d4] bg-[linear-gradient(135deg,#38f8d5_0%,#16d9c5_52%,#00a7a7_100%)] text-black shadow-[0_0_28px_rgba(45,212,191,0.22)]"
-                  }`}
+                  className={`relative flex items-start gap-2 overflow-hidden rounded-md border px-3 py-2 text-sm leading-6 ${message.role === "user" ? "bg-vercel-accent/20 border-vercel-accent/30 text-vercel-text flex-row-reverse" : "bg-vercel-panel border-vercel-border text-vercel-text whitespace-pre-wrap"}`}
                 >
                   {message.role === "assistant" && (
-                    <span className="pointer-events-none absolute inset-y-0 right-0 w-1/3 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.18))]" />
+                    <span className="hidden" />
                   )}
                   {message.role === "user" ? (
-                    <span className="mt-0.5 font-mono text-[#8b949e]">&gt;</span>
+                    <span className="mt-0.5 font-mono text-[#858585]">&gt;</span>
                   ) : (
                     <AiGlyph />
                   )}
@@ -956,7 +1024,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
           ))}
 
           {isThinking && (
-            <div className="inline-flex items-center gap-2 border border-[#00f5d4] bg-[linear-gradient(135deg,#38f8d5,#00a7a7)] px-3 py-2 text-sm text-black shadow-[0_0_28px_rgba(45,212,191,0.24)]">
+            <div className="inline-flex items-center gap-2 rounded-md border border-vercel-border bg-vercel-panel px-3 py-2 text-sm text-vercel-text">
               <AiGlyph active />
               reasoning through target fit...
             </div>
@@ -965,7 +1033,7 @@ export function AgenticChat({ onJobCreated, onActiveJobChange }: AgenticChatProp
 
       </div>
 
-      <footer className="border-t border-[#30363d] bg-[#161b22] p-3">
+      <footer className="border-t border-[#3c3c3c] bg-[#252526] p-3">
         <form className="flex gap-2" onSubmit={appendUserMessage}>
           <textarea
             className="ide-input h-14 flex-1 resize-none px-3 py-2 text-sm"
@@ -1077,12 +1145,12 @@ function ConfigWidget({
 
   if (localStartedConfig) {
     return (
-      <div className="ide-panel space-y-2 border-[#2dd4bf] bg-[#2dd4bf] px-3 py-3 text-sm text-black">
+      <div className="ide-panel space-y-2 px-3 py-3 text-sm text-vercel-text">
         <p className="font-semibold">Job started with this brief config:</p>
-        <p className="text-xs uppercase tracking-[0.14em] text-black/70">
+        <p className="text-xs uppercase tracking-[0.14em] text-vercel-muted">
           {localStartedConfig.leadCount} leads • {localStartedConfig.market} • min score {localStartedConfig.minScore}
         </p>
-        <p className="text-xs text-black/70">
+        <p className="text-xs text-vercel-muted">
           Missing email allowed: {localStartedConfig.allowNoEmail ? "yes" : "no"}
         </p>
       </div>
@@ -1091,7 +1159,7 @@ function ConfigWidget({
 
   return (
     <div className="ide-panel space-y-4 p-4">
-      <div className="flex items-center gap-2 text-[#00ff00]">
+      <div className="flex items-center gap-2 text-matrix-green">
         <CheckCircle2 size={18} />
         <h3 className="font-semibold">Brief ready to run</h3>
       </div>
@@ -1106,7 +1174,7 @@ function ConfigWidget({
         </div>
       </div>
 
-      <div className="space-y-4 border-t border-[#30363d] pt-4">
+      <div className="space-y-4 border-t border-[#3c3c3c] pt-4">
         <div className="grid grid-cols-3 gap-2">
           {leadPacks.map((pack) => (
             <button
@@ -1125,10 +1193,10 @@ function ConfigWidget({
         <div className="flex flex-wrap items-center justify-between gap-4">
           <label className="flex max-w-[240px] flex-col gap-1 text-xs text-vercel-text">
             <span className="text-[10px] uppercase tracking-[0.2em] text-vercel-muted">Min Quality Score: {minScore}</span>
-            <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-[#00ffff]" />
+            <input type="range" min="35" max="85" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-[#569cd6]" />
           </label>
           <label className="flex items-center gap-2 text-xs text-vercel-text">
-            <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} className="border border-[#30363d] bg-[#010409]" />
+            <input type="checkbox" checked={allowNoEmail} onChange={(event) => setAllowNoEmail(event.target.checked)} className="border border-[#3c3c3c] bg-[#252526]" />
             Allow missing emails
           </label>
         </div>
@@ -1214,25 +1282,25 @@ function OutreachLauncherWidget({
 
   return (
     <div className="ide-panel space-y-3 p-4">
-      <div className="flex items-center gap-2 text-[#00ffff]">
+      <div className="flex items-center gap-2 text-vercel-text">
         <Mail size={16} />
         <h3 className="font-semibold">Quick outreach campaign</h3>
       </div>
       {message && <p className="text-xs text-amber-300">{message}</p>}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <label className="block space-y-1 text-xs text-[#8b949e]">
+        <label className="block space-y-1 text-xs text-[#858585]">
           <span>Business plan</span>
           <input className="ide-input h-9 w-full px-2 text-sm" value={businessPlan} onChange={(e) => setBusinessPlan(e.target.value)} placeholder="What you do" />
         </label>
-        <label className="block space-y-1 text-xs text-[#8b949e]">
+        <label className="block space-y-1 text-xs text-[#858585]">
           <span>Offer</span>
           <input className="ide-input h-9 w-full px-2 text-sm" value={offer} onChange={(e) => setOffer(e.target.value)} placeholder="Your offer" />
         </label>
-        <label className="block space-y-1 text-xs text-[#8b949e]">
+        <label className="block space-y-1 text-xs text-[#858585]">
           <span>Target buyer</span>
           <input className="ide-input h-9 w-full px-2 text-sm" value={targetBuyer} onChange={(e) => setTargetBuyer(e.target.value)} placeholder="Who to reach" />
         </label>
-        <label className="block space-y-1 text-xs text-[#8b949e]">
+        <label className="block space-y-1 text-xs text-[#858585]">
           <span>Tone</span>
           <select className="ide-input h-9 w-full px-2 text-sm" value={tone} onChange={(e) => setTone(e.target.value)}>
             {["professional", "direct", "warm", "premium", "bold", "convincing"].map((t) => (
@@ -1241,7 +1309,7 @@ function OutreachLauncherWidget({
           </select>
         </label>
       </div>
-      <label className="block space-y-1 text-xs text-[#8b949e]">
+      <label className="block space-y-1 text-xs text-[#858585]">
         <span>Pasted leads (name, company, email, website — one per line)</span>
         <textarea
           className="ide-input h-24 w-full resize-none px-2 py-2 font-mono text-xs"

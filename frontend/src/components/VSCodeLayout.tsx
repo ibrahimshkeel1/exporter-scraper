@@ -120,21 +120,21 @@ function CsvPreviewPanel({ content }: { content: string }) {
           className="ide-input h-8 min-w-[220px] flex-1 px-2 text-xs"
           placeholder="Search CSV rows..."
         />
-        <span className="text-[11px] text-[#8b949e]">
+        <span className="text-[11px] text-[#858585]">
           {filtered.length.toLocaleString()} rows
           {filtered.length > visible.length ? ` (showing ${visible.length})` : ""}
         </span>
       </div>
 
-      <div className="min-h-0 w-full flex-1 overflow-auto border border-[#30363d] bg-black/30">
+      <div className="min-h-0 w-full flex-1 overflow-auto rounded border border-[#3c3c3c] bg-[#1e1e1e]">
         {headers.length === 0 ? (
-          <div className="p-3 text-xs text-[#8b949e]">No CSV rows to preview.</div>
+          <div className="p-3 text-xs text-[#858585]">No CSV rows to preview.</div>
         ) : (
           <table className="w-full border-collapse text-left text-xs">
-            <thead className="sticky top-0 z-10 bg-[#10161f]">
+            <thead className="sticky top-0 z-10 bg-[#252526]">
               <tr>
                 {headers.map((header, index) => (
-                  <th key={`${header}-${index}`} className="border-b border-[#30363d] px-2 py-1.5 font-semibold text-[#8cf5ff]">
+                  <th key={`${header}-${index}`} className="border-b border-[#3c3c3c] px-2 py-1.5 font-semibold text-[#569cd6]">
                     {header || `Column ${index + 1}`}
                   </th>
                 ))}
@@ -142,9 +142,9 @@ function CsvPreviewPanel({ content }: { content: string }) {
             </thead>
             <tbody>
               {visible.map((row, rowIndex) => (
-                <tr key={`row-${rowIndex}`} className="border-b border-[#1c2128] align-top">
+                <tr key={`row-${rowIndex}`} className="border-b border-[#333333] align-top">
                   {headers.map((_, cellIndex) => (
-                    <td key={`cell-${rowIndex}-${cellIndex}`} className="px-2 py-1.5 text-[#c9d1d9]">
+                    <td key={`cell-${rowIndex}-${cellIndex}`} className="px-2 py-1.5 text-[#d4d4d4]">
                       <span className="block overflow-hidden whitespace-pre-wrap break-words" title={row[cellIndex] || ""}>
                         {row[cellIndex] || ""}
                       </span>
@@ -154,7 +154,7 @@ function CsvPreviewPanel({ content }: { content: string }) {
               ))}
               {visible.length === 0 && (
                 <tr>
-                  <td className="px-2 py-2 text-[#8b949e]" colSpan={Math.max(1, headers.length)}>
+                  <td className="px-2 py-2 text-[#858585]" colSpan={Math.max(1, headers.length)}>
                     No rows match this search.
                   </td>
                 </tr>
@@ -179,6 +179,7 @@ type VSCodeLayoutProps = {
   explorerContext?: WorkspaceContext | null;
   renderArtifact?: (artifact: WorkspaceArtifact) => ReactNode;
   activeSessionOpenToken?: number;
+  onSelectSession?: (sessionId: string) => void;
 };
 
 function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
@@ -305,12 +306,12 @@ function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
       artifact.folder.toLowerCase().includes("analysis"));
 
   return (
-    <div className="h-full w-full overflow-auto bg-[#0d1117] p-4">
-      <div className="mb-3 flex items-start justify-between gap-3 border border-[#30363d] bg-black/35 p-3 text-xs">
+    <div className="h-full w-full overflow-auto bg-[#1e1e1e] p-4">
+      <div className="mb-3 flex items-start justify-between gap-3 rounded border border-[#3c3c3c] bg-[#252526] p-3 text-xs">
         <div className="flex-1">
-          <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">{artifact.folder}</p>
-          <p className="mt-1 font-mono text-[#00ffff]">{artifact.name}</p>
-          {artifact.meta && <p className="mt-1 text-[#8b949e]">{artifact.meta}</p>}
+          <p className="text-[10px] uppercase tracking-[0.14em] text-[#858585]">{artifact.folder}</p>
+          <p className="mt-1 font-mono text-[#569cd6]">{artifact.name}</p>
+          {artifact.meta && <p className="mt-1 text-[#858585]">{artifact.meta}</p>}
         </div>
         {(artifact.download || artifact.externalUrl || artifact.content) && (
           <button
@@ -337,7 +338,7 @@ function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
       )}
 
       {previewLoading ? (
-        <pre className="whitespace-pre-wrap break-words border border-[#30363d] bg-black/40 p-3 text-xs leading-5 text-[#c9d1d9]">
+        <pre className="whitespace-pre-wrap break-words rounded border border-[#3c3c3c] bg-[#252526] p-3 text-xs leading-5 text-[#d4d4d4]">
           Loading preview...
         </pre>
       ) : artifact.kind === "csv" ? (
@@ -346,8 +347,8 @@ function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
         <pre
           className={`whitespace-pre-wrap break-words border p-3 text-xs leading-5 w-full ${
             aiStyledArtifact
-              ? "border-[#2dd4bf] bg-[#2dd4bf] text-black"
-              : "border-[#30363d] bg-black/40 text-[#c9d1d9]"
+              ? "border-[#007acc] bg-[#1f3a4f] text-[#d4d4d4]"
+              : "border-[#3c3c3c] bg-[#252526] text-[#d4d4d4]"
           }`}
         >
           {previewText}
@@ -358,7 +359,7 @@ function ArtifactPreviewPanel({ artifact }: { artifact: WorkspaceArtifact }) {
           href={artifact.externalUrl}
           target="_blank"
           rel="noreferrer"
-          className="mt-3 inline-flex items-center gap-1.5 border border-[#30363d] bg-[#161b22] px-3 py-1.5 text-xs text-[#c9d1d9] hover:border-[#00ffff] hover:text-[#00ffff]"
+          className="mt-3 inline-flex items-center gap-1.5 rounded border border-[#3c3c3c] bg-[#252526] px-3 py-1.5 text-xs text-[#d4d4d4] hover:border-[#569cd6] hover:text-[#569cd6]"
         >
           <ExternalLink size={12} />
           Open External File
@@ -380,6 +381,7 @@ export function VSCodeLayout({
   explorerContext,
   renderArtifact,
   activeSessionOpenToken = 0,
+  onSelectSession,
 }: VSCodeLayoutProps) {
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
@@ -597,7 +599,7 @@ export function VSCodeLayout({
   const activeArtifactId = activeTabId === MAIN_TAB_ID ? null : activeTabId;
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#0d1117] text-vercel-text">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#1e1e1e] text-vercel-text">
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div className="h-full w-12 flex-shrink-0">
           <ActivityBar
@@ -635,6 +637,7 @@ export function VSCodeLayout({
               explorerContext={explorerContext}
               activeArtifactId={activeArtifactId}
               onOpenArtifact={openArtifact}
+              onSelectSession={onSelectSession}
             />
           </Panel>
 
@@ -646,8 +649,8 @@ export function VSCodeLayout({
                 <PanelGroup orientation="horizontal" className="min-h-0 min-w-0">
                   <Panel id="editor-main" minSize="50%" className="min-w-0">
                     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-                      <div className="flex min-w-0 items-center border-b border-[#30363d] bg-[#161b22]">
-                        <div className="flex flex-shrink-0 items-center gap-2 border-r border-[#30363d] px-3 py-1.5 text-[11px] text-[#c9d1d9]">
+                      <div className="flex h-9 min-w-0 items-center border-b border-[#3c3c3c] bg-[#252526]">
+                        <div className="flex h-full flex-shrink-0 items-center gap-2 border-r border-[#3c3c3c] border-t-2 border-t-[#007acc] bg-[#1e1e1e] px-3 py-1.5 text-[11px] text-[#d4d4d4]">
                           <span>{title}</span>
                         </div>
                         {openArtifacts.map((artifact) => (
@@ -655,13 +658,15 @@ export function VSCodeLayout({
                             key={artifact.id}
                             type="button"
                             onClick={() => setActiveTabId(artifact.id)}
-                            className={`flex items-center gap-2 border-r border-[#30363d] px-3 py-1.5 text-[11px] ${
-                              activeTabId === artifact.id ? "bg-[#0d1117] text-[#00ffff]" : "text-[#8b949e] hover:text-[#c9d1d9]"
+                            className={`flex h-full items-center gap-2 border-r border-[#3c3c3c] border-t-2 px-3 py-1.5 text-[11px] transition-colors ${
+                              activeTabId === artifact.id
+                                ? "border-t-[#007acc] bg-[#1e1e1e] text-[#d4d4d4]"
+                                : "border-t-transparent text-[#858585] hover:bg-[#333333]/40 hover:text-[#d4d4d4]"
                             }`}
                           >
                             <span className="max-w-[220px] truncate">{artifact.name}</span>
                             <span
-                              className="text-[#8b949e] hover:text-[#ff6b6b]"
+                              className="text-[#858585] hover:text-[#ff6b6b]"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 closeArtifact(artifact.id);
@@ -671,15 +676,15 @@ export function VSCodeLayout({
                             </span>
                           </button>
                         ))}
-                        <div className="min-w-0 truncate px-3 text-[11px] text-[#8b949e]">{subtitle}</div>
+                        <div className="min-w-0 truncate px-3 text-[11px] text-[#858585]">{subtitle}</div>
                         {focusMode && (
-                          <div className="ml-auto px-3 text-[10px] uppercase tracking-[0.1em] text-[#00ffff]">
+                          <div className="ml-auto px-3 text-[10px] uppercase tracking-[0.1em] text-[#569cd6]">
                             Focus Mode
                           </div>
                         )}
                       </div>
 
-                      <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-[#0d1117]" style={{ zoom: zoomLevel }}>
+                      <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-[#1e1e1e]" style={{ zoom: zoomLevel }}>
                         {activeArtifact
                           ? (renderArtifact?.(activeArtifact) ?? <ArtifactPreviewPanel artifact={activeArtifact} />)
                           : mainEditor}
@@ -733,10 +738,10 @@ export function VSCodeLayout({
                     <button
                       type="button"
                       onClick={toggleTerminal}
-                      className="flex h-full w-full items-center justify-between border-t border-[#30363d] bg-[#11161d] px-3 text-left"
+                      className="flex h-full w-full items-center justify-between bg-[#252526] px-3 text-left"
                     >
-                      <span className="text-[10px] uppercase tracking-[0.14em] text-[#8b949e]">Terminal</span>
-                      <span className="font-mono text-[11px] text-[#00ffff]">{miniTerminalSummary}</span>
+                      <span className="text-[10px] uppercase tracking-[0.14em] text-[#858585]">Terminal</span>
+                      <span className="font-mono text-[11px] text-[#569cd6]">{miniTerminalSummary}</span>
                     </button>
                   )}
                 </Panel>
@@ -746,12 +751,12 @@ export function VSCodeLayout({
         </PanelGroup>
       </div>
 
-      <div className="flex h-[22px] items-center justify-between border-t border-[#30363d] bg-[#161b22] px-3 text-[11px] text-[#8b949e]">
+      <div className="flex h-[22px] items-center justify-between border-t border-[#3c3c3c] bg-[#252526] px-3 text-[11px] text-[#858585]">
         <div className="flex items-center gap-3">
           <span>WS: exportflow</span>
-          <span className="text-[#00ff00]">SSE: LIVE</span>
+          <span className="text-[#6a9955]">SSE: LIVE</span>
           {activeTerminalJobId && (
-            <span className="font-mono text-[10px] text-[#00ffff]">
+            <span className="font-mono text-[10px] text-[#569cd6]">
               job:{activeTerminalJobId.slice(0, 8)}
             </span>
           )}
