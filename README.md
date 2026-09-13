@@ -1,82 +1,87 @@
-# ExportFlow Lead Generation Engine
+# ExportFlow
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js)](https://nextjs.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com)
+[![n8n](https://img.shields.io/badge/n8n-Automation-FF6D5A?style=flat-square)](https://n8n.io)
 
-B2B lead generation SaaS — discover, enrich, score, and export qualified international buyer leads across industries (architecture, retail, restaurants, industrial, SaaS, manufacturing, and more).
+B2B lead generation SaaS — discover, enrich, score, and export qualified international buyer leads. Python scraper, Next.js dashboard, VPS worker API, and n8n outreach automation.
 
-Monorepo: Python scraper + Next.js frontend + VPS worker API + n8n outreach automation.
+## Features
 
-## What It Does
+- **Lead discovery** — Find candidate companies from buyer-intent seeds and regional directories
+- **Deep enrichment** — Crawl contact, wholesale, vendor, and procurement pages
+- **Email classification** — Extract candidate-owned emails; reject placeholders and system addresses
+- **Scoring engine** — Rank leads on product fit, buyer evidence, reachability, and commercial activity
+- **SaaS dashboard** — Job management, targeting preflight, and export delivery via Next.js frontend
+- **Outreach automation** — n8n workflows for email generation and campaign launch
 
-1. Discovers candidate company websites from buyer-intent seeds, search results, and regional directories.
-2. Enriches each candidate by crawling homepage plus contact, wholesale, vendor, supplier, sourcing, procurement, purchasing, and about pages.
-3. Extracts and classifies candidate-owned emails, rejecting placeholder, third-party, careers, and system emails.
-4. Detects contact forms and supplier/vendor intake paths, but reserves A+ status for leads with usable candidate-owned email.
-5. Scores leads on product fit, buyer/importer/procurement evidence, reachability, commercial activity, and evidence depth.
-6. Exports only qualified leads to CSV, JSON, or both.
+## Stack
 
-## Installation
+| Layer | Tech |
+|-------|------|
+| Scraper | Python (aiohttp, Playwright, BeautifulSoup) |
+| Frontend | Next.js 15 + Supabase |
+| Worker | Python VPS API (`worker_api.py`) |
+| Automation | n8n webhooks |
+| AI | Gemini for classification and verification |
+
+## Quick start — Scraper
 
 ```bash
 pip install -r scraper/requirements.txt
 python -m playwright install chromium
+
+python scraper/main.py \
+  --region USA \
+  --industry "private label clothing importers wholesalers" \
+  --limit 20 \
+  --output buyer_leads.csv \
+  --format both
 ```
 
-## Usage
+### SaaS job mode
 
 ```bash
-python scraper/main.py --region USA --industry "private label clothing importers wholesalers" --limit 20 --output buyer_leads.csv --format both
+python "final scrapper.py" \
+  --job-config scraper/job_config.example.json \
+  --status-output exports/demo/events.jsonl
 ```
 
-SaaS job config mode:
+## Quick start — Frontend
 
 ```bash
-python "final scrapper.py" --job-config scraper/job_config.example.json --status-output exports/demo/events.jsonl
+cd frontend
+npm install
+cp .env.example .env.local   # never commit this file
+npm run dev
 ```
 
-## CLI Arguments
+Set Supabase, Gemini, n8n, admin, and `WORKER_API_URL` in `.env.local`, then run [supabase/schema.sql](./supabase/schema.sql).
 
-- `--region`: `USA`, `UK`, or `Europe` (default: `USA`)
-- `--industry`: discovery query seed (default: `clothing brands`)
-- `--limit`: final number of leads to export (default: `10`)
-- `--min-score`: minimum score threshold from `0` to `100` (default: `75`)
-- `--max-analyzed`: candidate analysis hard cap for filling a requested lead pack
-- `--search-term`: prioritized discovery query from SaaS targeting preflight; can be repeated
-- `--output`: output base file name (default: `buyer_leads.csv`)
-- `--audit-output`: optional output base file for all scored candidates, including rejected leads
-- `--format`: `csv`, `json`, `xlsx`, `both`, or `all` (default: `csv`)
-- `--job-config`: optional JSON config used by the SaaS/n8n worker flow
-- `--status-output`: optional JSONL file for machine-readable progress events
-- `--job-id`: optional external job id included in progress events
-- `--test-mode`: lower internal discovery limits for quicker runs
-- `--hunt-first-a-plus`: analyze candidates one by one until the first A+ lead is found
-- `--hunt-max-analyzed`: hard stop for A+ hunt mode (default: `150`)
-- `--a-plus-score`: minimum score for A+ hunt success (default: `85`)
-- `--allow-no-email`: allow otherwise qualified leads without candidate-owned emails
-- `--allow-weak-buyer-evidence`: allow product-fit leads with weak buyer/importer/procurement evidence
-- `--proxy`: discovery proxy URL; repeat flag for a proxy pool
-- `--proxy-file`: file with one proxy URL per line
+## Project layout
 
-Proxy pool can also be passed by environment variable:
+```
+scraper/          Python lead discovery and scoring engine
+frontend/         Next.js SaaS dashboard
+worker_api.py     VPS worker for n8n job orchestration
+supabase/         Database schema and migrations
+docs/             Architecture, SaaS wiring, and runbooks
+```
 
-- `EXPORTFLOW_PROXY_POOL=http://user:pass@host:port,http://user:pass@host2:port`
-- `EXPORTFLOW_PROXY_HEALTHCHECK_URL=https://ip.oxylabs.io/location`
-- `EXPORTFLOW_PROXY_HEALTHCHECK_TIMEOUT_SECONDS=12`
-- `EXPORTFLOW_PROXY_MIN_HEALTHY=1`
+## CLI reference
 
-## Output Fields
+| Flag | Description |
+|------|-------------|
+| `--region` | `USA`, `UK`, or `Europe` (default: `USA`) |
+| `--industry` | Discovery query seed |
+| `--limit` | Number of leads to export (default: `10`) |
+| `--min-score` | Minimum score 0–100 (default: `75`) |
+| `--format` | `csv`, `json`, `xlsx`, `both`, or `all` |
+| `--job-config` | JSON config for SaaS/n8n worker flow |
+| `--proxy` / `--proxy-file` | Proxy pool for discovery |
 
-Exports include:
-
-- run metadata: `run_id`, `scraped_at`, `region`, `industry`
-- company metadata: `company_name`, `domain`, `website`
-- provenance: `discovery_url`, `source_name`, `source_url`, `discovery_method`
-- quality evidence: `qualified`, `passes_hard_checks`, `export_eligible`, `buyer_type`, `lead_pack_status`, `manual_review_required`, `product_fit`, `product_evidence`, `buyer_evidence`, `buyer_side_evidence`, `sales_side_evidence`, `contact_evidence`, `contact_route`, `outreach_contact`, `evidence_url`, `negative_evidence`, `disqualification_reasons`, `recommended_pitch_angle`, `lead_summary`, `closeability_notes`
-- reachability: `emails`, `high_quality_emails`, `email_quality`, `linkedin_url`, `social_urls`, `contact_form_urls`
-- crawl telemetry: `fetch_ok`, `fetch_status_codes`, `fetch_errors`, `crawled_pages`
-- scoring: `score`, `tier`, `qualification_reasons`, `score_breakdown`
+Proxy env vars: `EXPORTFLOW_PROXY_POOL`, `EXPORTFLOW_PROXY_HEALTHCHECK_URL`.
 
 ## Tests
 
@@ -84,22 +89,12 @@ Exports include:
 python -m unittest discover -s scraper/tests -v
 ```
 
-## SaaS Frontend
+## Documentation
 
-The Next.js frontend lives in `frontend/`.
+See [docs/README.md](./docs/README.md) for architecture, SaaS wiring, Gmail/n8n automation, and VPS runbooks.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## Security & compliance
 
-Copy `frontend/.env.example` to `frontend/.env.local`, fill Supabase, Gemini, n8n, admin, and `WORKER_API_URL` values, then run the Supabase schema in `supabase/schema.sql`.
-
-See `docs/README.md` for current project docs, including architecture, SaaS wiring, and VPS runbooks.
-
-The optional VPS worker API lives at `worker_api.py`. It accepts approved jobs from n8n, forwards scraper progress to the app, uploads private exports to Supabase Storage, and registers delivery. Worker exports default to `exports/worker-runs/<job_id>/exports` unless `WORKER_OUTPUT_BASE_DIR` is set in the frontend environment.
-
-## Ethics and Compliance
-
-Use this tool only where your workflow complies with local anti-spam, privacy, and website usage policies.
+- Never commit `.env`, `.env.local`, `worker.env`, or proxy credential files
+- Use `frontend/.env.example` and `worker.env.example` as templates only
+- Comply with local anti-spam, privacy, and website usage policies
