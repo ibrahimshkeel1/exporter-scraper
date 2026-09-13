@@ -82,14 +82,14 @@ export function testSender() {
     name: process.env.OUTREACH_TEST_SENDER_NAME || "ExportFlow",
     accessToken: process.env.OUTREACH_TEST_GMAIL_ACCESS_TOKEN || "",
     testMode: String(process.env.OUTREACH_TEST_MODE || "true").toLowerCase() !== "false",
-    testRecipient: process.env.OUTREACH_TEST_RECIPIENT || "ibrahimshkeel1@gmail.com"
+    testRecipient: process.env.OUTREACH_TEST_RECIPIENT || "test-recipient@example.com"
   };
 }
 
 export function outreachDeliveryConfig() {
   return {
     testMode: String(process.env.OUTREACH_TEST_MODE || "true").toLowerCase() !== "false",
-    testRecipient: process.env.OUTREACH_TEST_RECIPIENT || "ibrahimshkeel1@gmail.com",
+    testRecipient: process.env.OUTREACH_TEST_RECIPIENT || "test-recipient@example.com",
     senderName: process.env.OUTREACH_SMTP_FROM_NAME || process.env.OUTREACH_TEST_SENDER_NAME || "ExportFlow",
     replyTo: process.env.OUTREACH_SMTP_REPLY_TO || "",
     smtp: {

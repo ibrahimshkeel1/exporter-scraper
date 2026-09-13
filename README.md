@@ -1,6 +1,12 @@
 # ExportFlow Lead Generation Engine
 
-Pipeline for discovering and qualifying international B2B leads across industries (for example architecture, retail, restaurants, industrial, SaaS, and manufacturing).
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js)](https://nextjs.org)
+[![Supabase](https://img.shields.io/badge/Supabase-Postgres-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com)
+
+B2B lead generation SaaS — discover, enrich, score, and export qualified international buyer leads across industries (architecture, retail, restaurants, industrial, SaaS, manufacturing, and more).
+
+Monorepo: Python scraper + Next.js frontend + VPS worker API + n8n outreach automation.
 
 ## What It Does
 

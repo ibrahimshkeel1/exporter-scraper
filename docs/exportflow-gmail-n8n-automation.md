@@ -52,7 +52,7 @@ Add an Outreach page where the user can:
 Before real sending is enabled, force all outbound emails to:
 
 ```text
-ibrahimshkeel1@gmail.com
+test-recipient@example.com
 ```
 
 The real lead email should be stored and shown inside the test email body, but it must not be used as the recipient in test mode.
@@ -68,7 +68,7 @@ N8N_OUTREACH_LAUNCH_WEBHOOK_URL=https://YOUR_N8N_DOMAIN/webhook/exportflow-outre
 N8N_OUTREACH_SEND_WEBHOOK_URL=https://YOUR_N8N_DOMAIN/webhook/exportflow-outreach-send-due
 N8N_OUTREACH_WEBHOOK_SECRET=same-secret-as-n8n-outreach
 OUTREACH_TEST_MODE=true
-OUTREACH_TEST_RECIPIENT=ibrahimshkeel1@gmail.com
+OUTREACH_TEST_RECIPIENT=test-recipient@example.com
 OUTREACH_TEST_GMAIL_FROM_EMAIL=your-test-gmail@gmail.com
 OUTREACH_TEST_GMAIL_ACCESS_TOKEN=temporary-gmail-api-access-token
 OUTREACH_TEST_SENDER_NAME=Ibrahim
@@ -82,7 +82,7 @@ N8N_OUTREACH_WEBHOOK_SECRET=same-secret-as-frontend-outreach
 GEMINI_API_KEY=your-gemini-key
 GEMINI_MODEL=gemini-3-flash-preview
 EXPORTFLOW_TEST_MODE=true
-EXPORTFLOW_TEST_RECIPIENT=ibrahimshkeel1@gmail.com
+EXPORTFLOW_TEST_RECIPIENT=test-recipient@example.com
 EXPORTFLOW_SEND_BATCH_LIMIT=5
 EXPORTFLOW_FOLLOWUP_1_MINUTES=10
 EXPORTFLOW_FOLLOWUP_2_MINUTES=20
